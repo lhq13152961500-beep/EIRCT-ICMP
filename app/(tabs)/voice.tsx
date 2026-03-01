@@ -99,6 +99,37 @@ async function stopRecording(): Promise<{ uri: string | null; duration: string }
   }
 }
 
+// ─── Voice+Text Reply Helper ─────────────────────────────────────────────────
+
+function parseVoiceText(text: string): { body: string; voice: string | null } {
+  const sep = "\n🎤 语音 ";
+  const idx = text.indexOf(sep);
+  if (idx !== -1) return { body: text.slice(0, idx).trim(), voice: text.slice(idx + sep.length).trim() };
+  const pureSep = "🎤 语音 ";
+  if (text.startsWith(pureSep)) return { body: "", voice: text.slice(pureSep.length).trim() };
+  return { body: text, voice: null };
+}
+
+function SubReplyContent({ text, style }: { text: string; style?: object }) {
+  const { body, voice } = parseVoiceText(text);
+  return (
+    <View style={{ gap: 4 }}>
+      {body.length > 0 && <Text style={style}>{body}</Text>}
+      {voice && (
+        <View style={styles.voiceMixedPill}>
+          <Ionicons name="mic" size={11} color={Colors.light.primary} />
+          <View style={styles.voiceMixedWave}>
+            {[3, 6, 4, 7, 5, 3, 6].map((h, i) => (
+              <View key={i} style={[styles.voiceMixedBar, { height: h * 1.5 }]} />
+            ))}
+          </View>
+          <Text style={styles.voiceMixedDuration}>{voice}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ─── Data ────────────────────────────────────────────────────────────────────
 
 const MY_DIARY_GROUPS = [
@@ -417,8 +448,10 @@ function DiaryReplyItem({
         <View style={styles.diarySubReplies}>
           {subReplies.map((sr) => (
             <View key={sr.id} style={styles.diarySubReplyBubble}>
-              <Text style={styles.diarySubReplyAt}>@{sr.replyTo} </Text>
-              <Text style={styles.diarySubReplyText}>{sr.text}</Text>
+              <View style={{ flexDirection: "row", alignItems: "baseline", flexWrap: "wrap", gap: 4 }}>
+                <Text style={styles.diarySubReplyAt}>@{sr.replyTo}</Text>
+                <SubReplyContent text={sr.text} style={styles.diarySubReplyText} />
+              </View>
               <Text style={styles.diarySubReplyTime}>{sr.time}</Text>
             </View>
           ))}
@@ -757,12 +790,12 @@ function PostcardComment({
               <View style={styles.subReplyAvatar}>
                 <Ionicons name="person" size={9} color="#fff" />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, gap: 2 }}>
                 <Text style={styles.subReplyMeta}>{r.username} · {r.time}</Text>
-                <Text style={styles.subReplyText}>
-                  <Text style={styles.subReplyAt}>@{r.replyTo} </Text>
-                  {r.text}
-                </Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "baseline", gap: 3 }}>
+                  <Text style={styles.subReplyAt}>@{r.replyTo}</Text>
+                  <SubReplyContent text={r.text} style={styles.subReplyText} />
+                </View>
               </View>
             </View>
           ))}
@@ -1792,14 +1825,12 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   diarySubReplyBubble: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
+    flexDirection: "column",
     backgroundColor: "#F2F9F5",
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    gap: 3,
+    gap: 4,
   },
   diarySubReplyAt: {
     fontSize: 12,
@@ -1815,6 +1846,34 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: Colors.light.textSecondary,
     marginLeft: 4,
+  },
+
+  voiceMixedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    alignSelf: "flex-start",
+    backgroundColor: "#EAF7F0",
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: "#B8E8CE",
+  },
+  voiceMixedWave: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  voiceMixedBar: {
+    width: 2.5,
+    borderRadius: 2,
+    backgroundColor: Colors.light.primary,
+  },
+  voiceMixedDuration: {
+    fontSize: 11,
+    color: Colors.light.primary,
+    fontWeight: "600",
   },
 
   // Shared play button
