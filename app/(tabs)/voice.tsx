@@ -1380,6 +1380,13 @@ function MyConversationChainTab() {
     return () => { _likeSubscribers.delete(update); };
   }, []);
 
+  const dismissNotif = (id: string) => {
+    const idx = _likeNotifs.findIndex((n) => n.id === id);
+    if (idx !== -1) _likeNotifs.splice(idx, 1);
+    setLikeNotifs([..._likeNotifs]);
+    haptic();
+  };
+
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.tabContent}>
       {likeNotifs.length > 0 && (
@@ -1393,6 +1400,9 @@ function MyConversationChainTab() {
                 <Text style={styles.likeNotifLabel}>{n.label}</Text>
                 <Text style={styles.likeNotifDate}>{n.date}</Text>
               </View>
+              <Pressable onPress={() => dismissNotif(n.id)} style={styles.likeNotifClose}>
+                <Ionicons name="close" size={14} color={Colors.light.textSecondary} />
+              </Pressable>
             </View>
           ))}
         </View>
@@ -2414,6 +2424,15 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.light.textSecondary,
     marginTop: 2,
+  },
+  likeNotifClose: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#F0F0F5",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 6,
   },
 
   convReplyArea: {
