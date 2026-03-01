@@ -57,7 +57,7 @@ interface SoundItem {
   title: string;
   tags: string[];
   listeners: string;
-  thumb: ReturnType<typeof require>;
+  thumb: number;
 }
 
 const SOUND_ITEMS: SoundItem[] = [
