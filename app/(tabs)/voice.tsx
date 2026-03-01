@@ -210,13 +210,15 @@ function DiaryGroup({
             <Text style={styles.diaryMainMetaText}>{group.duration}</Text>
           </View>
         </View>
-        <PlayButton size={32} />
-        <Pressable
-          style={styles.diaryReplyBtn}
-          onPress={() => haptic(Haptics.ImpactFeedbackStyle.Medium)}
-        >
-          <Ionicons name="chatbubble-ellipses-outline" size={20} color={Colors.light.primary} />
-        </Pressable>
+        <View style={styles.diaryBtnStack}>
+          <PlayButton size={32} />
+          <Pressable
+            style={styles.diaryReplyBtn}
+            onPress={() => haptic(Haptics.ImpactFeedbackStyle.Medium)}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={18} color={Colors.light.primary} />
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.diaryStatsRow}>
@@ -639,10 +641,15 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     marginRight: 4,
   },
+  diaryBtnStack: {
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 6,
+  },
   diaryReplyBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#F0FAF4",
