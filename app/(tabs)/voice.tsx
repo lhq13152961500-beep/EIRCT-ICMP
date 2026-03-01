@@ -68,6 +68,10 @@ const SOUND_POSTCARDS = [
     tags: ["#清晨", "#自然原声"],
     listenCount: 66,
     likeCount: 999,
+    comments: [
+      { id: "cm1", username: "旅行者小鱼", time: "02-15 12:10", text: "鸟叫声真美，让我想起了小时候的乡下~" },
+      { id: "cm2", username: "山野行者", time: "02-15 14:30", text: "这段录音太治愈了，谢谢王大伯！" },
+    ],
   },
   {
     id: "p2",
@@ -83,6 +87,11 @@ const SOUND_POSTCARDS = [
     tags: ["#文艺", "#午后蝉鸣"],
     listenCount: 66,
     likeCount: 999,
+    comments: [
+      { id: "cm3", username: "云端漫步", time: "02-14 17:05", text: "书屋的蝉鸣声配上文字真的绝了！" },
+      { id: "cm4", username: "绿野探客", time: "02-14 19:20", text: "这个地方我去过，氛围超好的。" },
+      { id: "cm5", username: "静默山人", time: "02-15 08:00", text: "下次去一定要带录音设备。" },
+    ],
   },
 ];
 
@@ -291,16 +300,37 @@ function MyDiaryTab() {
 
 // ─── Sound Postcard Card ──────────────────────────────────────────────────────
 
+function PostcardComment({ item }: { item: { id: string; username: string; time: string; text: string } }) {
+  return (
+    <View style={styles.postcardCommentItem}>
+      <View style={styles.postcardCommentAvatar}>
+        <Ionicons name="person" size={12} color="#fff" />
+      </View>
+      <View style={styles.postcardCommentBody}>
+        <View style={styles.postcardCommentHeader}>
+          <Text style={styles.postcardCommentUser}>{item.username}</Text>
+          <Text style={styles.postcardCommentTime}>{item.time}</Text>
+        </View>
+        <Text style={styles.postcardCommentText}>{item.text}</Text>
+      </View>
+    </View>
+  );
+}
+
 function SoundPostcard({
   item,
   isLiked,
   likeCount,
   onToggleLike,
+  isExpanded,
+  onToggleExpand,
 }: {
   item: typeof SOUND_POSTCARDS[0];
   isLiked: boolean;
   likeCount: number;
   onToggleLike: () => void;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
 }) {
   return (
     <View style={styles.postcardCard}>
@@ -346,12 +376,19 @@ function SoundPostcard({
           </View>
         ))}
         <View style={styles.postcardStats}>
-          <Image
-            source={require("@/assets/images/audio-comment-icon.png")}
-            style={{ width: 22, height: 22 }}
-            tintColor="#666"
-          />
-          <Text style={styles.postcardStatNum}>{item.listenCount}</Text>
+          <Pressable
+            style={styles.postcardExpandBtn}
+            onPress={() => { onToggleExpand(); haptic(); }}
+          >
+            <Image
+              source={require("@/assets/images/audio-comment-icon.png")}
+              style={{ width: 22, height: 22 }}
+              tintColor={isExpanded ? Colors.light.primary : "#666"}
+            />
+            <Text style={[styles.postcardStatNum, isExpanded && { color: Colors.light.primary }]}>
+              {item.comments.length}
+            </Text>
+          </Pressable>
           <Pressable
             style={styles.postcardLikeBtn}
             onPress={() => { onToggleLike(); haptic(); }}
@@ -365,6 +402,15 @@ function SoundPostcard({
           </Pressable>
         </View>
       </View>
+
+      {isExpanded && item.comments.length > 0 && (
+        <View style={styles.postcardCommentList}>
+          <Text style={styles.postcardCommentTitle}>留言 · {item.comments.length} 条</Text>
+          {item.comments.map((c) => (
+            <PostcardComment key={c.id} item={c} />
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -374,6 +420,7 @@ function DiscoverOthersTab() {
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>(
     Object.fromEntries(SOUND_POSTCARDS.map((p) => [p.id, p.likeCount]))
   );
+  const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
 
   const toggleLike = (id: string) => {
     setLikedIds((prev) => {
@@ -385,6 +432,10 @@ function DiscoverOthersTab() {
       return { ...prev, [id]: !wasLiked };
     });
     haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   return (
@@ -404,6 +455,8 @@ function DiscoverOthersTab() {
           isLiked={!!likedIds[p.id]}
           likeCount={likeCounts[p.id] ?? p.likeCount}
           onToggleLike={() => toggleLike(p.id)}
+          isExpanded={!!expandedIds[p.id]}
+          onToggleExpand={() => toggleExpand(p.id)}
         />
       ))}
 
@@ -926,6 +979,65 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 12,
+  },
+  postcardExpandBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+  },
+  postcardCommentList: {
+    marginTop: 2,
+    marginHorizontal: 12,
+    marginBottom: 10,
+    backgroundColor: "#F7FAF8",
+    borderRadius: 12,
+    padding: 10,
+    gap: 10,
+  },
+  postcardCommentTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.light.primary,
+    marginBottom: 4,
+  },
+  postcardCommentItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  postcardCommentAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.light.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  postcardCommentBody: {
+    flex: 1,
+    gap: 2,
+  },
+  postcardCommentHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  postcardCommentUser: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.light.text,
+  },
+  postcardCommentTime: {
+    fontSize: 10,
+    color: Colors.light.textSecondary,
+  },
+  postcardCommentText: {
+    fontSize: 13,
+    color: Colors.light.text,
+    lineHeight: 18,
   },
   deliveryNote: {
     alignItems: "center",
