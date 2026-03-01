@@ -431,8 +431,10 @@ function DiaryReplyItem({
             <Text style={styles.replyMetaText}>{item.duration}</Text>
             <Ionicons name="calendar-outline" size={10} color={Colors.light.textSecondary} />
             <Text style={styles.replyMetaText}>{item.date}</Text>
-            <Ionicons name="person-outline" size={10} color="#6B9FFF" />
-            <Text style={[styles.replyMetaText, { color: "#6B9FFF" }]}>{item.phone}</Text>
+          </View>
+          <View style={styles.replyPhoneRow}>
+            <Ionicons name="person-circle-outline" size={12} color="#6B9FFF" />
+            <Text style={styles.replyPhoneText} numberOfLines={1}>{item.phone}</Text>
           </View>
         </View>
         <View style={styles.replyBtnRow}>
@@ -1938,12 +1940,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    flexWrap: "wrap",
   },
   replyMetaText: {
     fontSize: 10,
     color: Colors.light.textSecondary,
     marginRight: 2,
+  },
+  replyPhoneRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+  replyPhoneText: {
+    fontSize: 10,
+    color: "#6B9FFF",
+    fontWeight: "500",
+    flexShrink: 1,
   },
   replyBtnRow: {
     flexDirection: "row",
