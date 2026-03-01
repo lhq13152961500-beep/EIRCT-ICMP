@@ -181,31 +181,149 @@ function ProgressBar({ progress, total, color = Colors.light.primary }: { progre
 
 // ─── My Diary Tab ─────────────────────────────────────────────────────────────
 
-function DiaryReplyItem({ item }: { item: typeof MY_DIARY_GROUPS[0]["replies"][0] }) {
+function DiaryReplyItem({
+  item,
+  subReplies,
+  isReplying,
+  replyText,
+  onReplyTextChange,
+  onToggleReply,
+  onSubmitReply,
+  replyMode,
+  onReplyModeChange,
+  isRecording,
+  onRecordStart,
+  onRecordEnd,
+}: {
+  item: typeof MY_DIARY_GROUPS[0]["replies"][0];
+  subReplies: SubReply[];
+  isReplying: boolean;
+  replyText: string;
+  onReplyTextChange: (t: string) => void;
+  onToggleReply: () => void;
+  onSubmitReply: () => void;
+  replyMode: "text" | "mixed" | "voice";
+  onReplyModeChange: (m: "text" | "mixed" | "voice") => void;
+  isRecording: boolean;
+  onRecordStart: () => void;
+  onRecordEnd: () => void;
+}) {
   return (
-    <View style={styles.replyItem}>
-      <View style={styles.replyLeft}>
-        <Text style={styles.replyTitle} numberOfLines={1}>{item.title}</Text>
-        <View style={styles.replyMeta}>
-          <Ionicons name="time-outline" size={10} color={Colors.light.textSecondary} />
-          <Text style={styles.replyMetaText}>{item.duration}</Text>
-          <Ionicons name="calendar-outline" size={10} color={Colors.light.textSecondary} />
-          <Text style={styles.replyMetaText}>{item.date}</Text>
-          <Ionicons name="person-outline" size={10} color="#6B9FFF" />
-          <Text style={[styles.replyMetaText, { color: "#6B9FFF" }]}>{item.phone}</Text>
+    <View>
+      <View style={styles.replyItem}>
+        <View style={styles.replyLeft}>
+          <Text style={styles.replyTitle} numberOfLines={1}>{item.title}</Text>
+          <View style={styles.replyMeta}>
+            <Ionicons name="time-outline" size={10} color={Colors.light.textSecondary} />
+            <Text style={styles.replyMetaText}>{item.duration}</Text>
+            <Ionicons name="calendar-outline" size={10} color={Colors.light.textSecondary} />
+            <Text style={styles.replyMetaText}>{item.date}</Text>
+            <Ionicons name="person-outline" size={10} color="#6B9FFF" />
+            <Text style={[styles.replyMetaText, { color: "#6B9FFF" }]}>{item.phone}</Text>
+          </View>
+        </View>
+        <View style={styles.replyBtnRow}>
+          <Pressable onPress={() => haptic()} style={styles.replyPlayBtn}>
+            <Ionicons name="play" size={14} color={Colors.light.primary} />
+          </Pressable>
+          <Pressable
+            onPress={() => { onToggleReply(); haptic(Haptics.ImpactFeedbackStyle.Medium); }}
+            style={[styles.replyCommentBtn, isReplying && styles.replyCommentBtnActive]}
+          >
+            <Ionicons
+              name={isReplying ? "chatbubble-ellipses" : "chatbubble-ellipses-outline"}
+              size={16}
+              color={isReplying ? "#fff" : Colors.light.primary}
+            />
+          </Pressable>
         </View>
       </View>
-      <View style={styles.replyBtnRow}>
-        <Pressable onPress={() => haptic()} style={styles.replyPlayBtn}>
-          <Ionicons name="play" size={14} color={Colors.light.primary} />
-        </Pressable>
-        <Pressable
-          onPress={() => haptic(Haptics.ImpactFeedbackStyle.Medium)}
-          style={styles.replyCommentBtn}
-        >
-          <Ionicons name="chatbubble-ellipses-outline" size={16} color={Colors.light.primary} />
-        </Pressable>
-      </View>
+
+      {subReplies.length > 0 && (
+        <View style={styles.diarySubReplies}>
+          {subReplies.map((sr) => (
+            <View key={sr.id} style={styles.diarySubReplyBubble}>
+              <Text style={styles.diarySubReplyAt}>@{sr.replyTo} </Text>
+              <Text style={styles.diarySubReplyText}>{sr.text}</Text>
+              <Text style={styles.diarySubReplyTime}>{sr.time}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {isReplying && (
+        <View style={[styles.commentReplyCard, { marginLeft: 14, marginRight: 14 }]}>
+          <View style={styles.commentReplySegment}>
+            <Pressable
+              style={[styles.commentReplySegBtn, replyMode === "text" && styles.commentReplySegBtnActive]}
+              onPress={() => { onReplyModeChange("text"); haptic(); }}
+            >
+              <Ionicons name="chatbubble-outline" size={16} color={replyMode === "text" ? Colors.light.primary : Colors.light.textSecondary} />
+            </Pressable>
+            <Pressable
+              style={[styles.commentReplySegBtn, replyMode === "mixed" && styles.commentReplySegBtnActive]}
+              onPress={() => { onReplyModeChange("mixed"); haptic(); }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                <Ionicons name="chatbubble-outline" size={12} color={replyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary} />
+                <Text style={{ fontSize: 9, color: replyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary, fontWeight: "700" }}>+</Text>
+                <Ionicons name="mic-outline" size={12} color={replyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary} />
+              </View>
+            </Pressable>
+            <Pressable
+              style={[styles.commentReplySegBtn, replyMode === "voice" && styles.commentReplySegBtnActive]}
+              onPress={() => { onReplyModeChange("voice"); haptic(); }}
+            >
+              <Ionicons name="mic-outline" size={16} color={replyMode === "voice" ? Colors.light.primary : Colors.light.textSecondary} />
+            </Pressable>
+          </View>
+
+          {replyMode === "voice" ? (
+            <Pressable
+              style={[styles.commentReplyMicArea, isRecording && styles.commentReplyMicAreaActive]}
+              onPressIn={() => { onRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+              onPressOut={onRecordEnd}
+            >
+              <View style={[styles.commentReplyMicRing, isRecording && styles.commentReplyMicRingActive]}>
+                <Ionicons name="mic" size={22} color={isRecording ? "#fff" : Colors.light.primary} />
+              </View>
+              <Text style={[styles.commentReplyMicLabel, isRecording && { color: "#fff" }]}>
+                {isRecording ? "录音中 · 松开发送" : "按住开始录音"}
+              </Text>
+            </Pressable>
+          ) : (
+            <View style={styles.commentReplyInputArea}>
+              <TextInput
+                style={styles.commentReplyTextInput}
+                placeholder={`回复 @${item.phone}...`}
+                placeholderTextColor={Colors.light.textSecondary}
+                value={replyText}
+                onChangeText={onReplyTextChange}
+                autoFocus={replyMode === "text"}
+                multiline
+              />
+              <View style={styles.commentReplyActions}>
+                {replyMode === "mixed" && (
+                  <Pressable
+                    style={[styles.commentReplyMicSmall, isRecording && styles.commentReplyMicSmallActive]}
+                    onPressIn={() => { onRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+                    onPressOut={onRecordEnd}
+                  >
+                    <Ionicons name="mic" size={14} color={isRecording ? "#fff" : Colors.light.primary} />
+                  </Pressable>
+                )}
+                <Pressable
+                  style={[styles.commentReplySendBtn, replyText.trim().length === 0 && { opacity: 0.38 }]}
+                  onPress={onSubmitReply}
+                  disabled={replyText.trim().length === 0}
+                >
+                  <Ionicons name="arrow-up" size={15} color="#fff" />
+                </Pressable>
+              </View>
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -219,6 +337,61 @@ function DiaryGroup({
   isExpanded: boolean;
   onToggleExpand: () => void;
 }) {
+  const [replyingToId, setReplyingToId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [replyMode, setReplyMode] = useState<"text" | "mixed" | "voice">("text");
+  const [isRecording, setIsRecording] = useState(false);
+  const [subRepliesByItem, setSubRepliesByItem] = useState<Record<string, SubReply[]>>({});
+
+  const nowStr = () => {
+    const now = new Date();
+    return `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  };
+
+  const toggleReply = (itemId: string) => {
+    if (replyingToId === itemId) {
+      setReplyingToId(null);
+      setReplyText("");
+      setReplyMode("text");
+      setIsRecording(false);
+    } else {
+      setReplyingToId(itemId);
+      setReplyText("");
+      setReplyMode("text");
+      setIsRecording(false);
+    }
+  };
+
+  const submitReply = (itemId: string, phone: string) => {
+    if (!replyText.trim()) return;
+    const newReply: SubReply = {
+      id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+      username: "我",
+      time: nowStr(),
+      text: replyText.trim(),
+      replyTo: phone,
+    };
+    setSubRepliesByItem((prev) => ({ ...prev, [itemId]: [...(prev[itemId] ?? []), newReply] }));
+    setReplyingToId(null);
+    setReplyText("");
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const submitVoiceReply = (itemId: string, phone: string) => {
+    if (!isRecording) return;
+    const dur = `00:${String(Math.floor(Math.random() * 25) + 5).padStart(2, "0")}`;
+    const newReply: SubReply = {
+      id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+      username: "我",
+      time: nowStr(),
+      text: `🎤 语音回复 ${dur}`,
+      replyTo: phone,
+    };
+    setSubRepliesByItem((prev) => ({ ...prev, [itemId]: [...(prev[itemId] ?? []), newReply] }));
+    setIsRecording(false);
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
   return (
     <View style={styles.diaryGroup}>
       <View style={styles.diaryMainCard}>
@@ -259,7 +432,21 @@ function DiaryGroup({
       {isExpanded && (
         <View style={styles.replyList}>
           {group.replies.map((r) => (
-            <DiaryReplyItem key={r.id} item={r} />
+            <DiaryReplyItem
+              key={r.id}
+              item={r}
+              subReplies={subRepliesByItem[r.id] ?? []}
+              isReplying={replyingToId === r.id}
+              replyText={replyingToId === r.id ? replyText : ""}
+              onReplyTextChange={setReplyText}
+              onToggleReply={() => toggleReply(r.id)}
+              onSubmitReply={() => submitReply(r.id, r.phone)}
+              replyMode={replyMode}
+              onReplyModeChange={setReplyMode}
+              isRecording={replyingToId === r.id && isRecording}
+              onRecordStart={() => setIsRecording(true)}
+              onRecordEnd={() => submitVoiceReply(r.id, r.phone)}
+            />
           ))}
         </View>
       )}
@@ -1236,6 +1423,39 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0F0F5",
     alignItems: "center",
     justifyContent: "center",
+  },
+  replyCommentBtnActive: {
+    backgroundColor: Colors.light.primary,
+  },
+  diarySubReplies: {
+    paddingHorizontal: 14,
+    paddingBottom: 6,
+    gap: 5,
+  },
+  diarySubReplyBubble: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    backgroundColor: "#F2F9F5",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 3,
+  },
+  diarySubReplyAt: {
+    fontSize: 12,
+    color: Colors.light.primary,
+    fontWeight: "600",
+  },
+  diarySubReplyText: {
+    fontSize: 12,
+    color: Colors.light.text,
+    flex: 1,
+  },
+  diarySubReplyTime: {
+    fontSize: 10,
+    color: Colors.light.textSecondary,
+    marginLeft: 4,
   },
 
   // Shared play button
