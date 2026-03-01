@@ -1055,8 +1055,7 @@ function DiscoverOthersTab() {
       <View style={styles.discoverHeader}>
         <Text style={styles.discoverHeaderText}>共收到 8 封声音明信片</Text>
         <Pressable style={styles.filterBtn} onPress={() => haptic()}>
-          <Ionicons name="filter" size={14} color={Colors.light.primary} />
-          <Text style={styles.filterBtnText}>筛选</Text>
+          <Ionicons name="options-outline" size={20} color={Colors.light.text} />
         </Pressable>
       </View>
 
@@ -1545,11 +1544,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-  },
-  filterBtnText: {
-    fontSize: 13,
-    color: Colors.light.primary,
-    fontWeight: "500",
   },
 
   postcardCard: {
