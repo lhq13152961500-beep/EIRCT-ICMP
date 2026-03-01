@@ -176,6 +176,17 @@ const CONVERSATION_CHAIN = [
   },
 ];
 
+// ─── Like Notification System ─────────────────────────────────────────────────
+type LikeNotif = { id: string; label: string; date: string };
+const _likeNotifs: LikeNotif[] = [];
+const _likeSubscribers = new Set<() => void>();
+function pushLikeNotif(label: string) {
+  const now = new Date();
+  const date = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  _likeNotifs.unshift({ id: Date.now().toString() + Math.random().toString(36).slice(2, 6), label, date });
+  _likeSubscribers.forEach((fn) => fn());
+}
+
 // ─── Small shared components ──────────────────────────────────────────────────
 
 function PlayButton({ size = 36, color = Colors.light.primary, audioUrl }: { size?: number; color?: string; audioUrl?: string }) {
@@ -318,6 +329,14 @@ function DiaryReplyItem({
   onRecordEnd: () => void;
   audioUrl?: string;
 }) {
+  const [isLiked, setIsLiked] = useState(false);
+  const handleLike = () => {
+    setIsLiked((v) => {
+      if (!v) pushLikeNotif(`有人点赞了你的日记回复「${item.title}」`);
+      return !v;
+    });
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
   return (
     <View>
       <View style={styles.replyItem}>
@@ -343,6 +362,9 @@ function DiaryReplyItem({
               size={16}
               color={isReplying ? "#fff" : Colors.light.primary}
             />
+          </Pressable>
+          <Pressable onPress={handleLike} style={styles.replyLikeBtn}>
+            <Ionicons name={isLiked ? "heart" : "heart-outline"} size={16} color={isLiked ? "#FF4D6A" : Colors.light.textSecondary} />
           </Pressable>
         </View>
       </View>
@@ -633,6 +655,14 @@ function PostcardComment({
   const isVoice = item.type === "voice";
   const name = isVoice ? item.phone : item.username;
   const time = isVoice ? item.date : item.time;
+  const [isLiked, setIsLiked] = useState(false);
+  const handleLike = () => {
+    setIsLiked((v) => {
+      if (!v) pushLikeNotif(`有人点赞了你收到的留言`);
+      return !v;
+    });
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
 
   return (
     <View style={[styles.uniComment, isReplying && styles.uniCommentActive]}>
@@ -664,6 +694,12 @@ function PostcardComment({
           )}
         </View>
       </Pressable>
+
+      <View style={styles.commentLikeRow}>
+        <Pressable onPress={handleLike} style={styles.commentLikeBtn}>
+          <Ionicons name={isLiked ? "heart" : "heart-outline"} size={13} color={isLiked ? "#FF4D6A" : Colors.light.textSecondary} />
+        </Pressable>
+      </View>
 
       {subReplies.length > 0 && (
         <View style={styles.subReplyList}>
@@ -1212,6 +1248,34 @@ function DiscoverOthersTab() {
 // ─── Conversation Chain Tab ───────────────────────────────────────────────────
 
 function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]; isLast?: boolean }) {
+  const [isReplying, setIsReplying] = useState(false);
+  const [replyMode, setReplyMode] = useState<"text" | "mixed" | "voice">("text");
+  const [replyText, setReplyText] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
+
+  const toggleReply = () => {
+    setIsReplying((v) => {
+      if (v) { setReplyText(""); setReplyMode("text"); setIsRecording(false); }
+      return !v;
+    });
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+  const submitReply = () => {
+    if (!replyText.trim()) return;
+    setIsReplying(false); setReplyText("");
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+  const submitVoiceReply = () => {
+    if (!isRecording) return;
+    setIsReplying(false); setIsRecording(false);
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+  const handleLike = () => {
+    setIsLiked((v) => !v);
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
   return (
     <View>
       <View style={styles.convCard}>
@@ -1231,19 +1295,81 @@ function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]
           <View style={styles.convFooter}>
             <Text style={styles.convDate}>{item.date}</Text>
             <View style={styles.convActions}>
-              <Pressable style={styles.convActionBtn} onPress={() => haptic()}>
-                <MaterialCommunityIcons name="chat-outline" size={14} color={Colors.light.textSecondary} />
-                <Text style={styles.convActionText}>回图</Text>
+              <Pressable style={[styles.convActionBtn, isReplying && styles.convActionBtnActive]} onPress={toggleReply}>
+                <MaterialCommunityIcons name="chat-outline" size={14} color={isReplying ? Colors.light.primary : Colors.light.textSecondary} />
+                <Text style={[styles.convActionText, isReplying && { color: Colors.light.primary }]}>回图</Text>
               </Pressable>
-              <Pressable style={styles.convActionBtn} onPress={() => haptic()}>
-                <Ionicons name="bookmark-outline" size={14} color={Colors.light.textSecondary} />
-              </Pressable>
-              <Pressable style={styles.convActionBtn} onPress={() => haptic()}>
-                <Ionicons name="heart-outline" size={14} color={Colors.light.textSecondary} />
-                <Text style={styles.convActionText}>点赞</Text>
+              <Pressable style={styles.convActionBtn} onPress={handleLike}>
+                <Ionicons name={isLiked ? "heart" : "heart-outline"} size={14} color={isLiked ? "#FF4D6A" : Colors.light.textSecondary} />
+                <Text style={[styles.convActionText, isLiked && { color: "#FF4D6A" }]}>点赞</Text>
               </Pressable>
             </View>
           </View>
+
+          {isReplying && (
+            <View style={styles.commentReplyCard}>
+              <View style={styles.commentReplySegment}>
+                <Pressable style={[styles.commentReplySegBtn, replyMode === "text" && styles.commentReplySegBtnActive]} onPress={() => { setReplyMode("text"); haptic(); }}>
+                  <Ionicons name="chatbubble-outline" size={16} color={replyMode === "text" ? Colors.light.primary : Colors.light.textSecondary} />
+                </Pressable>
+                <Pressable style={[styles.commentReplySegBtn, replyMode === "mixed" && styles.commentReplySegBtnActive]} onPress={() => { setReplyMode("mixed"); haptic(); }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                    <Ionicons name="chatbubble-outline" size={12} color={replyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary} />
+                    <Text style={{ fontSize: 9, color: replyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary, fontWeight: "700" }}>+</Text>
+                    <Ionicons name="mic-outline" size={12} color={replyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary} />
+                  </View>
+                </Pressable>
+                <Pressable style={[styles.commentReplySegBtn, replyMode === "voice" && styles.commentReplySegBtnActive]} onPress={() => { setReplyMode("voice"); haptic(); }}>
+                  <Ionicons name="mic-outline" size={16} color={replyMode === "voice" ? Colors.light.primary : Colors.light.textSecondary} />
+                </Pressable>
+              </View>
+
+              {replyMode === "voice" ? (
+                <Pressable
+                  style={[styles.commentReplyMicArea, isRecording && styles.commentReplyMicAreaActive]}
+                  onPressIn={() => { setIsRecording(true); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+                  onPressOut={submitVoiceReply}
+                >
+                  <View style={[styles.commentReplyMicRing, isRecording && styles.commentReplyMicRingActive]}>
+                    <Ionicons name="mic" size={22} color={isRecording ? "#fff" : Colors.light.primary} />
+                  </View>
+                  <Text style={[styles.commentReplyMicLabel, isRecording && { color: "#fff" }]}>
+                    {isRecording ? "录音中 · 松开发送" : "按住开始录音"}
+                  </Text>
+                </Pressable>
+              ) : (
+                <View style={styles.commentReplyInputArea}>
+                  <TextInput
+                    style={styles.commentReplyTextInput}
+                    placeholder={`回复 @${item.username}...`}
+                    placeholderTextColor={Colors.light.textSecondary}
+                    value={replyText}
+                    onChangeText={setReplyText}
+                    autoFocus={replyMode === "text"}
+                    multiline
+                  />
+                  <View style={styles.commentReplyActions}>
+                    {replyMode === "mixed" && (
+                      <Pressable
+                        style={[styles.commentReplyMicSmall, isRecording && styles.commentReplyMicSmallActive]}
+                        onPressIn={() => { setIsRecording(true); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+                        onPressOut={() => setIsRecording(false)}
+                      >
+                        <Ionicons name="mic" size={14} color={isRecording ? "#fff" : Colors.light.primary} />
+                      </Pressable>
+                    )}
+                    <Pressable
+                      style={[styles.commentReplySendBtn, replyText.trim().length === 0 && { opacity: 0.38 }]}
+                      onPress={submitReply}
+                      disabled={replyText.trim().length === 0}
+                    >
+                      <Ionicons name="arrow-up" size={15} color="#fff" />
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
         </View>
       </View>
       {!isLast && <View style={styles.convDivider} />}
@@ -1252,8 +1378,30 @@ function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]
 }
 
 function MyConversationChainTab() {
+  const [likeNotifs, setLikeNotifs] = useState<LikeNotif[]>([..._likeNotifs]);
+  useEffect(() => {
+    const update = () => setLikeNotifs([..._likeNotifs]);
+    _likeSubscribers.add(update);
+    return () => { _likeSubscribers.delete(update); };
+  }, []);
+
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.tabContent}>
+      {likeNotifs.length > 0 && (
+        <View style={styles.likeNotifList}>
+          {likeNotifs.map((n) => (
+            <View key={n.id} style={styles.likeNotifCard}>
+              <View style={styles.likeNotifIcon}>
+                <Ionicons name="heart" size={16} color="#FF4D6A" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.likeNotifLabel}>{n.label}</Text>
+                <Text style={styles.likeNotifDate}>{n.date}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
       <View style={styles.convList}>
         {CONVERSATION_CHAIN.map((c, idx) => (
           <ConversationItem key={c.id} item={c} isLast={idx === CONVERSATION_CHAIN.length - 1} />
@@ -2210,5 +2358,66 @@ const styles = StyleSheet.create({
   convActionText: {
     fontSize: 12,
     color: Colors.light.textSecondary,
+  },
+  convActionBtnActive: {
+    opacity: 1,
+  },
+
+  replyLikeBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#F0F0F5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  commentLikeRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingHorizontal: 8,
+    paddingBottom: 2,
+    marginTop: -2,
+  },
+  commentLikeBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  likeNotifList: {
+    gap: 8,
+    marginBottom: 12,
+  },
+  likeNotifCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#FFF2F4",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: "#FF4D6A",
+  },
+  likeNotifIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#FFE0E6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  likeNotifLabel: {
+    fontSize: 13,
+    color: Colors.light.text,
+    fontWeight: "500",
+  },
+  likeNotifDate: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+    marginTop: 2,
   },
 });
