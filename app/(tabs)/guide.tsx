@@ -52,6 +52,87 @@ const ROUTES: RouteItem[] = [
   },
 ];
 
+interface SoundItem {
+  id: string;
+  title: string;
+  tags: string[];
+  listeners: string;
+  thumb: ReturnType<typeof require>;
+}
+
+const SOUND_ITEMS: SoundItem[] = [
+  {
+    id: "1",
+    title: "听见·黄岭村的清晨",
+    tags: ["自然", "方言", "乡村"],
+    listeners: "2.4k",
+    thumb: require("@/assets/images/sound-thumb-1.png"),
+  },
+  {
+    id: "2",
+    title: "非遗乡情·竹编艺人",
+    tags: ["地方文化", "身临其境", "非遗"],
+    listeners: "1.8k",
+    thumb: require("@/assets/images/sound-thumb-2.png"),
+  },
+];
+
+function SoundArchiveCard({ item }: { item: SoundItem }) {
+  const handlePress = () => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.soundCard, pressed && styles.soundCardPressed]}
+      onPress={handlePress}
+    >
+      <Image source={item.thumb} style={styles.soundThumb} resizeMode="cover" />
+      <View style={styles.soundInfo}>
+        <Text style={styles.soundTitle} numberOfLines={1}>{item.title}</Text>
+        <View style={styles.soundTagRow}>
+          {item.tags.map((tag) => (
+            <View key={tag} style={styles.soundTagPill}>
+              <Text style={styles.soundTagText}>{tag}</Text>
+            </View>
+          ))}
+        </View>
+        <View style={styles.soundMeta}>
+          <Ionicons name="headset-outline" size={12} color={Colors.light.textSecondary} />
+          <Text style={styles.soundListeners}>{item.listeners}人听过</Text>
+        </View>
+      </View>
+      <Pressable
+        style={styles.soundPlayBtn}
+        onPress={handlePress}
+        hitSlop={8}
+      >
+        <Ionicons name="play" size={16} color={Colors.light.primary} />
+      </Pressable>
+    </Pressable>
+  );
+}
+
+function SoundArchiveSection() {
+  return (
+    <View style={styles.soundSection}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>声音档案推荐</Text>
+        <Pressable
+          onPress={() => Platform.OS !== "web" && Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+          style={styles.refreshBtn}
+        >
+          <Ionicons name="refresh" size={13} color={Colors.light.primary} />
+          <Text style={styles.seeAllText}>换一批</Text>
+        </Pressable>
+      </View>
+      {SOUND_ITEMS.map((item) => (
+        <SoundArchiveCard key={item.id} item={item} />
+      ))}
+    </View>
+  );
+}
+
 function HeroHeader({ insets }: { insets: ReturnType<typeof useSafeAreaInsets> }) {
   const topOffset = Platform.OS === "web" ? 67 : insets.top;
   return (
@@ -229,44 +310,7 @@ export default function GuideScreen() {
             </View>
           </View>
 
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>专家推荐</Text>
-            <Pressable>
-              <Text style={styles.seeAllText}>换一批</Text>
-            </Pressable>
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.expertScroll}
-          >
-            {[
-              { name: "李导游", tag: "十年资深", rating: "4.9", color: "#3DAA6F" },
-              { name: "王阿姨", tag: "本地向导", rating: "4.8", color: "#F5974E" },
-              { name: "陈专家", tag: "民俗学者", rating: "4.95", color: "#9B8EC4" },
-            ].map((expert) => (
-              <Pressable
-                key={expert.name}
-                style={({ pressed }) => [
-                  styles.expertCard,
-                  pressed && { opacity: 0.85 },
-                ]}
-              >
-                <View style={[styles.expertAvatar, { backgroundColor: expert.color + "22" }]}>
-                  <Ionicons name="person" size={28} color={expert.color} />
-                </View>
-                <Text style={styles.expertName}>{expert.name}</Text>
-                <View style={styles.expertTagWrap}>
-                  <Text style={[styles.expertTag, { color: expert.color }]}>{expert.tag}</Text>
-                </View>
-                <View style={styles.expertRating}>
-                  <Ionicons name="star" size={11} color="#FFB800" />
-                  <Text style={styles.expertRatingText}>{expert.rating}</Text>
-                </View>
-              </Pressable>
-            ))}
-          </ScrollView>
+          <SoundArchiveSection />
         </View>
       </ScrollView>
     </View>
@@ -479,54 +523,82 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Colors.light.text,
   },
-  expertScroll: {
-    paddingRight: 16,
-    gap: 12,
-    paddingBottom: 4,
+  soundSection: {
+    marginBottom: 8,
   },
-  expertCard: {
-    width: 110,
+  refreshBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  soundCard: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#fff",
     borderRadius: 16,
-    padding: 14,
-    alignItems: "center",
-    gap: 6,
+    overflow: "hidden",
+    marginBottom: 10,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 3,
   },
-  expertAvatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    alignItems: "center",
-    justifyContent: "center",
+  soundCardPressed: {
+    opacity: 0.88,
   },
-  expertName: {
-    fontSize: 13,
-    fontWeight: "600",
+  soundThumb: {
+    width: 90,
+    height: 80,
+  },
+  soundInfo: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 5,
+  },
+  soundTitle: {
+    fontSize: 14,
+    fontWeight: "700",
     color: Colors.light.text,
   },
-  expertTagWrap: {
-    backgroundColor: Colors.light.greenLight,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
+  soundTagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4,
   },
-  expertTag: {
+  soundTagPill: {
+    backgroundColor: Colors.light.greenLight,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  soundTagText: {
     fontSize: 10,
+    color: Colors.light.primary,
     fontWeight: "500",
   },
-  expertRating: {
+  soundMeta: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 2,
+    gap: 4,
   },
-  expertRatingText: {
+  soundListeners: {
     fontSize: 11,
     color: Colors.light.textSecondary,
-    fontWeight: "500",
+  },
+  soundPlayBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: Colors.light.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+  soundPlayBtnActive: {
+    backgroundColor: Colors.light.primary,
+    borderColor: Colors.light.primary,
   },
 });
