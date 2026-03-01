@@ -408,6 +408,7 @@ function PostcardComment({
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
                 <Ionicons name="chatbubble-outline" size={12} color={commentReplyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary} />
+                <Text style={{ fontSize: 9, color: commentReplyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary, fontWeight: "700" }}>+</Text>
                 <Ionicons name="mic-outline" size={12} color={commentReplyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary} />
               </View>
             </Pressable>
