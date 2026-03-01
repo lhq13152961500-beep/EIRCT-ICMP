@@ -192,16 +192,10 @@ function DiaryGroup({
   group,
   isExpanded,
   onToggleExpand,
-  isLiked,
-  likeCount,
-  onToggleLike,
 }: {
   group: typeof MY_DIARY_GROUPS[0];
   isExpanded: boolean;
   onToggleExpand: () => void;
-  isLiked: boolean;
-  likeCount: number;
-  onToggleLike: () => void;
 }) {
   return (
     <View style={styles.diaryGroup}>
@@ -234,10 +228,10 @@ function DiaryGroup({
           </Text>
         </Pressable>
 
-        <Pressable style={styles.diaryStatItem} onPress={() => { onToggleLike(); haptic(); }}>
-          <Ionicons name={isLiked ? "heart" : "heart-outline"} size={16} color="#FF4D6A" />
-          <Text style={[styles.diaryStatCount, { color: "#FF4D6A" }]}>{likeCount}</Text>
-        </Pressable>
+        <View style={styles.diaryStatItem}>
+          <Ionicons name="heart" size={16} color="#FF4D6A" />
+          <Text style={[styles.diaryStatCount, { color: "#FF4D6A" }]}>{group.likeCount}</Text>
+        </View>
       </View>
 
       {isExpanded && (
@@ -253,24 +247,9 @@ function DiaryGroup({
 
 function MyDiaryTab() {
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
-  const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
-  const [likeCounts, setLikeCounts] = useState<Record<string, number>>(
-    Object.fromEntries(MY_DIARY_GROUPS.map((g) => [g.id, g.likeCount]))
-  );
 
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const toggleLike = (id: string) => {
-    setLikedIds((prev) => {
-      const wasLiked = !!prev[id];
-      setLikeCounts((counts) => ({
-        ...counts,
-        [id]: counts[id] + (wasLiked ? -1 : 1),
-      }));
-      return { ...prev, [id]: !wasLiked };
-    });
   };
 
   return (
@@ -296,9 +275,6 @@ function MyDiaryTab() {
           group={g}
           isExpanded={!!expandedIds[g.id]}
           onToggleExpand={() => toggleExpand(g.id)}
-          isLiked={!!likedIds[g.id]}
-          likeCount={likeCounts[g.id] ?? g.likeCount}
-          onToggleLike={() => toggleLike(g.id)}
         />
       ))}
     </ScrollView>
@@ -307,7 +283,17 @@ function MyDiaryTab() {
 
 // ─── Sound Postcard Card ──────────────────────────────────────────────────────
 
-function SoundPostcard({ item }: { item: typeof SOUND_POSTCARDS[0] }) {
+function SoundPostcard({
+  item,
+  isLiked,
+  likeCount,
+  onToggleLike,
+}: {
+  item: typeof SOUND_POSTCARDS[0];
+  isLiked: boolean;
+  likeCount: number;
+  onToggleLike: () => void;
+}) {
   return (
     <View style={styles.postcardCard}>
       <View style={styles.postcardTop}>
@@ -354,8 +340,17 @@ function SoundPostcard({ item }: { item: typeof SOUND_POSTCARDS[0] }) {
         <View style={styles.postcardStats}>
           <MaterialCommunityIcons name="headphones" size={16} color="#666" />
           <Text style={styles.postcardStatNum}>{item.listenCount}</Text>
-          <Ionicons name="heart" size={15} color="#FF4D6A" />
-          <Text style={[styles.postcardStatNum, { color: "#FF4D6A" }]}>{item.likeCount}</Text>
+          <Pressable
+            style={styles.postcardLikeBtn}
+            onPress={() => { onToggleLike(); haptic(); }}
+          >
+            <Ionicons
+              name={isLiked ? "heart" : "heart-outline"}
+              size={17}
+              color="#FF4D6A"
+            />
+            <Text style={[styles.postcardStatNum, { color: "#FF4D6A" }]}>{likeCount}</Text>
+          </Pressable>
         </View>
       </View>
     </View>
@@ -363,6 +358,23 @@ function SoundPostcard({ item }: { item: typeof SOUND_POSTCARDS[0] }) {
 }
 
 function DiscoverOthersTab() {
+  const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
+  const [likeCounts, setLikeCounts] = useState<Record<string, number>>(
+    Object.fromEntries(SOUND_POSTCARDS.map((p) => [p.id, p.likeCount]))
+  );
+
+  const toggleLike = (id: string) => {
+    setLikedIds((prev) => {
+      const wasLiked = !!prev[id];
+      setLikeCounts((counts) => ({
+        ...counts,
+        [id]: counts[id] + (wasLiked ? -1 : 1),
+      }));
+      return { ...prev, [id]: !wasLiked };
+    });
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.tabContent}>
       <View style={styles.discoverHeader}>
@@ -374,7 +386,13 @@ function DiscoverOthersTab() {
       </View>
 
       {SOUND_POSTCARDS.map((p) => (
-        <SoundPostcard key={p.id} item={p} />
+        <SoundPostcard
+          key={p.id}
+          item={p}
+          isLiked={!!likedIds[p.id]}
+          likeCount={likeCounts[p.id] ?? p.likeCount}
+          onToggleLike={() => toggleLike(p.id)}
+        />
       ))}
 
       <View style={styles.deliveryNote}>
@@ -882,6 +900,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: "#666",
+  },
+  postcardLikeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 12,
   },
   deliveryNote: {
     alignItems: "center",
