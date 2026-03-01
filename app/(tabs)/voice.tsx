@@ -351,9 +351,14 @@ function SoundPostcard({
   onToggleExpand,
   isReplying,
   onToggleReply,
+  replyMode,
+  onReplyModeChange,
   replyText,
   onReplyTextChange,
   onSubmitReply,
+  isRecording,
+  onRecordStart,
+  onRecordEnd,
 }: {
   item: typeof SOUND_POSTCARDS[0];
   comments: CommentItem[];
@@ -364,9 +369,14 @@ function SoundPostcard({
   onToggleExpand: () => void;
   isReplying: boolean;
   onToggleReply: () => void;
+  replyMode: "text" | "mixed" | "voice";
+  onReplyModeChange: (m: "text" | "mixed" | "voice") => void;
   replyText: string;
   onReplyTextChange: (t: string) => void;
   onSubmitReply: () => void;
+  isRecording: boolean;
+  onRecordStart: () => void;
+  onRecordEnd: () => void;
 }) {
   return (
     <View style={styles.postcardCard}>
@@ -460,22 +470,71 @@ function SoundPostcard({
 
       {isReplying && (
         <View style={styles.postcardReplyBox}>
-          <TextInput
-            style={styles.postcardReplyInput}
-            placeholder="写下你的文字留言..."
-            placeholderTextColor={Colors.light.textSecondary}
-            value={replyText}
-            onChangeText={onReplyTextChange}
-            multiline
-            autoFocus
-          />
-          <Pressable
-            style={[styles.postcardReplySend, replyText.trim().length === 0 && { opacity: 0.4 }]}
-            onPress={onSubmitReply}
-            disabled={replyText.trim().length === 0}
-          >
-            <Text style={styles.postcardReplySendText}>发送</Text>
-          </Pressable>
+          <View style={styles.replyModeBar}>
+            <Pressable
+              style={[styles.replyModeBtn, replyMode === "text" && styles.replyModeBtnActive]}
+              onPress={() => { onReplyModeChange("text"); haptic(); }}
+            >
+              <Ionicons name="chatbubble-outline" size={14} color={replyMode === "text" ? "#fff" : Colors.light.textSecondary} />
+            </Pressable>
+            <Pressable
+              style={[styles.replyModeBtn, replyMode === "mixed" && styles.replyModeBtnActive]}
+              onPress={() => { onReplyModeChange("mixed"); haptic(); }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                <Ionicons name="chatbubble-outline" size={11} color={replyMode === "mixed" ? "#fff" : Colors.light.textSecondary} />
+                <Text style={{ fontSize: 9, color: replyMode === "mixed" ? "#fff" : Colors.light.textSecondary, fontWeight: "700" }}>+</Text>
+                <Ionicons name="mic-outline" size={11} color={replyMode === "mixed" ? "#fff" : Colors.light.textSecondary} />
+              </View>
+            </Pressable>
+            <Pressable
+              style={[styles.replyModeBtn, replyMode === "voice" && styles.replyModeBtnActive]}
+              onPress={() => { onReplyModeChange("voice"); haptic(); }}
+            >
+              <Ionicons name="mic-outline" size={14} color={replyMode === "voice" ? "#fff" : Colors.light.textSecondary} />
+            </Pressable>
+          </View>
+
+          {replyMode === "voice" ? (
+            <Pressable
+              style={[styles.replyMicArea, isRecording && styles.replyMicAreaActive]}
+              onPressIn={() => { onRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+              onPressOut={onRecordEnd}
+            >
+              <Ionicons name="mic" size={30} color={isRecording ? "#fff" : Colors.light.primary} />
+              <Text style={[styles.replyMicAreaLabel, isRecording && { color: "#fff" }]}>
+                {isRecording ? "录音中 · 松开发送" : "按住录音"}
+              </Text>
+            </Pressable>
+          ) : (
+            <View style={styles.replyInputRow}>
+              <TextInput
+                style={styles.postcardReplyInput}
+                placeholder="写下你的文字留言..."
+                placeholderTextColor={Colors.light.textSecondary}
+                value={replyText}
+                onChangeText={onReplyTextChange}
+                multiline
+                autoFocus={replyMode === "text"}
+              />
+              {replyMode === "mixed" && (
+                <Pressable
+                  style={[styles.replyMicBtn, isRecording && styles.replyMicBtnActive]}
+                  onPressIn={() => { onRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+                  onPressOut={onRecordEnd}
+                >
+                  <Ionicons name="mic" size={16} color={isRecording ? "#fff" : Colors.light.primary} />
+                </Pressable>
+              )}
+              <Pressable
+                style={[styles.postcardReplySend, replyText.trim().length === 0 && { opacity: 0.4 }]}
+                onPress={onSubmitReply}
+                disabled={replyText.trim().length === 0}
+              >
+                <Text style={styles.postcardReplySendText}>发送</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -493,6 +552,8 @@ function DiscoverOthersTab() {
   );
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
+  const [replyMode, setReplyMode] = useState<"text" | "mixed" | "voice">("text");
+  const [isRecording, setIsRecording] = useState(false);
 
   const toggleLike = (id: string) => {
     setLikedIds((prev) => {
@@ -514,10 +575,36 @@ function DiscoverOthersTab() {
     if (replyingToId === id) {
       setReplyingToId(null);
       setReplyText("");
+      setReplyMode("text");
+      setIsRecording(false);
     } else {
       setReplyingToId(id);
       setReplyText("");
+      setReplyMode("text");
+      setIsRecording(false);
     }
+  };
+
+  const submitVoiceReply = (postcardId: string) => {
+    if (!isRecording) return;
+    const now = new Date();
+    const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const dur = `00:${String(Math.floor(Math.random() * 25) + 5).padStart(2, "0")}`;
+    const newComment: VoiceComment = {
+      id: Date.now().toString(),
+      type: "voice",
+      title: "我的语音留言",
+      duration: dur,
+      date: time,
+      phone: "我",
+    };
+    setCommentsByPostcard((prev) => ({
+      ...prev,
+      [postcardId]: [...(prev[postcardId] ?? []), newComment],
+    }));
+    setExpandedIds((prev) => ({ ...prev, [postcardId]: true }));
+    setIsRecording(false);
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
   const submitReply = (postcardId: string) => {
@@ -567,9 +654,14 @@ function DiscoverOthersTab() {
           onToggleExpand={() => toggleExpand(p.id)}
           isReplying={replyingToId === p.id}
           onToggleReply={() => toggleReply(p.id)}
+          replyMode={replyMode}
+          onReplyModeChange={setReplyMode}
           replyText={replyingToId === p.id ? replyText : ""}
           onReplyTextChange={setReplyText}
           onSubmitReply={() => submitReply(p.id)}
+          isRecording={isRecording}
+          onRecordStart={() => setIsRecording(true)}
+          onRecordEnd={() => submitVoiceReply(p.id)}
         />
       ))}
 
@@ -1108,8 +1200,7 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
   postcardReplyBox: {
-    flexDirection: "row",
-    alignItems: "flex-end",
+    flexDirection: "column",
     marginHorizontal: 12,
     marginBottom: 12,
     marginTop: 4,
@@ -1119,7 +1210,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.light.primary + "40",
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
+  },
+  replyModeBar: {
+    flexDirection: "row",
+    gap: 6,
+    alignSelf: "flex-start",
+  },
+  replyModeBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    backgroundColor: "#E8E8EE",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 36,
+  },
+  replyModeBtnActive: {
+    backgroundColor: Colors.light.primary,
+  },
+  replyInputRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
   },
   postcardReplyInput: {
     flex: 1,
@@ -1128,6 +1241,40 @@ const styles = StyleSheet.create({
     maxHeight: 80,
     paddingTop: 0,
     paddingBottom: 0,
+  },
+  replyMicBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1.5,
+    borderColor: Colors.light.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F0FAF4",
+  },
+  replyMicBtnActive: {
+    backgroundColor: Colors.light.primary,
+    borderColor: Colors.light.primary,
+  },
+  replyMicArea: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 18,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.light.primary,
+    borderStyle: "dashed",
+    gap: 6,
+    backgroundColor: "#F0FAF4",
+  },
+  replyMicAreaActive: {
+    backgroundColor: Colors.light.primary,
+    borderStyle: "solid",
+  },
+  replyMicAreaLabel: {
+    fontSize: 13,
+    color: Colors.light.primary,
+    fontWeight: "500",
   },
   postcardReplySend: {
     backgroundColor: Colors.light.primary,
