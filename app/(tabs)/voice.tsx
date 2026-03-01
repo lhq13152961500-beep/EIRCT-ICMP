@@ -215,8 +215,7 @@ function DiaryGroup({
           style={styles.diaryReplyBtn}
           onPress={() => haptic(Haptics.ImpactFeedbackStyle.Medium)}
         >
-          <Ionicons name="chatbubble-ellipses-outline" size={15} color={Colors.light.primary} />
-          <Text style={styles.diaryReplyBtnText}>回复</Text>
+          <Ionicons name="chatbubble-ellipses-outline" size={20} color={Colors.light.primary} />
         </Pressable>
       </View>
 
@@ -641,20 +640,14 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   diaryReplyBtn: {
-    flexDirection: "row",
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: "center",
-    gap: 3,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
+    justifyContent: "center",
+    backgroundColor: "#F0FAF4",
     borderWidth: 1,
     borderColor: Colors.light.primary,
-    backgroundColor: "#F0FAF4",
-  },
-  diaryReplyBtnText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: Colors.light.primary,
   },
   diaryStatsRow: {
     flexDirection: "row",
