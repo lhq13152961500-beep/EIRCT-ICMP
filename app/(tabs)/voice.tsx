@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { Audio } from "expo-av";
 import Colors from "@/constants/colors";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -20,6 +21,38 @@ const TAB_BAR_HEIGHT = 80;
 
 function haptic(style = Haptics.ImpactFeedbackStyle.Light) {
   if (Platform.OS !== "web") Haptics.impactAsync(style);
+}
+
+// ─── Audio Manager ────────────────────────────────────────────────────────────
+const DEMO_AUDIO_URLS = [
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3",
+];
+function getDemoAudio(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h += seed.charCodeAt(i);
+  return DEMO_AUDIO_URLS[h % DEMO_AUDIO_URLS.length];
+}
+
+let _gSound: Audio.Sound | null = null;
+let _gStop: (() => void) | null = null;
+async function stopGlobalAudio() {
+  if (_gSound) {
+    try { await _gSound.stopAsync(); await _gSound.unloadAsync(); } catch {}
+    _gSound = null;
+  }
+  if (_gStop) { _gStop(); _gStop = null; }
+}
+let _audioModeSet = false;
+async function ensureAudioMode() {
+  if (_audioModeSet) return;
+  try {
+    await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, staysActiveInBackground: false });
+    _audioModeSet = true;
+  } catch {}
 }
 
 // ─── Data ────────────────────────────────────────────────────────────────────
@@ -145,33 +178,108 @@ const CONVERSATION_CHAIN = [
 
 // ─── Small shared components ──────────────────────────────────────────────────
 
-function PlayButton({ size = 36, color = Colors.light.primary }: { size?: number; color?: string }) {
+function PlayButton({ size = 36, color = Colors.light.primary, audioUrl }: { size?: number; color?: string; audioUrl?: string }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  useEffect(() => {
+    return () => { soundRef.current?.unloadAsync().catch(() => {}); };
+  }, []);
+
+  const toggle = async () => {
+    haptic();
+    if (!audioUrl) return;
+    if (isPlaying) {
+      try { await soundRef.current?.pauseAsync(); } catch {}
+      setIsPlaying(false);
+      return;
+    }
+    await stopGlobalAudio();
+    await ensureAudioMode();
+    try {
+      const { sound } = await Audio.Sound.createAsync({ uri: audioUrl }, { shouldPlay: true });
+      soundRef.current = sound;
+      _gSound = sound;
+      _gStop = () => setIsPlaying(false);
+      setIsPlaying(true);
+      sound.setOnPlaybackStatusUpdate((s) => {
+        if (s.isLoaded && s.didJustFinish) {
+          setIsPlaying(false);
+          if (_gSound === sound) _gSound = null;
+        }
+      });
+    } catch (e) { console.warn("PlayButton audio error:", e); }
+  };
+
   return (
     <Pressable
       style={[styles.playBtn, { width: size, height: size, borderRadius: size / 2, borderColor: color }]}
-      onPress={() => haptic()}
+      onPress={toggle}
     >
-      <Ionicons name="play" size={size * 0.45} color={color} />
+      <Ionicons name={isPlaying ? "pause" : "play"} size={size * 0.45} color={color} />
     </Pressable>
   );
 }
 
-function ProgressBar({ progress, total, color = Colors.light.primary }: { progress: number; total: string; color?: string }) {
-  const elapsed = (() => {
+function ProgressBar({ progress: initProgress, total, color = Colors.light.primary, audioUrl }: { progress: number; total: string; color?: string; audioUrl?: string }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [liveProgress, setLiveProgress] = useState(initProgress);
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  const totalSec = useMemo(() => {
     const parts = total.split(":").map(Number);
-    const totalSec = parts[0] * 60 + parts[1];
-    const elapsedSec = Math.floor(totalSec * progress);
-    const m = Math.floor(elapsedSec / 60).toString().padStart(2, "0");
-    const s = (elapsedSec % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
-  })();
+    return parts[0] * 60 + (parts[1] || 0);
+  }, [total]);
+
+  const elapsed = useMemo(() => {
+    const sec = Math.floor(totalSec * liveProgress);
+    return `${Math.floor(sec / 60).toString().padStart(2, "0")}:${(sec % 60).toString().padStart(2, "0")}`;
+  }, [totalSec, liveProgress]);
+
+  useEffect(() => {
+    return () => { soundRef.current?.unloadAsync().catch(() => {}); };
+  }, []);
+
+  const toggle = async () => {
+    haptic();
+    if (!audioUrl) return;
+    if (isPlaying) {
+      try { await soundRef.current?.pauseAsync(); } catch {}
+      setIsPlaying(false);
+      return;
+    }
+    await stopGlobalAudio();
+    await ensureAudioMode();
+    try {
+      const { sound } = await Audio.Sound.createAsync({ uri: audioUrl }, { shouldPlay: true });
+      soundRef.current = sound;
+      _gSound = sound;
+      _gStop = () => { setIsPlaying(false); setLiveProgress(initProgress); };
+      setIsPlaying(true);
+      sound.setOnPlaybackStatusUpdate((s) => {
+        if (!s.isLoaded) return;
+        if (s.didJustFinish) {
+          setIsPlaying(false);
+          setLiveProgress(0);
+          if (_gSound === sound) _gSound = null;
+        } else if (s.durationMillis && s.durationMillis > 0) {
+          setLiveProgress(s.positionMillis / s.durationMillis);
+        }
+      });
+    } catch (e) { console.warn("ProgressBar audio error:", e); }
+  };
 
   return (
     <View style={styles.progressRow}>
-      <PlayButton size={28} color={color} />
+      <Pressable
+        style={[styles.playBtn, { width: 28, height: 28, borderRadius: 14, borderColor: color }]}
+        onPress={toggle}
+      >
+        <Ionicons name={isPlaying ? "pause" : "play"} size={13} color={color} />
+      </Pressable>
       <View style={styles.progressTrackWrap}>
-        <View style={[styles.progressTrack]}>
-          <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` as any, backgroundColor: color }]} />
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${Math.round(liveProgress * 100)}%` as any, backgroundColor: color }]} />
         </View>
         <Text style={styles.progressTime}>{elapsed} / {total}</Text>
       </View>
@@ -194,6 +302,7 @@ function DiaryReplyItem({
   isRecording,
   onRecordStart,
   onRecordEnd,
+  audioUrl,
 }: {
   item: typeof MY_DIARY_GROUPS[0]["replies"][0];
   subReplies: SubReply[];
@@ -207,6 +316,7 @@ function DiaryReplyItem({
   isRecording: boolean;
   onRecordStart: () => void;
   onRecordEnd: () => void;
+  audioUrl?: string;
 }) {
   return (
     <View>
@@ -223,9 +333,7 @@ function DiaryReplyItem({
           </View>
         </View>
         <View style={styles.replyBtnRow}>
-          <Pressable onPress={() => haptic()} style={styles.replyPlayBtn}>
-            <Ionicons name="play" size={14} color={Colors.light.primary} />
-          </Pressable>
+          <PlayButton size={28} audioUrl={audioUrl} />
           <Pressable
             onPress={() => { onToggleReply(); haptic(Haptics.ImpactFeedbackStyle.Medium); }}
             style={[styles.replyCommentBtn, isReplying && styles.replyCommentBtnActive]}
@@ -405,7 +513,7 @@ function DiaryGroup({
             <Text style={styles.diaryMainMetaText}>{group.duration}</Text>
           </View>
         </View>
-        <PlayButton size={32} />
+        <PlayButton size={32} audioUrl={getDemoAudio(group.id)} />
       </View>
 
       <View style={styles.diaryStatsRow}>
@@ -446,6 +554,7 @@ function DiaryGroup({
               isRecording={replyingToId === r.id && isRecording}
               onRecordStart={() => setIsRecording(true)}
               onRecordEnd={() => submitVoiceReply(r.id, r.phone)}
+              audioUrl={getDemoAudio(r.id)}
             />
           ))}
         </View>
@@ -744,7 +853,7 @@ function SoundPostcard({
         </View>
       ) : (
         <View style={styles.postcardProgress}>
-          <ProgressBar progress={item.progress} total={item.duration} />
+          <ProgressBar progress={item.progress} total={item.duration} audioUrl={getDemoAudio(item.id)} />
         </View>
       )}
 
@@ -1118,7 +1227,7 @@ function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]
           </View>
           <Text style={styles.convAction} numberOfLines={1}>{item.action}</Text>
           <Text style={styles.convText} numberOfLines={2}>{item.text}</Text>
-          <ProgressBar progress={item.progress} total={item.total} />
+          <ProgressBar progress={item.progress} total={item.total} audioUrl={getDemoAudio(item.id)} />
           <View style={styles.convFooter}>
             <Text style={styles.convDate}>{item.date}</Text>
             <View style={styles.convActions}>
