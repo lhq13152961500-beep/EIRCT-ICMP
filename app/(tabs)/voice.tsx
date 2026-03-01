@@ -1294,7 +1294,7 @@ function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]
             <View style={styles.convActions}>
               <Pressable style={[styles.convActionBtn, isReplying && styles.convActionBtnActive]} onPress={toggleReply}>
                 <MaterialCommunityIcons name="chat-outline" size={14} color={isReplying ? Colors.light.primary : Colors.light.textSecondary} />
-                <Text style={[styles.convActionText, isReplying && { color: Colors.light.primary }]}>回图</Text>
+                <Text style={[styles.convActionText, isReplying && { color: Colors.light.primary }]}>回复</Text>
               </Pressable>
               <Pressable style={styles.convActionBtn} onPress={handleLike}>
                 <Ionicons name={isLiked ? "heart" : "heart-outline"} size={14} color={isLiked ? "#FF4D6A" : Colors.light.textSecondary} />
