@@ -304,39 +304,113 @@ function MyDiaryTab() {
 type VoiceComment = { id: string; type: "voice"; title: string; duration: string; date: string; phone: string };
 type TextComment  = { id: string; type: "text";  username: string; time: string; text: string };
 type CommentItem  = VoiceComment | TextComment;
+type SubReply     = { id: string; username: string; time: string; text: string; replyTo: string };
 
 // ─── Sound Postcard Card ──────────────────────────────────────────────────────
 
-function PostcardComment({ item }: { item: CommentItem }) {
+function PostcardComment({
+  item,
+  subReplies,
+  isReplying,
+  replyText,
+  onReplyTextChange,
+  onPress,
+  onSubmitReply,
+}: {
+  item: CommentItem;
+  subReplies: SubReply[];
+  isReplying: boolean;
+  replyText: string;
+  onReplyTextChange: (t: string) => void;
+  onPress: () => void;
+  onSubmitReply: () => void;
+}) {
   const isVoice = item.type === "voice";
   const name = isVoice ? item.phone : item.username;
   const time = isVoice ? item.date : item.time;
 
   return (
-    <View style={styles.uniComment}>
-      <View style={[styles.uniCommentAvatar, isVoice && styles.uniCommentAvatarVoice]}>
-        <Ionicons name={isVoice ? "mic" : "person"} size={12} color="#fff" />
-      </View>
-      <View style={styles.uniCommentBody}>
-        <View style={styles.uniCommentHeader}>
-          <Text style={styles.uniCommentName}>{name}</Text>
-          <Text style={styles.uniCommentTime}>{time}</Text>
+    <View style={[styles.uniComment, isReplying && styles.uniCommentActive]}>
+      <Pressable
+        style={styles.uniCommentPressable}
+        onPress={() => { onPress(); haptic(); }}
+      >
+        <View style={[styles.uniCommentAvatar, isVoice && styles.uniCommentAvatarVoice]}>
+          <Ionicons name={isVoice ? "mic" : "person"} size={12} color="#fff" />
         </View>
-        {isVoice ? (
-          <View style={styles.uniCommentVoiceRow}>
-            <Ionicons name="musical-note" size={11} color={Colors.light.primary} />
-            <Text style={styles.uniCommentVoiceTitle} numberOfLines={1}>{item.title}</Text>
-            <View style={styles.uniCommentVoiceDuration}>
-              <Text style={styles.uniCommentVoiceDurationText}>{item.duration}</Text>
+        <View style={styles.uniCommentBody}>
+          <View style={styles.uniCommentHeader}>
+            <Text style={styles.uniCommentName}>{name}</Text>
+            <Text style={styles.uniCommentTime}>{time}</Text>
+            <View style={styles.uniCommentReplyHint}>
+              <Ionicons
+                name="chatbubble-outline"
+                size={11}
+                color={isReplying ? Colors.light.primary : Colors.light.textSecondary}
+              />
+              {subReplies.length > 0 && (
+                <Text style={[styles.uniCommentReplyHintCount, isReplying && { color: Colors.light.primary }]}>
+                  {subReplies.length}
+                </Text>
+              )}
             </View>
-            <Pressable onPress={() => haptic()} style={styles.uniCommentPlayBtn}>
-              <Ionicons name="play" size={11} color={Colors.light.primary} />
-            </Pressable>
           </View>
-        ) : (
-          <Text style={styles.uniCommentText}>{item.text}</Text>
-        )}
-      </View>
+          {isVoice ? (
+            <View style={styles.uniCommentVoiceRow}>
+              <Ionicons name="musical-note" size={11} color={Colors.light.primary} />
+              <Text style={styles.uniCommentVoiceTitle} numberOfLines={1}>{item.title}</Text>
+              <View style={styles.uniCommentVoiceDuration}>
+                <Text style={styles.uniCommentVoiceDurationText}>{item.duration}</Text>
+              </View>
+              <Pressable onPress={() => haptic()} style={styles.uniCommentPlayBtn}>
+                <Ionicons name="play" size={11} color={Colors.light.primary} />
+              </Pressable>
+            </View>
+          ) : (
+            <Text style={styles.uniCommentText}>{item.text}</Text>
+          )}
+        </View>
+      </Pressable>
+
+      {subReplies.length > 0 && (
+        <View style={styles.subReplyList}>
+          {subReplies.map((r) => (
+            <View key={r.id} style={styles.subReplyItem}>
+              <View style={styles.subReplyAvatar}>
+                <Ionicons name="person" size={9} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.subReplyMeta}>{r.username} · {r.time}</Text>
+                <Text style={styles.subReplyText}>
+                  <Text style={styles.subReplyAt}>@{r.replyTo} </Text>
+                  {r.text}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {isReplying && (
+        <View style={styles.commentReplyBox}>
+          <TextInput
+            style={styles.commentReplyInput}
+            placeholder={`回复 @${name}...`}
+            placeholderTextColor={Colors.light.textSecondary}
+            value={replyText}
+            onChangeText={onReplyTextChange}
+            autoFocus
+            multiline
+          />
+          <Pressable
+            style={[styles.commentReplySend, replyText.trim().length === 0 && { opacity: 0.4 }]}
+            onPress={onSubmitReply}
+            disabled={replyText.trim().length === 0}
+          >
+            <Text style={styles.commentReplySendText}>回复</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -359,6 +433,12 @@ function SoundPostcard({
   isRecording,
   onRecordStart,
   onRecordEnd,
+  subRepliesByComment,
+  replyingToCommentId,
+  onReplyToComment,
+  commentReplyText,
+  onCommentReplyTextChange,
+  onSubmitCommentReply,
 }: {
   item: typeof SOUND_POSTCARDS[0];
   comments: CommentItem[];
@@ -377,6 +457,12 @@ function SoundPostcard({
   isRecording: boolean;
   onRecordStart: () => void;
   onRecordEnd: () => void;
+  subRepliesByComment: Record<string, SubReply[]>;
+  replyingToCommentId: string | null;
+  onReplyToComment: (commentId: string) => void;
+  commentReplyText: string;
+  onCommentReplyTextChange: (t: string) => void;
+  onSubmitCommentReply: (commentId: string) => void;
 }) {
   return (
     <View style={styles.postcardCard}>
@@ -463,7 +549,16 @@ function SoundPostcard({
         <View style={styles.postcardCommentList}>
           <Text style={styles.postcardCommentTitle}>留言 · {comments.length} 条</Text>
           {comments.map((c) => (
-            <PostcardComment key={c.id} item={c} />
+            <PostcardComment
+              key={c.id}
+              item={c}
+              subReplies={subRepliesByComment[c.id] ?? []}
+              isReplying={replyingToCommentId === c.id}
+              replyText={replyingToCommentId === c.id ? commentReplyText : ""}
+              onReplyTextChange={onCommentReplyTextChange}
+              onPress={() => onReplyToComment(c.id)}
+              onSubmitReply={() => onSubmitCommentReply(c.id)}
+            />
           ))}
         </View>
       )}
@@ -554,6 +649,9 @@ function DiscoverOthersTab() {
   const [replyText, setReplyText] = useState("");
   const [replyMode, setReplyMode] = useState<"text" | "mixed" | "voice">("text");
   const [isRecording, setIsRecording] = useState(false);
+  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
+  const [commentReplyText, setCommentReplyText] = useState("");
+  const [subRepliesByComment, setSubRepliesByComment] = useState<Record<string, SubReply[]>>({});
 
   const toggleLike = (id: string) => {
     setLikedIds((prev) => {
@@ -628,6 +726,41 @@ function DiscoverOthersTab() {
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
+  const replyToComment = (commentId: string) => {
+    if (replyingToCommentId === commentId) {
+      setReplyingToCommentId(null);
+      setCommentReplyText("");
+    } else {
+      setReplyingToCommentId(commentId);
+      setCommentReplyText("");
+    }
+  };
+
+  const submitCommentReply = (commentId: string) => {
+    if (!commentReplyText.trim()) return;
+    const now = new Date();
+    const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const allComments = Object.values(commentsByPostcard).flat();
+    const target = allComments.find((c) => c.id === commentId);
+    const replyTo = target
+      ? target.type === "voice" ? target.phone : target.username
+      : "对方";
+    const newReply: SubReply = {
+      id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+      username: "我",
+      time,
+      text: commentReplyText.trim(),
+      replyTo,
+    };
+    setSubRepliesByComment((prev) => ({
+      ...prev,
+      [commentId]: [...(prev[commentId] ?? []), newReply],
+    }));
+    setReplyingToCommentId(null);
+    setCommentReplyText("");
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
@@ -662,6 +795,12 @@ function DiscoverOthersTab() {
           isRecording={isRecording}
           onRecordStart={() => setIsRecording(true)}
           onRecordEnd={() => submitVoiceReply(p.id)}
+          subRepliesByComment={subRepliesByComment}
+          replyingToCommentId={replyingToCommentId}
+          onReplyToComment={replyToComment}
+          commentReplyText={commentReplyText}
+          onCommentReplyTextChange={setCommentReplyText}
+          onSubmitCommentReply={submitCommentReply}
         />
       ))}
 
@@ -1305,12 +1444,23 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   uniComment: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
+    flexDirection: "column",
     paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: "#EBEBEB",
+    borderRadius: 8,
+  },
+  uniCommentActive: {
+    backgroundColor: "#F0FAF4",
+    borderBottomColor: Colors.light.primary + "30",
+    paddingHorizontal: 6,
+    paddingTop: 4,
+    marginHorizontal: -6,
+  },
+  uniCommentPressable: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
   },
   uniCommentAvatar: {
     width: 26,
@@ -1341,6 +1491,17 @@ const styles = StyleSheet.create({
   uniCommentTime: {
     fontSize: 10,
     color: Colors.light.textSecondary,
+    flex: 1,
+  },
+  uniCommentReplyHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  uniCommentReplyHintCount: {
+    fontSize: 10,
+    color: Colors.light.textSecondary,
+    fontWeight: "600",
   },
   uniCommentText: {
     fontSize: 13,
@@ -1378,6 +1539,76 @@ const styles = StyleSheet.create({
     borderColor: Colors.light.primary,
     alignItems: "center",
     justifyContent: "center",
+  },
+  subReplyList: {
+    marginLeft: 34,
+    marginTop: 6,
+    gap: 6,
+  },
+  subReplyItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    backgroundColor: "#F3F7F5",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  subReplyAvatar: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: Colors.light.primary + "99",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  subReplyMeta: {
+    fontSize: 10,
+    color: Colors.light.textSecondary,
+    marginBottom: 2,
+  },
+  subReplyText: {
+    fontSize: 12,
+    color: Colors.light.text,
+    lineHeight: 17,
+  },
+  subReplyAt: {
+    color: Colors.light.primary,
+    fontWeight: "600",
+  },
+  commentReplyBox: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginLeft: 34,
+    marginTop: 8,
+    gap: 6,
+    backgroundColor: "#EEF8F2",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.light.primary + "50",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  commentReplyInput: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.light.text,
+    maxHeight: 60,
+    paddingTop: 0,
+    paddingBottom: 0,
+  },
+  commentReplySend: {
+    backgroundColor: Colors.light.primary,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  commentReplySendText: {
+    fontSize: 12,
+    color: "#fff",
+    fontWeight: "700",
   },
   deliveryNote: {
     alignItems: "center",
