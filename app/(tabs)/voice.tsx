@@ -398,47 +398,43 @@ function PostcardComment({
       )}
 
       {isReplying && (
-        <View style={styles.commentReplyBox}>
-          <View style={styles.replyModeBar}>
-            <Pressable
-              style={[styles.replyModeBtn, commentReplyMode === "text" && styles.replyModeBtnActive]}
-              onPress={() => { onCommentReplyModeChange("text"); haptic(); }}
-            >
-              <Ionicons name="chatbubble-outline" size={13} color={commentReplyMode === "text" ? "#fff" : Colors.light.textSecondary} />
-            </Pressable>
-            <Pressable
-              style={[styles.replyModeBtn, commentReplyMode === "mixed" && styles.replyModeBtnActive]}
-              onPress={() => { onCommentReplyModeChange("mixed"); haptic(); }}
-            >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
-                <Ionicons name="chatbubble-outline" size={10} color={commentReplyMode === "mixed" ? "#fff" : Colors.light.textSecondary} />
-                <Text style={{ fontSize: 9, color: commentReplyMode === "mixed" ? "#fff" : Colors.light.textSecondary, fontWeight: "700" }}>+</Text>
-                <Ionicons name="mic-outline" size={10} color={commentReplyMode === "mixed" ? "#fff" : Colors.light.textSecondary} />
-              </View>
-            </Pressable>
-            <Pressable
-              style={[styles.replyModeBtn, commentReplyMode === "voice" && styles.replyModeBtnActive]}
-              onPress={() => { onCommentReplyModeChange("voice"); haptic(); }}
-            >
-              <Ionicons name="mic-outline" size={13} color={commentReplyMode === "voice" ? "#fff" : Colors.light.textSecondary} />
-            </Pressable>
+        <View style={styles.commentReplyCard}>
+          <View style={styles.commentReplySegment}>
+            {(["text", "mixed", "voice"] as const).map((mode) => {
+              const active = commentReplyMode === mode;
+              const label = mode === "text" ? "文字" : mode === "mixed" ? "文字+语音" : "纯语音";
+              const icon: "chatbubble-ellipses-outline" | "musical-notes-outline" | "mic-outline" =
+                mode === "text" ? "chatbubble-ellipses-outline" : mode === "mixed" ? "musical-notes-outline" : "mic-outline";
+              return (
+                <Pressable
+                  key={mode}
+                  style={[styles.commentReplySegBtn, active && styles.commentReplySegBtnActive]}
+                  onPress={() => { onCommentReplyModeChange(mode); haptic(); }}
+                >
+                  <Ionicons name={icon} size={12} color={active ? Colors.light.primary : Colors.light.textSecondary} />
+                  <Text style={[styles.commentReplySegLabel, active && styles.commentReplySegLabelActive]}>{label}</Text>
+                </Pressable>
+              );
+            })}
           </View>
 
           {commentReplyMode === "voice" ? (
             <Pressable
-              style={[styles.replyMicArea, isCommentRecording && styles.replyMicAreaActive]}
+              style={[styles.commentReplyMicArea, isCommentRecording && styles.commentReplyMicAreaActive]}
               onPressIn={() => { onCommentRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
               onPressOut={onCommentRecordEnd}
             >
-              <Ionicons name="mic" size={26} color={isCommentRecording ? "#fff" : Colors.light.primary} />
-              <Text style={[styles.replyMicAreaLabel, isCommentRecording && { color: "#fff" }]}>
-                {isCommentRecording ? "录音中 · 松开发送" : "按住录音"}
+              <View style={[styles.commentReplyMicRing, isCommentRecording && styles.commentReplyMicRingActive]}>
+                <Ionicons name="mic" size={22} color={isCommentRecording ? "#fff" : Colors.light.primary} />
+              </View>
+              <Text style={[styles.commentReplyMicLabel, isCommentRecording && { color: "#fff" }]}>
+                {isCommentRecording ? "录音中 · 松开发送" : "按住开始录音"}
               </Text>
             </Pressable>
           ) : (
-            <View style={styles.replyInputRow}>
+            <View style={styles.commentReplyInputArea}>
               <TextInput
-                style={styles.commentReplyInput}
+                style={styles.commentReplyTextInput}
                 placeholder={`回复 @${name}...`}
                 placeholderTextColor={Colors.light.textSecondary}
                 value={replyText}
@@ -446,22 +442,24 @@ function PostcardComment({
                 autoFocus={commentReplyMode === "text"}
                 multiline
               />
-              {commentReplyMode === "mixed" && (
+              <View style={styles.commentReplyActions}>
+                {commentReplyMode === "mixed" && (
+                  <Pressable
+                    style={[styles.commentReplyMicSmall, isCommentRecording && styles.commentReplyMicSmallActive]}
+                    onPressIn={() => { onCommentRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+                    onPressOut={onCommentRecordEnd}
+                  >
+                    <Ionicons name="mic" size={14} color={isCommentRecording ? "#fff" : Colors.light.primary} />
+                  </Pressable>
+                )}
                 <Pressable
-                  style={[styles.replyMicBtn, isCommentRecording && styles.replyMicBtnActive]}
-                  onPressIn={() => { onCommentRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
-                  onPressOut={onCommentRecordEnd}
+                  style={[styles.commentReplySendBtn, replyText.trim().length === 0 && { opacity: 0.38 }]}
+                  onPress={onSubmitReply}
+                  disabled={replyText.trim().length === 0}
                 >
-                  <Ionicons name="mic" size={15} color={isCommentRecording ? "#fff" : Colors.light.primary} />
+                  <Ionicons name="arrow-up" size={15} color="#fff" />
                 </Pressable>
-              )}
-              <Pressable
-                style={[styles.commentReplySend, replyText.trim().length === 0 && { opacity: 0.4 }]}
-                onPress={onSubmitReply}
-                disabled={replyText.trim().length === 0}
-              >
-                <Text style={styles.commentReplySendText}>回复</Text>
-              </Pressable>
+              </View>
             </View>
           )}
         </View>
@@ -1779,37 +1777,119 @@ const styles = StyleSheet.create({
     color: Colors.light.primary,
     fontWeight: "600",
   },
-  commentReplyBox: {
+  commentReplyCard: {
+    marginLeft: 38,
+    marginTop: 10,
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#D6EEE0",
+    shadowColor: "#3DAA6F",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+    overflow: "hidden",
+  },
+  commentReplySegment: {
+    flexDirection: "row",
+    backgroundColor: "#F4FAF7",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2F0E8",
+  },
+  commentReplySegBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 9,
+    gap: 4,
+  },
+  commentReplySegBtnActive: {
+    backgroundColor: "#EAF7F0",
+    borderBottomWidth: 2,
+    borderBottomColor: Colors.light.primary,
+  },
+  commentReplySegLabel: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+    fontWeight: "500",
+  },
+  commentReplySegLabelActive: {
+    color: Colors.light.primary,
+    fontWeight: "700",
+  },
+  commentReplyInputArea: {
     flexDirection: "row",
     alignItems: "flex-end",
-    marginLeft: 34,
-    marginTop: 8,
-    gap: 6,
-    backgroundColor: "#EEF8F2",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: Colors.light.primary + "50",
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
   },
-  commentReplyInput: {
+  commentReplyTextInput: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 13.5,
     color: Colors.light.text,
-    maxHeight: 60,
+    maxHeight: 72,
+    lineHeight: 20,
     paddingTop: 0,
     paddingBottom: 0,
   },
-  commentReplySend: {
-    backgroundColor: Colors.light.primary,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+  commentReplyActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
-  commentReplySendText: {
-    fontSize: 12,
-    color: "#fff",
-    fontWeight: "700",
+  commentReplyMicSmall: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    borderColor: Colors.light.primary,
+    backgroundColor: "#EAF7F0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  commentReplyMicSmallActive: {
+    backgroundColor: Colors.light.primary,
+    borderColor: Colors.light.primary,
+  },
+  commentReplySendBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: Colors.light.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  commentReplyMicArea: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 22,
+    gap: 10,
+    backgroundColor: "#F7FCF9",
+  },
+  commentReplyMicAreaActive: {
+    backgroundColor: Colors.light.primary,
+  },
+  commentReplyMicRing: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#EAF7F0",
+    borderWidth: 2,
+    borderColor: Colors.light.primary + "40",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  commentReplyMicRingActive: {
+    backgroundColor: "rgba(255,255,255,0.25)",
+    borderColor: "rgba(255,255,255,0.5)",
+  },
+  commentReplyMicLabel: {
+    fontSize: 13,
+    color: Colors.light.primary,
+    fontWeight: "600",
   },
   myInteractionSection: {
     marginBottom: 8,
