@@ -643,10 +643,10 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   diaryBtnStack: {
-    flexDirection: "column",
+    flexDirection: "row",
     alignItems: "center",
     alignSelf: "center",
-    gap: 6,
+    gap: 8,
   },
   diaryReplyBtn: {
     width: 30,
