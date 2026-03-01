@@ -587,21 +587,31 @@ function DiaryGroup({
   const submitVoiceReply = async (itemId: string, phone: string) => {
     const { duration } = await stopRecording();
     setIsRecording(false);
-    const voicePart = `🎤 语音 ${duration}`;
-    const combinedText = replyText.trim()
-      ? `${replyText.trim()}\n${voicePart}`
-      : voicePart;
-    const newReply: SubReply = {
-      id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
-      username: "我",
-      time: nowStr(),
-      text: combinedText,
-      replyTo: phone,
-    };
-    setSubRepliesByItem((prev) => ({ ...prev, [itemId]: [...(prev[itemId] ?? []), newReply] }));
-    setReplyingToId(null);
-    setReplyText("");
-    haptic(Haptics.ImpactFeedbackStyle.Medium);
+    const capturedText = replyText;
+    const capturedNowStr = nowStr();
+    Alert.alert("录制完成", `时长 ${duration}，是否上传？`, [
+      { text: "取消", style: "cancel" },
+      {
+        text: "上传",
+        onPress: () => {
+          const voicePart = `🎤 语音 ${duration}`;
+          const combinedText = capturedText.trim()
+            ? `${capturedText.trim()}\n${voicePart}`
+            : voicePart;
+          const newReply: SubReply = {
+            id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+            username: "我",
+            time: capturedNowStr,
+            text: combinedText,
+            replyTo: phone,
+          };
+          setSubRepliesByItem((prev) => ({ ...prev, [itemId]: [...(prev[itemId] ?? []), newReply] }));
+          setReplyingToId(null);
+          setReplyText("");
+          haptic(Haptics.ImpactFeedbackStyle.Medium);
+        },
+      },
+    ]);
   };
 
   return (
@@ -1172,34 +1182,43 @@ function DiscoverOthersTab() {
   const submitVoiceReply = async (postcardId: string) => {
     const { duration } = await stopRecording();
     setIsRecording(false);
-    const time = nowStr();
-    let newComment: CommentItem;
-    if (replyText.trim()) {
-      newComment = {
-        id: Date.now().toString(),
-        type: "text",
-        username: "我",
-        time,
-        text: `${replyText.trim()}\n🎤 语音 ${duration}`,
-      } as TextComment;
-      setReplyText("");
-    } else {
-      newComment = {
-        id: Date.now().toString(),
-        type: "voice",
-        title: "我的语音留言",
-        duration,
-        date: time,
-        phone: "我",
-      } as VoiceComment;
-    }
-    setCommentsByPostcard((prev) => ({
-      ...prev,
-      [postcardId]: [...(prev[postcardId] ?? []), newComment],
-    }));
-    setExpandedIds((prev) => ({ ...prev, [postcardId]: true }));
-    setReplyingToId(null);
-    haptic(Haptics.ImpactFeedbackStyle.Medium);
+    const capturedText = replyText;
+    const capturedTime = nowStr();
+    Alert.alert("录制完成", `时长 ${duration}，是否上传？`, [
+      { text: "取消", style: "cancel" },
+      {
+        text: "上传",
+        onPress: () => {
+          let newComment: CommentItem;
+          if (capturedText.trim()) {
+            newComment = {
+              id: Date.now().toString(),
+              type: "text",
+              username: "我",
+              time: capturedTime,
+              text: `${capturedText.trim()}\n🎤 语音 ${duration}`,
+            } as TextComment;
+            setReplyText("");
+          } else {
+            newComment = {
+              id: Date.now().toString(),
+              type: "voice",
+              title: "我的语音留言",
+              duration,
+              date: capturedTime,
+              phone: "我",
+            } as VoiceComment;
+          }
+          setCommentsByPostcard((prev) => ({
+            ...prev,
+            [postcardId]: [...(prev[postcardId] ?? []), newComment],
+          }));
+          setExpandedIds((prev) => ({ ...prev, [postcardId]: true }));
+          setReplyingToId(null);
+          haptic(Haptics.ImpactFeedbackStyle.Medium);
+        },
+      },
+    ]);
   };
 
   const submitReply = (postcardId: string) => {
@@ -1244,24 +1263,34 @@ function DiscoverOthersTab() {
     const replyTo = target
       ? target.type === "voice" ? target.phone : target.username
       : "对方";
-    const voicePart = `🎤 语音 ${duration}`;
-    const combinedText = commentReplyText.trim()
-      ? `${commentReplyText.trim()}\n${voicePart}`
-      : voicePart;
-    const newReply: SubReply = {
-      id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
-      username: "我",
-      time: nowStr(),
-      text: combinedText,
-      replyTo,
-    };
-    setSubRepliesByComment((prev) => ({
-      ...prev,
-      [commentId]: [...(prev[commentId] ?? []), newReply],
-    }));
-    setCommentReplyText("");
-    setReplyingToCommentId(null);
-    haptic(Haptics.ImpactFeedbackStyle.Medium);
+    const capturedCommentText = commentReplyText;
+    const capturedTime = nowStr();
+    Alert.alert("录制完成", `时长 ${duration}，是否上传？`, [
+      { text: "取消", style: "cancel" },
+      {
+        text: "上传",
+        onPress: () => {
+          const voicePart = `🎤 语音 ${duration}`;
+          const combinedText = capturedCommentText.trim()
+            ? `${capturedCommentText.trim()}\n${voicePart}`
+            : voicePart;
+          const newReply: SubReply = {
+            id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+            username: "我",
+            time: capturedTime,
+            text: combinedText,
+            replyTo,
+          };
+          setSubRepliesByComment((prev) => ({
+            ...prev,
+            [commentId]: [...(prev[commentId] ?? []), newReply],
+          }));
+          setCommentReplyText("");
+          setReplyingToCommentId(null);
+          haptic(Haptics.ImpactFeedbackStyle.Medium);
+        },
+      },
+    ]);
   };
 
   const submitCommentReply = (commentId: string) => {
@@ -1378,9 +1407,18 @@ function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]
     if (ok) { setIsRecording(true); haptic(Haptics.ImpactFeedbackStyle.Heavy); }
   };
   const submitVoiceReply = async () => {
-    await stopRecording();
-    setIsReplying(false); setIsRecording(false);
-    haptic(Haptics.ImpactFeedbackStyle.Medium);
+    const { duration } = await stopRecording();
+    setIsRecording(false);
+    Alert.alert("录制完成", `时长 ${duration}，是否上传？`, [
+      { text: "取消", style: "cancel" },
+      {
+        text: "上传",
+        onPress: () => {
+          setIsReplying(false);
+          haptic(Haptics.ImpactFeedbackStyle.Medium);
+        },
+      },
+    ]);
   };
   const handleLike = () => {
     setIsLiked((v) => !v);
