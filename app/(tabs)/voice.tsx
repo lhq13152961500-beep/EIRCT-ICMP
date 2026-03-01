@@ -391,6 +391,8 @@ function DiaryReplyItem({
   isRecording,
   onRecordStart,
   onRecordEnd,
+  mixedVoiceDur,
+  onClearMixedVoice,
   audioUrl,
 }: {
   item: typeof MY_DIARY_GROUPS[0]["replies"][0];
@@ -405,6 +407,8 @@ function DiaryReplyItem({
   isRecording: boolean;
   onRecordStart: () => void;
   onRecordEnd: () => void;
+  mixedVoiceDur?: string | null;
+  onClearMixedVoice?: () => void;
   audioUrl?: string;
 }) {
   const [isLiked, setIsLiked] = useState(false);
@@ -511,18 +515,28 @@ function DiaryReplyItem({
               />
               <View style={styles.commentReplyActions}>
                 {replyMode === "mixed" && (
-                  <Pressable
-                    style={[styles.commentReplyMicSmall, isRecording && styles.commentReplyMicSmallActive]}
-                    onPressIn={() => { onRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
-                    onPressOut={onRecordEnd}
-                  >
-                    <Ionicons name="mic" size={14} color={isRecording ? "#fff" : Colors.light.primary} />
-                  </Pressable>
+                  mixedVoiceDur ? (
+                    <View style={styles.mixedVoiceChip}>
+                      <Ionicons name="mic" size={11} color="#fff" />
+                      <Text style={styles.mixedVoiceChipText}>{mixedVoiceDur}</Text>
+                      <Pressable onPress={onClearMixedVoice} hitSlop={6}>
+                        <Ionicons name="close" size={11} color="#fff" />
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Pressable
+                      style={[styles.commentReplyMicSmall, isRecording && styles.commentReplyMicSmallActive]}
+                      onPressIn={() => { onRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+                      onPressOut={onRecordEnd}
+                    >
+                      <Ionicons name="mic" size={14} color={isRecording ? "#fff" : Colors.light.primary} />
+                    </Pressable>
+                  )
                 )}
                 <Pressable
-                  style={[styles.commentReplySendBtn, replyText.trim().length === 0 && { opacity: 0.38 }]}
+                  style={[styles.commentReplySendBtn, (!replyText.trim() && !mixedVoiceDur) && { opacity: 0.38 }]}
                   onPress={onSubmitReply}
-                  disabled={replyText.trim().length === 0}
+                  disabled={!replyText.trim() && !mixedVoiceDur}
                 >
                   <Ionicons name="arrow-up" size={15} color="#fff" />
                 </Pressable>
@@ -548,6 +562,7 @@ function DiaryGroup({
   const [replyText, setReplyText] = useState("");
   const [replyMode, setReplyMode] = useState<"text" | "mixed" | "voice">("text");
   const [isRecording, setIsRecording] = useState(false);
+  const [mixedVoiceDur, setMixedVoiceDur] = useState<string | null>(null);
   const [subRepliesByItem, setSubRepliesByItem] = useState<Record<string, SubReply[]>>({});
 
   const nowStr = () => {
@@ -561,48 +576,57 @@ function DiaryGroup({
       setReplyText("");
       setReplyMode("text");
       setIsRecording(false);
+      setMixedVoiceDur(null);
     } else {
       setReplyingToId(itemId);
       setReplyText("");
       setReplyMode("text");
       setIsRecording(false);
+      setMixedVoiceDur(null);
     }
   };
 
   const submitReply = (itemId: string, phone: string) => {
-    if (!replyText.trim()) return;
+    const text = replyText.trim();
+    if (!text && !mixedVoiceDur) return;
+    const voicePart = mixedVoiceDur ? `🎤 语音 ${mixedVoiceDur}` : null;
+    const combinedText = voicePart
+      ? (text ? `${text}\n${voicePart}` : voicePart)
+      : text;
     const newReply: SubReply = {
       id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
       username: "我",
       time: nowStr(),
-      text: replyText.trim(),
+      text: combinedText,
       replyTo: phone,
     };
     setSubRepliesByItem((prev) => ({ ...prev, [itemId]: [...(prev[itemId] ?? []), newReply] }));
     setReplyingToId(null);
     setReplyText("");
+    setMixedVoiceDur(null);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const handleMixedRecordEnd = async () => {
+    const { duration } = await stopRecording();
+    setIsRecording(false);
+    setMixedVoiceDur(duration);
   };
 
   const submitVoiceReply = async (itemId: string, phone: string) => {
     const { duration } = await stopRecording();
     setIsRecording(false);
-    const capturedText = replyText;
     const capturedNowStr = nowStr();
     Alert.alert("录制完成", `时长 ${duration}，是否上传？`, [
       { text: "取消", style: "cancel" },
       {
         text: "上传",
         onPress: () => {
-          const voicePart = `🎤 语音 ${duration}`;
-          const combinedText = capturedText.trim()
-            ? `${capturedText.trim()}\n${voicePart}`
-            : voicePart;
           const newReply: SubReply = {
             id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
             username: "我",
             time: capturedNowStr,
-            text: combinedText,
+            text: `🎤 语音 ${duration}`,
             replyTo: phone,
           };
           setSubRepliesByItem((prev) => ({ ...prev, [itemId]: [...(prev[itemId] ?? []), newReply] }));
@@ -670,7 +694,12 @@ function DiaryGroup({
                 const ok = await startRecording();
                 if (ok) setIsRecording(true);
               }}
-              onRecordEnd={() => submitVoiceReply(r.id, r.phone)}
+              onRecordEnd={replyMode === "mixed"
+                ? handleMixedRecordEnd
+                : () => submitVoiceReply(r.id, r.phone)
+              }
+              mixedVoiceDur={replyingToId === r.id ? mixedVoiceDur : null}
+              onClearMixedVoice={() => setMixedVoiceDur(null)}
               audioUrl={getDemoAudio(r.id)}
             />
           ))}
@@ -733,6 +762,9 @@ function PostcardComment({
   isCommentRecording,
   onCommentRecordStart,
   onCommentRecordEnd,
+  onCommentMixedRecordEnd,
+  commentMixedVoiceDur,
+  onClearCommentMixedVoice,
 }: {
   item: CommentItem;
   subReplies: SubReply[];
@@ -746,6 +778,9 @@ function PostcardComment({
   isCommentRecording: boolean;
   onCommentRecordStart: () => void;
   onCommentRecordEnd: () => void;
+  onCommentMixedRecordEnd?: () => void;
+  commentMixedVoiceDur?: string | null;
+  onClearCommentMixedVoice?: () => void;
 }) {
   const isVoice = item.type === "voice";
   const name = isVoice ? item.phone : item.username;
@@ -865,18 +900,28 @@ function PostcardComment({
               />
               <View style={styles.commentReplyActions}>
                 {commentReplyMode === "mixed" && (
-                  <Pressable
-                    style={[styles.commentReplyMicSmall, isCommentRecording && styles.commentReplyMicSmallActive]}
-                    onPressIn={() => { onCommentRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
-                    onPressOut={onCommentRecordEnd}
-                  >
-                    <Ionicons name="mic" size={14} color={isCommentRecording ? "#fff" : Colors.light.primary} />
-                  </Pressable>
+                  commentMixedVoiceDur ? (
+                    <View style={styles.mixedVoiceChip}>
+                      <Ionicons name="mic" size={11} color="#fff" />
+                      <Text style={styles.mixedVoiceChipText}>{commentMixedVoiceDur}</Text>
+                      <Pressable onPress={onClearCommentMixedVoice} hitSlop={6}>
+                        <Ionicons name="close" size={11} color="#fff" />
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Pressable
+                      style={[styles.commentReplyMicSmall, isCommentRecording && styles.commentReplyMicSmallActive]}
+                      onPressIn={() => { onCommentRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+                      onPressOut={onCommentMixedRecordEnd ?? onCommentRecordEnd}
+                    >
+                      <Ionicons name="mic" size={14} color={isCommentRecording ? "#fff" : Colors.light.primary} />
+                    </Pressable>
+                  )
                 )}
                 <Pressable
-                  style={[styles.commentReplySendBtn, replyText.trim().length === 0 && { opacity: 0.38 }]}
+                  style={[styles.commentReplySendBtn, (!replyText.trim() && !commentMixedVoiceDur) && { opacity: 0.38 }]}
                   onPress={onSubmitReply}
-                  disabled={replyText.trim().length === 0}
+                  disabled={!replyText.trim() && !commentMixedVoiceDur}
                 >
                   <Ionicons name="arrow-up" size={15} color="#fff" />
                 </Pressable>
@@ -907,6 +952,9 @@ function SoundPostcard({
   isRecording,
   onRecordStart,
   onRecordEnd,
+  onMixedRecordEnd,
+  postcardMixedVoiceDur,
+  onClearPostcardMixedVoice,
   subRepliesByComment,
   replyingToCommentId,
   onReplyToComment,
@@ -918,6 +966,9 @@ function SoundPostcard({
   isCommentRecording,
   onCommentRecordStart,
   onCommentRecordEnd,
+  onCommentMixedRecordEnd,
+  commentMixedVoiceDur,
+  onClearCommentMixedVoice,
 }: {
   item: typeof SOUND_POSTCARDS[0];
   comments: CommentItem[];
@@ -936,6 +987,9 @@ function SoundPostcard({
   isRecording: boolean;
   onRecordStart: () => void;
   onRecordEnd: () => void;
+  onMixedRecordEnd: () => void;
+  postcardMixedVoiceDur: string | null;
+  onClearPostcardMixedVoice: () => void;
   subRepliesByComment: Record<string, SubReply[]>;
   replyingToCommentId: string | null;
   onReplyToComment: (commentId: string) => void;
@@ -947,6 +1001,9 @@ function SoundPostcard({
   isCommentRecording: boolean;
   onCommentRecordStart: () => void;
   onCommentRecordEnd: (commentId: string) => void;
+  onCommentMixedRecordEnd: () => void;
+  commentMixedVoiceDur: string | null;
+  onClearCommentMixedVoice: () => void;
 }) {
   return (
     <View style={styles.postcardCard}>
@@ -1047,6 +1104,9 @@ function SoundPostcard({
               isCommentRecording={replyingToCommentId === c.id && isCommentRecording}
               onCommentRecordStart={onCommentRecordStart}
               onCommentRecordEnd={() => onCommentRecordEnd(c.id)}
+              onCommentMixedRecordEnd={onCommentMixedRecordEnd}
+              commentMixedVoiceDur={replyingToCommentId === c.id ? commentMixedVoiceDur : null}
+              onClearCommentMixedVoice={onClearCommentMixedVoice}
             />
           ))}
         </View>
@@ -1102,18 +1162,28 @@ function SoundPostcard({
                 autoFocus={replyMode === "text"}
               />
               {replyMode === "mixed" && (
-                <Pressable
-                  style={[styles.replyMicBtn, isRecording && styles.replyMicBtnActive]}
-                  onPressIn={() => { onRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
-                  onPressOut={onRecordEnd}
-                >
-                  <Ionicons name="mic" size={16} color={isRecording ? "#fff" : Colors.light.primary} />
-                </Pressable>
+                postcardMixedVoiceDur ? (
+                  <View style={styles.mixedVoiceChip}>
+                    <Ionicons name="mic" size={11} color="#fff" />
+                    <Text style={styles.mixedVoiceChipText}>{postcardMixedVoiceDur}</Text>
+                    <Pressable onPress={onClearPostcardMixedVoice} hitSlop={6}>
+                      <Ionicons name="close" size={11} color="#fff" />
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Pressable
+                    style={[styles.replyMicBtn, isRecording && styles.replyMicBtnActive]}
+                    onPressIn={() => { onRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+                    onPressOut={onMixedRecordEnd}
+                  >
+                    <Ionicons name="mic" size={16} color={isRecording ? "#fff" : Colors.light.primary} />
+                  </Pressable>
+                )
               )}
               <Pressable
-                style={[styles.postcardReplySend, replyText.trim().length === 0 && { opacity: 0.4 }]}
+                style={[styles.postcardReplySend, (!replyText.trim() && !postcardMixedVoiceDur) && { opacity: 0.4 }]}
                 onPress={onSubmitReply}
-                disabled={replyText.trim().length === 0}
+                disabled={!replyText.trim() && !postcardMixedVoiceDur}
               >
                 <Text style={styles.postcardReplySendText}>发送</Text>
               </Pressable>
@@ -1138,10 +1208,12 @@ function DiscoverOthersTab() {
   const [replyText, setReplyText] = useState("");
   const [replyMode, setReplyMode] = useState<"text" | "mixed" | "voice">("text");
   const [isRecording, setIsRecording] = useState(false);
+  const [postcardMixedVoiceDur, setPostcardMixedVoiceDur] = useState<string | null>(null);
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
   const [commentReplyText, setCommentReplyText] = useState("");
   const [commentReplyMode, setCommentReplyMode] = useState<"text" | "mixed" | "voice">("text");
   const [isCommentRecording, setIsCommentRecording] = useState(false);
+  const [commentMixedVoiceDur, setCommentMixedVoiceDur] = useState<string | null>(null);
   const [subRepliesByComment, setSubRepliesByComment] = useState<Record<string, SubReply[]>>({});
 
   const toggleLike = (id: string) => {
@@ -1166,11 +1238,13 @@ function DiscoverOthersTab() {
       setReplyText("");
       setReplyMode("text");
       setIsRecording(false);
+      setPostcardMixedVoiceDur(null);
     } else {
       setReplyingToId(id);
       setReplyText("");
       setReplyMode("text");
       setIsRecording(false);
+      setPostcardMixedVoiceDur(null);
     }
   };
 
@@ -1221,15 +1295,24 @@ function DiscoverOthersTab() {
     ]);
   };
 
+  const handlePostcardMixedRecordEnd = async () => {
+    const { duration } = await stopRecording();
+    setIsRecording(false);
+    setPostcardMixedVoiceDur(duration);
+  };
+
   const submitReply = (postcardId: string) => {
-    if (!replyText.trim()) return;
+    const text = replyText.trim();
+    if (!text && !postcardMixedVoiceDur) return;
+    const voicePart = postcardMixedVoiceDur ? `🎤 语音 ${postcardMixedVoiceDur}` : null;
+    const combinedText = voicePart ? (text ? `${text}\n${voicePart}` : voicePart) : text;
     const time = nowStr();
     const newComment: TextComment = {
       id: Date.now().toString(),
       type: "text",
       username: "我",
       time,
-      text: replyText.trim(),
+      text: combinedText,
     };
     setCommentsByPostcard((prev) => ({
       ...prev,
@@ -1238,6 +1321,7 @@ function DiscoverOthersTab() {
     setExpandedIds((prev) => ({ ...prev, [postcardId]: true }));
     setReplyingToId(null);
     setReplyText("");
+    setPostcardMixedVoiceDur(null);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -1247,12 +1331,20 @@ function DiscoverOthersTab() {
       setCommentReplyText("");
       setCommentReplyMode("text");
       setIsCommentRecording(false);
+      setCommentMixedVoiceDur(null);
     } else {
       setReplyingToCommentId(commentId);
       setCommentReplyText("");
       setCommentReplyMode("text");
       setIsCommentRecording(false);
+      setCommentMixedVoiceDur(null);
     }
+  };
+
+  const handleCommentMixedRecordEnd = async () => {
+    const { duration } = await stopRecording();
+    setIsCommentRecording(false);
+    setCommentMixedVoiceDur(duration);
   };
 
   const submitCommentVoiceReply = async (commentId: string) => {
@@ -1294,7 +1386,8 @@ function DiscoverOthersTab() {
   };
 
   const submitCommentReply = (commentId: string) => {
-    if (!commentReplyText.trim()) return;
+    const text = commentReplyText.trim();
+    if (!text && !commentMixedVoiceDur) return;
     const now = new Date();
     const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const allComments = Object.values(commentsByPostcard).flat();
@@ -1302,11 +1395,15 @@ function DiscoverOthersTab() {
     const replyTo = target
       ? target.type === "voice" ? target.phone : target.username
       : "对方";
+    const voicePart = commentMixedVoiceDur ? `🎤 语音 ${commentMixedVoiceDur}` : null;
+    const combinedText = voicePart
+      ? (text ? `${text}\n${voicePart}` : voicePart)
+      : text;
     const newReply: SubReply = {
       id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
       username: "我",
       time,
-      text: commentReplyText.trim(),
+      text: combinedText,
       replyTo,
     };
     setSubRepliesByComment((prev) => ({
@@ -1315,6 +1412,7 @@ function DiscoverOthersTab() {
     }));
     setReplyingToCommentId(null);
     setCommentReplyText("");
+    setCommentMixedVoiceDur(null);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -1354,6 +1452,9 @@ function DiscoverOthersTab() {
             if (ok) setIsRecording(true);
           }}
           onRecordEnd={() => submitVoiceReply(p.id)}
+          onMixedRecordEnd={handlePostcardMixedRecordEnd}
+          postcardMixedVoiceDur={replyingToId === p.id ? postcardMixedVoiceDur : null}
+          onClearPostcardMixedVoice={() => setPostcardMixedVoiceDur(null)}
           subRepliesByComment={subRepliesByComment}
           replyingToCommentId={replyingToCommentId}
           onReplyToComment={replyToComment}
@@ -1368,6 +1469,9 @@ function DiscoverOthersTab() {
             if (ok) setIsCommentRecording(true);
           }}
           onCommentRecordEnd={(commentId) => submitCommentVoiceReply(commentId)}
+          onCommentMixedRecordEnd={handleCommentMixedRecordEnd}
+          commentMixedVoiceDur={commentMixedVoiceDur}
+          onClearCommentMixedVoice={() => setCommentMixedVoiceDur(null)}
         />
       ))}
 
@@ -2420,6 +2524,21 @@ const styles = StyleSheet.create({
   commentReplyMicSmallActive: {
     backgroundColor: Colors.light.primary,
     borderColor: Colors.light.primary,
+  },
+  mixedVoiceChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.light.primary,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    height: 30,
+  },
+  mixedVoiceChipText: {
+    fontSize: 11,
+    color: "#fff",
+    fontWeight: "600",
   },
   commentReplySendBtn: {
     width: 30,
