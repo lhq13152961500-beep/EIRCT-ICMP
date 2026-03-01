@@ -8,6 +8,7 @@ import {
   Image,
   Platform,
   Dimensions,
+  TextInput,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -69,8 +70,8 @@ const SOUND_POSTCARDS = [
     listenCount: 66,
     likeCount: 999,
     comments: [
-      { id: "cm1", username: "旅行者小鱼", time: "02-15 12:10", text: "鸟叫声真美，让我想起了小时候的乡下~" },
-      { id: "cm2", username: "山野行者", time: "02-15 14:30", text: "这段录音太治愈了，谢谢王大伯！" },
+      { id: "cm1", type: "voice" as const, title: "来自黄岭村的清晨", duration: "00:48", date: "02-15 12:10", phone: "138****6789" },
+      { id: "cm2", type: "text" as const, username: "山野行者", time: "02-15 14:30", text: "这段录音太治愈了，谢谢王大伯！" },
     ],
   },
   {
@@ -88,9 +89,9 @@ const SOUND_POSTCARDS = [
     listenCount: 66,
     likeCount: 999,
     comments: [
-      { id: "cm3", username: "云端漫步", time: "02-14 17:05", text: "书屋的蝉鸣声配上文字真的绝了！" },
-      { id: "cm4", username: "绿野探客", time: "02-14 19:20", text: "这个地方我去过，氛围超好的。" },
-      { id: "cm5", username: "静默山人", time: "02-15 08:00", text: "下次去一定要带录音设备。" },
+      { id: "cm3", type: "voice" as const, title: "书屋午后即兴录音", duration: "01:12", date: "02-14 17:05", phone: "155****2233" },
+      { id: "cm4", type: "text" as const, username: "绿野探客", time: "02-14 19:20", text: "这个地方我去过，氛围超好的。" },
+      { id: "cm5", type: "text" as const, username: "静默山人", time: "02-15 08:00", text: "下次去一定要带录音设备。" },
     ],
   },
 ];
@@ -298,9 +299,37 @@ function MyDiaryTab() {
   );
 }
 
+// ─── Comment Types ────────────────────────────────────────────────────────────
+
+type VoiceComment = { id: string; type: "voice"; title: string; duration: string; date: string; phone: string };
+type TextComment  = { id: string; type: "text";  username: string; time: string; text: string };
+type CommentItem  = VoiceComment | TextComment;
+
 // ─── Sound Postcard Card ──────────────────────────────────────────────────────
 
-function PostcardComment({ item }: { item: { id: string; username: string; time: string; text: string } }) {
+function PostcardComment({ item }: { item: CommentItem }) {
+  if (item.type === "voice") {
+    return (
+      <View style={styles.replyItem}>
+        <View style={styles.replyLeft}>
+          <Text style={styles.replyTitle} numberOfLines={1}>{item.title}</Text>
+          <View style={styles.replyMeta}>
+            <Ionicons name="time-outline" size={10} color={Colors.light.textSecondary} />
+            <Text style={styles.replyMetaText}>{item.duration}</Text>
+            <Ionicons name="calendar-outline" size={10} color={Colors.light.textSecondary} />
+            <Text style={styles.replyMetaText}>{item.date}</Text>
+            <Ionicons name="person-outline" size={10} color="#6B9FFF" />
+            <Text style={[styles.replyMetaText, { color: "#6B9FFF" }]}>{item.phone}</Text>
+          </View>
+        </View>
+        <View style={styles.replyBtnRow}>
+          <Pressable onPress={() => haptic()} style={styles.replyPlayBtn}>
+            <Ionicons name="play" size={14} color={Colors.light.primary} />
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
   return (
     <View style={styles.postcardCommentItem}>
       <View style={styles.postcardCommentAvatar}>
@@ -319,18 +348,30 @@ function PostcardComment({ item }: { item: { id: string; username: string; time:
 
 function SoundPostcard({
   item,
+  comments,
   isLiked,
   likeCount,
   onToggleLike,
   isExpanded,
   onToggleExpand,
+  isReplying,
+  onToggleReply,
+  replyText,
+  onReplyTextChange,
+  onSubmitReply,
 }: {
   item: typeof SOUND_POSTCARDS[0];
+  comments: CommentItem[];
   isLiked: boolean;
   likeCount: number;
   onToggleLike: () => void;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  isReplying: boolean;
+  onToggleReply: () => void;
+  replyText: string;
+  onReplyTextChange: (t: string) => void;
+  onSubmitReply: () => void;
 }) {
   return (
     <View style={styles.postcardCard}>
@@ -386,7 +427,7 @@ function SoundPostcard({
               tintColor={isExpanded ? Colors.light.primary : "#666"}
             />
             <Text style={[styles.postcardStatNum, isExpanded && { color: Colors.light.primary }]}>
-              {item.comments.length}
+              {comments.length}
             </Text>
           </Pressable>
           <Pressable
@@ -400,15 +441,46 @@ function SoundPostcard({
             />
             <Text style={[styles.postcardStatNum, { color: "#FF4D6A" }]}>{likeCount}</Text>
           </Pressable>
+          <Pressable
+            style={[styles.postcardReplyActionBtn, isReplying && styles.postcardReplyActionBtnActive]}
+            onPress={() => { onToggleReply(); haptic(); }}
+          >
+            <Ionicons
+              name="chatbubble-outline"
+              size={16}
+              color={isReplying ? Colors.light.primary : "#666"}
+            />
+          </Pressable>
         </View>
       </View>
 
-      {isExpanded && item.comments.length > 0 && (
+      {isExpanded && comments.length > 0 && (
         <View style={styles.postcardCommentList}>
-          <Text style={styles.postcardCommentTitle}>留言 · {item.comments.length} 条</Text>
-          {item.comments.map((c) => (
+          <Text style={styles.postcardCommentTitle}>留言 · {comments.length} 条</Text>
+          {comments.map((c) => (
             <PostcardComment key={c.id} item={c} />
           ))}
+        </View>
+      )}
+
+      {isReplying && (
+        <View style={styles.postcardReplyBox}>
+          <TextInput
+            style={styles.postcardReplyInput}
+            placeholder="写下你的文字留言..."
+            placeholderTextColor={Colors.light.textSecondary}
+            value={replyText}
+            onChangeText={onReplyTextChange}
+            multiline
+            autoFocus
+          />
+          <Pressable
+            style={[styles.postcardReplySend, replyText.trim().length === 0 && { opacity: 0.4 }]}
+            onPress={onSubmitReply}
+            disabled={replyText.trim().length === 0}
+          >
+            <Text style={styles.postcardReplySendText}>发送</Text>
+          </Pressable>
         </View>
       )}
     </View>
@@ -421,6 +493,11 @@ function DiscoverOthersTab() {
     Object.fromEntries(SOUND_POSTCARDS.map((p) => [p.id, p.likeCount]))
   );
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
+  const [commentsByPostcard, setCommentsByPostcard] = useState<Record<string, CommentItem[]>>(
+    Object.fromEntries(SOUND_POSTCARDS.map((p) => [p.id, p.comments as CommentItem[]]))
+  );
+  const [replyingToId, setReplyingToId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
 
   const toggleLike = (id: string) => {
     setLikedIds((prev) => {
@@ -438,8 +515,43 @@ function DiscoverOthersTab() {
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const toggleReply = (id: string) => {
+    if (replyingToId === id) {
+      setReplyingToId(null);
+      setReplyText("");
+    } else {
+      setReplyingToId(id);
+      setReplyText("");
+    }
+  };
+
+  const submitReply = (postcardId: string) => {
+    if (!replyText.trim()) return;
+    const now = new Date();
+    const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const newComment: TextComment = {
+      id: Date.now().toString(),
+      type: "text",
+      username: "我",
+      time,
+      text: replyText.trim(),
+    };
+    setCommentsByPostcard((prev) => ({
+      ...prev,
+      [postcardId]: [...(prev[postcardId] ?? []), newComment],
+    }));
+    setExpandedIds((prev) => ({ ...prev, [postcardId]: true }));
+    setReplyingToId(null);
+    setReplyText("");
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.tabContent}>
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.tabContent}
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.discoverHeader}>
         <Text style={styles.discoverHeaderText}>共收到 8 封声音明信片</Text>
         <Pressable style={styles.filterBtn} onPress={() => haptic()}>
@@ -452,11 +564,17 @@ function DiscoverOthersTab() {
         <SoundPostcard
           key={p.id}
           item={p}
+          comments={commentsByPostcard[p.id] ?? []}
           isLiked={!!likedIds[p.id]}
           likeCount={likeCounts[p.id] ?? p.likeCount}
           onToggleLike={() => toggleLike(p.id)}
           isExpanded={!!expandedIds[p.id]}
           onToggleExpand={() => toggleExpand(p.id)}
+          isReplying={replyingToId === p.id}
+          onToggleReply={() => toggleReply(p.id)}
+          replyText={replyingToId === p.id ? replyText : ""}
+          onReplyTextChange={setReplyText}
+          onSubmitReply={() => submitReply(p.id)}
         />
       ))}
 
@@ -986,6 +1104,46 @@ const styles = StyleSheet.create({
     gap: 3,
     paddingHorizontal: 4,
     paddingVertical: 3,
+  },
+  postcardReplyActionBtn: {
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+  },
+  postcardReplyActionBtnActive: {
+    opacity: 1,
+  },
+  postcardReplyBox: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginHorizontal: 12,
+    marginBottom: 12,
+    marginTop: 4,
+    gap: 8,
+    backgroundColor: "#F7FAF8",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.light.primary + "40",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  postcardReplyInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.light.text,
+    maxHeight: 80,
+    paddingTop: 0,
+    paddingBottom: 0,
+  },
+  postcardReplySend: {
+    backgroundColor: Colors.light.primary,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  postcardReplySendText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#fff",
   },
   postcardCommentList: {
     marginTop: 2,
