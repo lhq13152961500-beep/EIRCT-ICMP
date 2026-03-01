@@ -184,14 +184,25 @@ function DiaryReplyItem({ item }: { item: typeof MY_DIARY_GROUPS[0]["replies"][0
       <Pressable onPress={() => haptic()} style={styles.replyPlayBtn}>
         <Ionicons name="play" size={14} color={Colors.light.primary} />
       </Pressable>
-      <Pressable onPress={() => haptic()} style={styles.replyCommentBtn}>
-        <MaterialCommunityIcons name="chat-outline" size={18} color="#555" />
-      </Pressable>
     </View>
   );
 }
 
-function DiaryGroup({ group }: { group: typeof MY_DIARY_GROUPS[0] }) {
+function DiaryGroup({
+  group,
+  isExpanded,
+  onToggleExpand,
+  isLiked,
+  likeCount,
+  onToggleLike,
+}: {
+  group: typeof MY_DIARY_GROUPS[0];
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  isLiked: boolean;
+  likeCount: number;
+  onToggleLike: () => void;
+}) {
   return (
     <View style={styles.diaryGroup}>
       <View style={styles.diaryMainCard}>
@@ -209,28 +220,59 @@ function DiaryGroup({ group }: { group: typeof MY_DIARY_GROUPS[0] }) {
       </View>
 
       <View style={styles.diaryStatsRow}>
-        <View style={styles.diaryStatItem}>
-          <MaterialCommunityIcons name="headphones" size={18} color="#555" />
-        </View>
-        <View style={styles.diaryStatItem}>
-          <Ionicons name="heart" size={16} color="#FF4D6A" />
-          <Text style={styles.diaryStatCount}>{group.likeCount}</Text>
-        </View>
-        <View style={styles.diaryStatItem}>
-          <MaterialCommunityIcons name="chat-outline" size={18} color="#555" />
-        </View>
+        <Pressable
+          style={[styles.diaryStatItem, styles.diaryStatBtn, isExpanded && styles.diaryStatBtnActive]}
+          onPress={() => { onToggleExpand(); haptic(); }}
+        >
+          <MaterialCommunityIcons
+            name="headphones"
+            size={18}
+            color={isExpanded ? Colors.light.primary : "#555"}
+          />
+          <Text style={[styles.diaryStatCount, { color: isExpanded ? Colors.light.primary : "#888" }]}>
+            {group.listenCount}
+          </Text>
+        </Pressable>
+
+        <Pressable style={styles.diaryStatItem} onPress={() => { onToggleLike(); haptic(); }}>
+          <Ionicons name={isLiked ? "heart" : "heart-outline"} size={16} color="#FF4D6A" />
+          <Text style={[styles.diaryStatCount, { color: "#FF4D6A" }]}>{likeCount}</Text>
+        </Pressable>
       </View>
 
-      <View style={styles.replyList}>
-        {group.replies.map((r) => (
-          <DiaryReplyItem key={r.id} item={r} />
-        ))}
-      </View>
+      {isExpanded && (
+        <View style={styles.replyList}>
+          {group.replies.map((r) => (
+            <DiaryReplyItem key={r.id} item={r} />
+          ))}
+        </View>
+      )}
     </View>
   );
 }
 
 function MyDiaryTab() {
+  const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
+  const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
+  const [likeCounts, setLikeCounts] = useState<Record<string, number>>(
+    Object.fromEntries(MY_DIARY_GROUPS.map((g) => [g.id, g.likeCount]))
+  );
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleLike = (id: string) => {
+    setLikedIds((prev) => {
+      const wasLiked = !!prev[id];
+      setLikeCounts((counts) => ({
+        ...counts,
+        [id]: counts[id] + (wasLiked ? -1 : 1),
+      }));
+      return { ...prev, [id]: !wasLiked };
+    });
+  };
+
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
@@ -249,7 +291,15 @@ function MyDiaryTab() {
       </View>
 
       {MY_DIARY_GROUPS.map((g) => (
-        <DiaryGroup key={g.id} group={g} />
+        <DiaryGroup
+          key={g.id}
+          group={g}
+          isExpanded={!!expandedIds[g.id]}
+          onToggleExpand={() => toggleExpand(g.id)}
+          isLiked={!!likedIds[g.id]}
+          likeCount={likeCounts[g.id] ?? g.likeCount}
+          onToggleLike={() => toggleLike(g.id)}
+        />
       ))}
     </ScrollView>
   );
@@ -572,6 +622,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
+  },
+  diaryStatBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  diaryStatBtnActive: {
+    backgroundColor: Colors.light.greenLight,
+    borderColor: Colors.light.primary + "40",
   },
   diaryStatCount: {
     fontSize: 12,
