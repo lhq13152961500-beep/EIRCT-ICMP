@@ -308,39 +308,34 @@ type CommentItem  = VoiceComment | TextComment;
 // ─── Sound Postcard Card ──────────────────────────────────────────────────────
 
 function PostcardComment({ item }: { item: CommentItem }) {
-  if (item.type === "voice") {
-    return (
-      <View style={styles.replyItem}>
-        <View style={styles.replyLeft}>
-          <Text style={styles.replyTitle} numberOfLines={1}>{item.title}</Text>
-          <View style={styles.replyMeta}>
-            <Ionicons name="time-outline" size={10} color={Colors.light.textSecondary} />
-            <Text style={styles.replyMetaText}>{item.duration}</Text>
-            <Ionicons name="calendar-outline" size={10} color={Colors.light.textSecondary} />
-            <Text style={styles.replyMetaText}>{item.date}</Text>
-            <Ionicons name="person-outline" size={10} color="#6B9FFF" />
-            <Text style={[styles.replyMetaText, { color: "#6B9FFF" }]}>{item.phone}</Text>
-          </View>
-        </View>
-        <View style={styles.replyBtnRow}>
-          <Pressable onPress={() => haptic()} style={styles.replyPlayBtn}>
-            <Ionicons name="play" size={14} color={Colors.light.primary} />
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
+  const isVoice = item.type === "voice";
+  const name = isVoice ? item.phone : item.username;
+  const time = isVoice ? item.date : item.time;
+
   return (
-    <View style={styles.postcardCommentItem}>
-      <View style={styles.postcardCommentAvatar}>
-        <Ionicons name="person" size={12} color="#fff" />
+    <View style={styles.uniComment}>
+      <View style={[styles.uniCommentAvatar, isVoice && styles.uniCommentAvatarVoice]}>
+        <Ionicons name={isVoice ? "mic" : "person"} size={12} color="#fff" />
       </View>
-      <View style={styles.postcardCommentBody}>
-        <View style={styles.postcardCommentHeader}>
-          <Text style={styles.postcardCommentUser}>{item.username}</Text>
-          <Text style={styles.postcardCommentTime}>{item.time}</Text>
+      <View style={styles.uniCommentBody}>
+        <View style={styles.uniCommentHeader}>
+          <Text style={styles.uniCommentName}>{name}</Text>
+          <Text style={styles.uniCommentTime}>{time}</Text>
         </View>
-        <Text style={styles.postcardCommentText}>{item.text}</Text>
+        {isVoice ? (
+          <View style={styles.uniCommentVoiceRow}>
+            <Ionicons name="musical-note" size={11} color={Colors.light.primary} />
+            <Text style={styles.uniCommentVoiceTitle} numberOfLines={1}>{item.title}</Text>
+            <View style={styles.uniCommentVoiceDuration}>
+              <Text style={styles.uniCommentVoiceDurationText}>{item.duration}</Text>
+            </View>
+            <Pressable onPress={() => haptic()} style={styles.uniCommentPlayBtn}>
+              <Ionicons name="play" size={11} color={Colors.light.primary} />
+            </Pressable>
+          </View>
+        ) : (
+          <Text style={styles.uniCommentText}>{item.text}</Text>
+        )}
       </View>
     </View>
   );
@@ -1151,51 +1146,94 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     backgroundColor: "#F7FAF8",
     borderRadius: 12,
-    padding: 10,
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 6,
     gap: 10,
   },
   postcardCommentTitle: {
     fontSize: 12,
     fontWeight: "700",
     color: Colors.light.primary,
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  postcardCommentItem: {
+  uniComment: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EBEBEB",
   },
-  postcardCommentAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+  uniCommentAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: Colors.light.primary,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
   },
-  postcardCommentBody: {
-    flex: 1,
-    gap: 2,
+  uniCommentAvatarVoice: {
+    backgroundColor: "#F5974E",
   },
-  postcardCommentHeader: {
+  uniCommentBody: {
+    flex: 1,
+    gap: 4,
+  },
+  uniCommentHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  postcardCommentUser: {
+  uniCommentName: {
     fontSize: 12,
     fontWeight: "700",
     color: Colors.light.text,
   },
-  postcardCommentTime: {
+  uniCommentTime: {
     fontSize: 10,
     color: Colors.light.textSecondary,
   },
-  postcardCommentText: {
+  uniCommentText: {
     fontSize: 13,
     color: Colors.light.text,
     lineHeight: 18,
+  },
+  uniCommentVoiceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#EEF8F2",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  uniCommentVoiceTitle: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.light.text,
+    fontWeight: "500",
+  },
+  uniCommentVoiceDuration: {
+    backgroundColor: Colors.light.primary + "20",
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  uniCommentVoiceDurationText: {
+    fontSize: 10,
+    color: Colors.light.primary,
+    fontWeight: "600",
+  },
+  uniCommentPlayBtn: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: Colors.light.primary,
+    alignItems: "center",
+    justifyContent: "center",
   },
   deliveryNote: {
     alignItems: "center",
