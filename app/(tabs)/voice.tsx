@@ -468,14 +468,9 @@ function MyDiaryTab() {
     >
       <View style={styles.diaryHeader}>
         <Text style={styles.diaryHeaderText}>共 12 份记忆</Text>
-        <View style={styles.viewToggle}>
-          <Pressable onPress={() => haptic()}>
-            <Ionicons name="grid-outline" size={20} color={Colors.light.textSecondary} />
-          </Pressable>
-          <Pressable onPress={() => haptic()}>
-            <Ionicons name="list-outline" size={20} color={Colors.light.text} />
-          </Pressable>
-        </View>
+        <Pressable onPress={() => haptic()} style={styles.filterBtn}>
+          <Ionicons name="options-outline" size={20} color={Colors.light.text} />
+        </Pressable>
       </View>
 
       {MY_DIARY_GROUPS.map((g) => (
@@ -1294,6 +1289,14 @@ const styles = StyleSheet.create({
   diaryHeaderText: {
     fontSize: 13,
     color: Colors.light.textSecondary,
+  },
+  filterBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F0F0F5",
+    alignItems: "center",
+    justifyContent: "center",
   },
   viewToggle: {
     flexDirection: "row",
