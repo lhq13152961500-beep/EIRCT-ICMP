@@ -324,6 +324,11 @@ function PostcardComment({
   onReplyTextChange,
   onPress,
   onSubmitReply,
+  commentReplyMode,
+  onCommentReplyModeChange,
+  isCommentRecording,
+  onCommentRecordStart,
+  onCommentRecordEnd,
 }: {
   item: CommentItem;
   subReplies: SubReply[];
@@ -332,6 +337,11 @@ function PostcardComment({
   onReplyTextChange: (t: string) => void;
   onPress: () => void;
   onSubmitReply: () => void;
+  commentReplyMode: "text" | "mixed" | "voice";
+  onCommentReplyModeChange: (m: "text" | "mixed" | "voice") => void;
+  isCommentRecording: boolean;
+  onCommentRecordStart: () => void;
+  onCommentRecordEnd: () => void;
 }) {
   const isVoice = item.type === "voice";
   const name = isVoice ? item.phone : item.username;
@@ -389,22 +399,71 @@ function PostcardComment({
 
       {isReplying && (
         <View style={styles.commentReplyBox}>
-          <TextInput
-            style={styles.commentReplyInput}
-            placeholder={`回复 @${name}...`}
-            placeholderTextColor={Colors.light.textSecondary}
-            value={replyText}
-            onChangeText={onReplyTextChange}
-            autoFocus
-            multiline
-          />
-          <Pressable
-            style={[styles.commentReplySend, replyText.trim().length === 0 && { opacity: 0.4 }]}
-            onPress={onSubmitReply}
-            disabled={replyText.trim().length === 0}
-          >
-            <Text style={styles.commentReplySendText}>回复</Text>
-          </Pressable>
+          <View style={styles.replyModeBar}>
+            <Pressable
+              style={[styles.replyModeBtn, commentReplyMode === "text" && styles.replyModeBtnActive]}
+              onPress={() => { onCommentReplyModeChange("text"); haptic(); }}
+            >
+              <Ionicons name="chatbubble-outline" size={13} color={commentReplyMode === "text" ? "#fff" : Colors.light.textSecondary} />
+            </Pressable>
+            <Pressable
+              style={[styles.replyModeBtn, commentReplyMode === "mixed" && styles.replyModeBtnActive]}
+              onPress={() => { onCommentReplyModeChange("mixed"); haptic(); }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                <Ionicons name="chatbubble-outline" size={10} color={commentReplyMode === "mixed" ? "#fff" : Colors.light.textSecondary} />
+                <Text style={{ fontSize: 9, color: commentReplyMode === "mixed" ? "#fff" : Colors.light.textSecondary, fontWeight: "700" }}>+</Text>
+                <Ionicons name="mic-outline" size={10} color={commentReplyMode === "mixed" ? "#fff" : Colors.light.textSecondary} />
+              </View>
+            </Pressable>
+            <Pressable
+              style={[styles.replyModeBtn, commentReplyMode === "voice" && styles.replyModeBtnActive]}
+              onPress={() => { onCommentReplyModeChange("voice"); haptic(); }}
+            >
+              <Ionicons name="mic-outline" size={13} color={commentReplyMode === "voice" ? "#fff" : Colors.light.textSecondary} />
+            </Pressable>
+          </View>
+
+          {commentReplyMode === "voice" ? (
+            <Pressable
+              style={[styles.replyMicArea, isCommentRecording && styles.replyMicAreaActive]}
+              onPressIn={() => { onCommentRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+              onPressOut={onCommentRecordEnd}
+            >
+              <Ionicons name="mic" size={26} color={isCommentRecording ? "#fff" : Colors.light.primary} />
+              <Text style={[styles.replyMicAreaLabel, isCommentRecording && { color: "#fff" }]}>
+                {isCommentRecording ? "录音中 · 松开发送" : "按住录音"}
+              </Text>
+            </Pressable>
+          ) : (
+            <View style={styles.replyInputRow}>
+              <TextInput
+                style={styles.commentReplyInput}
+                placeholder={`回复 @${name}...`}
+                placeholderTextColor={Colors.light.textSecondary}
+                value={replyText}
+                onChangeText={onReplyTextChange}
+                autoFocus={commentReplyMode === "text"}
+                multiline
+              />
+              {commentReplyMode === "mixed" && (
+                <Pressable
+                  style={[styles.replyMicBtn, isCommentRecording && styles.replyMicBtnActive]}
+                  onPressIn={() => { onCommentRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+                  onPressOut={onCommentRecordEnd}
+                >
+                  <Ionicons name="mic" size={15} color={isCommentRecording ? "#fff" : Colors.light.primary} />
+                </Pressable>
+              )}
+              <Pressable
+                style={[styles.commentReplySend, replyText.trim().length === 0 && { opacity: 0.4 }]}
+                onPress={onSubmitReply}
+                disabled={replyText.trim().length === 0}
+              >
+                <Text style={styles.commentReplySendText}>回复</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -435,6 +494,11 @@ function SoundPostcard({
   commentReplyText,
   onCommentReplyTextChange,
   onSubmitCommentReply,
+  commentReplyMode,
+  onCommentReplyModeChange,
+  isCommentRecording,
+  onCommentRecordStart,
+  onCommentRecordEnd,
 }: {
   item: typeof SOUND_POSTCARDS[0];
   comments: CommentItem[];
@@ -459,6 +523,11 @@ function SoundPostcard({
   commentReplyText: string;
   onCommentReplyTextChange: (t: string) => void;
   onSubmitCommentReply: (commentId: string) => void;
+  commentReplyMode: "text" | "mixed" | "voice";
+  onCommentReplyModeChange: (m: "text" | "mixed" | "voice") => void;
+  isCommentRecording: boolean;
+  onCommentRecordStart: () => void;
+  onCommentRecordEnd: (commentId: string) => void;
 }) {
   return (
     <View style={styles.postcardCard}>
@@ -554,6 +623,11 @@ function SoundPostcard({
               onReplyTextChange={onCommentReplyTextChange}
               onPress={() => onReplyToComment(c.id)}
               onSubmitReply={() => onSubmitCommentReply(c.id)}
+              commentReplyMode={commentReplyMode}
+              onCommentReplyModeChange={onCommentReplyModeChange}
+              isCommentRecording={replyingToCommentId === c.id && isCommentRecording}
+              onCommentRecordStart={onCommentRecordStart}
+              onCommentRecordEnd={() => onCommentRecordEnd(c.id)}
             />
           ))}
         </View>
@@ -647,6 +721,8 @@ function DiscoverOthersTab({ onAddInteraction }: { onAddInteraction: (item: MyIn
   const [isRecording, setIsRecording] = useState(false);
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
   const [commentReplyText, setCommentReplyText] = useState("");
+  const [commentReplyMode, setCommentReplyMode] = useState<"text" | "mixed" | "voice">("text");
+  const [isCommentRecording, setIsCommentRecording] = useState(false);
   const [subRepliesByComment, setSubRepliesByComment] = useState<Record<string, SubReply[]>>({});
 
   const toggleLike = (id: string) => {
@@ -746,10 +822,49 @@ function DiscoverOthersTab({ onAddInteraction }: { onAddInteraction: (item: MyIn
     if (replyingToCommentId === commentId) {
       setReplyingToCommentId(null);
       setCommentReplyText("");
+      setCommentReplyMode("text");
+      setIsCommentRecording(false);
     } else {
       setReplyingToCommentId(commentId);
       setCommentReplyText("");
+      setCommentReplyMode("text");
+      setIsCommentRecording(false);
     }
+  };
+
+  const submitCommentVoiceReply = (commentId: string) => {
+    if (!isCommentRecording) return;
+    const time = nowStr();
+    const dur = `00:${String(Math.floor(Math.random() * 25) + 5).padStart(2, "0")}`;
+    const allComments = Object.values(commentsByPostcard).flat();
+    const target = allComments.find((c) => c.id === commentId);
+    const replyTo = target
+      ? target.type === "voice" ? target.phone : target.username
+      : "对方";
+    const newReply: SubReply = {
+      id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+      username: "我",
+      time,
+      text: `🎤 语音留言 ${dur}`,
+      replyTo,
+    };
+    setSubRepliesByComment((prev) => ({
+      ...prev,
+      [commentId]: [...(prev[commentId] ?? []), newReply],
+    }));
+    setIsCommentRecording(false);
+    const postcardForComment = SOUND_POSTCARDS.find((p) =>
+      p.comments.some((c) => c.id === commentId)
+    );
+    onAddInteraction({
+      id: Date.now().toString() + "cv",
+      kind: "comment_reply",
+      postcardTitle: postcardForComment?.title ?? "声音明信片",
+      replyToName: replyTo,
+      text: `🎤 语音留言 ${dur}`,
+      date: time,
+    });
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
   const submitCommentReply = (commentId: string) => {
@@ -829,6 +944,11 @@ function DiscoverOthersTab({ onAddInteraction }: { onAddInteraction: (item: MyIn
           commentReplyText={commentReplyText}
           onCommentReplyTextChange={setCommentReplyText}
           onSubmitCommentReply={submitCommentReply}
+          commentReplyMode={commentReplyMode}
+          onCommentReplyModeChange={setCommentReplyMode}
+          isCommentRecording={isCommentRecording}
+          onCommentRecordStart={() => setIsCommentRecording(true)}
+          onCommentRecordEnd={(commentId) => submitCommentVoiceReply(commentId)}
         />
       ))}
 
