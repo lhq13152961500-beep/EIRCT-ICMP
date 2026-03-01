@@ -181,9 +181,17 @@ function DiaryReplyItem({ item }: { item: typeof MY_DIARY_GROUPS[0]["replies"][0
           <Text style={[styles.replyMetaText, { color: "#6B9FFF" }]}>{item.phone}</Text>
         </View>
       </View>
-      <Pressable onPress={() => haptic()} style={styles.replyPlayBtn}>
-        <Ionicons name="play" size={14} color={Colors.light.primary} />
-      </Pressable>
+      <View style={styles.replyBtnRow}>
+        <Pressable onPress={() => haptic()} style={styles.replyPlayBtn}>
+          <Ionicons name="play" size={14} color={Colors.light.primary} />
+        </Pressable>
+        <Pressable
+          onPress={() => haptic(Haptics.ImpactFeedbackStyle.Medium)}
+          style={styles.replyCommentBtn}
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={16} color={Colors.light.primary} />
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -210,15 +218,7 @@ function DiaryGroup({
             <Text style={styles.diaryMainMetaText}>{group.duration}</Text>
           </View>
         </View>
-        <View style={styles.diaryBtnStack}>
-          <PlayButton size={32} />
-          <Pressable
-            style={styles.diaryReplyBtn}
-            onPress={() => haptic(Haptics.ImpactFeedbackStyle.Medium)}
-          >
-            <Ionicons name="chatbubble-ellipses-outline" size={18} color={Colors.light.primary} />
-          </Pressable>
-        </View>
+        <PlayButton size={32} />
       </View>
 
       <View style={styles.diaryStatsRow}>
@@ -642,22 +642,6 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     marginRight: 4,
   },
-  diaryBtnStack: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "center",
-    gap: 8,
-  },
-  diaryReplyBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F0FAF4",
-    borderWidth: 1,
-    borderColor: Colors.light.primary,
-  },
   diaryStatsRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -720,6 +704,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: Colors.light.textSecondary,
     marginRight: 2,
+  },
+  replyBtnRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   replyPlayBtn: {
     width: 28,
