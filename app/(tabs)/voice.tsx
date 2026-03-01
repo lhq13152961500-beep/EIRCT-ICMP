@@ -220,7 +220,7 @@ function DiaryGroup({
         >
           <Image
             source={require("@/assets/images/audio-comment-icon.png")}
-            style={{ width: 20, height: 20 }}
+            style={{ width: 26, height: 26 }}
             tintColor={isExpanded ? Colors.light.primary : "#555"}
           />
           <Text style={[styles.diaryStatCount, { color: isExpanded ? Colors.light.primary : "#888" }]}>
@@ -340,7 +340,7 @@ function SoundPostcard({
         <View style={styles.postcardStats}>
           <Image
             source={require("@/assets/images/audio-comment-icon.png")}
-            style={{ width: 18, height: 18 }}
+            style={{ width: 22, height: 22 }}
             tintColor="#666"
           />
           <Text style={styles.postcardStatNum}>{item.listenCount}</Text>
