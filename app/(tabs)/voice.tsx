@@ -613,7 +613,8 @@ const styles = StyleSheet.create({
   diaryMainCard: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
     gap: 12,
     borderBottomWidth: 0,
   },
@@ -644,12 +645,13 @@ const styles = StyleSheet.create({
   diaryBtnStack: {
     flexDirection: "column",
     alignItems: "center",
+    alignSelf: "center",
     gap: 6,
   },
   diaryReplyBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#F0FAF4",
