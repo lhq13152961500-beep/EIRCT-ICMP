@@ -1216,15 +1216,12 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   uniCommentVoiceDuration: {
-    backgroundColor: Colors.light.primary + "20",
-    borderRadius: 6,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
+    flexShrink: 0,
   },
   uniCommentVoiceDurationText: {
     fontSize: 10,
-    color: Colors.light.primary,
-    fontWeight: "600",
+    color: Colors.light.textSecondary,
+    fontWeight: "400",
   },
   uniCommentPlayBtn: {
     width: 22,
