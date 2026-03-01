@@ -102,7 +102,8 @@ const CONVERSATION_CHAIN = [
     avatar: require("@/assets/images/avatar-1.png"),
     username: "读论文的silan学长",
     isHost: true,
-    text: "你说的对，我非常感佩你的发言。",
+    action: "对你的日记《秋收稻浪》进行了回应",
+    text: "你说的对，我非常感佩你描述的那片田野，听了三遍了。",
     progress: 0.25,
     total: "02:14",
     date: "2025年12月1日",
@@ -112,7 +113,8 @@ const CONVERSATION_CHAIN = [
     avatar: require("@/assets/images/avatar-2.png"),
     username: "聪明的一休",
     isHost: true,
-    text: "好的",
+    action: "对你的留言进行了回应",
+    text: "对，这种山间的清晨真的很难用语言形容，你录下来了。",
     progress: 0.62,
     total: "05:06",
     date: "2025年6月15日",
@@ -122,6 +124,7 @@ const CONVERSATION_CHAIN = [
     avatar: require("@/assets/images/avatar-3.png"),
     username: "可爱的常常的Smooth",
     isHost: true,
+    action: "对你的日记《晨雾中的炊烟》进行了回应",
     text: "你的想法宣传了我的观念。",
     progress: 0.62,
     total: "05:06",
@@ -132,6 +135,7 @@ const CONVERSATION_CHAIN = [
     avatar: require("@/assets/images/avatar-4.png"),
     username: "倔强的小二哥",
     isHost: false,
+    action: "对你的日记《村口的老樟树》进行了回应",
     text: "这段声音真的很触动人心。",
     progress: 0.4,
     total: "03:22",
@@ -305,14 +309,6 @@ type VoiceComment = { id: string; type: "voice"; title: string; duration: string
 type TextComment  = { id: string; type: "text";  username: string; time: string; text: string };
 type CommentItem  = VoiceComment | TextComment;
 type SubReply       = { id: string; username: string; time: string; text: string; replyTo: string };
-type MyInteraction  = {
-  id: string;
-  kind: "postcard_text" | "postcard_voice" | "comment_reply";
-  postcardTitle: string;
-  replyToName?: string;
-  text: string;
-  date: string;
-};
 
 // ─── Sound Postcard Card ──────────────────────────────────────────────────────
 
@@ -704,7 +700,7 @@ function SoundPostcard({
   );
 }
 
-function DiscoverOthersTab({ onAddInteraction }: { onAddInteraction: (item: MyInteraction) => void }) {
+function DiscoverOthersTab() {
   const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>(
     Object.fromEntries(SOUND_POSTCARDS.map((p) => [p.id, p.likeCount]))
@@ -776,14 +772,6 @@ function DiscoverOthersTab({ onAddInteraction }: { onAddInteraction: (item: MyIn
     }));
     setExpandedIds((prev) => ({ ...prev, [postcardId]: true }));
     setIsRecording(false);
-    const postcard = SOUND_POSTCARDS.find((p) => p.id === postcardId);
-    onAddInteraction({
-      id: Date.now().toString() + "v",
-      kind: "postcard_voice",
-      postcardTitle: postcard?.title ?? "声音明信片",
-      text: dur,
-      date: time,
-    });
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -803,16 +791,7 @@ function DiscoverOthersTab({ onAddInteraction }: { onAddInteraction: (item: MyIn
     }));
     setExpandedIds((prev) => ({ ...prev, [postcardId]: true }));
     setReplyingToId(null);
-    const savedText = replyText.trim();
     setReplyText("");
-    const postcard = SOUND_POSTCARDS.find((p) => p.id === postcardId);
-    onAddInteraction({
-      id: Date.now().toString() + "t",
-      kind: "postcard_text",
-      postcardTitle: postcard?.title ?? "声音明信片",
-      text: savedText,
-      date: time,
-    });
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -851,17 +830,6 @@ function DiscoverOthersTab({ onAddInteraction }: { onAddInteraction: (item: MyIn
       [commentId]: [...(prev[commentId] ?? []), newReply],
     }));
     setIsCommentRecording(false);
-    const postcardForComment = SOUND_POSTCARDS.find((p) =>
-      p.comments.some((c) => c.id === commentId)
-    );
-    onAddInteraction({
-      id: Date.now().toString() + "cv",
-      kind: "comment_reply",
-      postcardTitle: postcardForComment?.title ?? "声音明信片",
-      replyToName: replyTo,
-      text: `🎤 语音留言 ${dur}`,
-      date: time,
-    });
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -886,19 +854,7 @@ function DiscoverOthersTab({ onAddInteraction }: { onAddInteraction: (item: MyIn
       [commentId]: [...(prev[commentId] ?? []), newReply],
     }));
     setReplyingToCommentId(null);
-    const savedCommentText = commentReplyText.trim();
     setCommentReplyText("");
-    const postcardForComment = SOUND_POSTCARDS.find((p) =>
-      p.comments.some((c) => c.id === commentId)
-    );
-    onAddInteraction({
-      id: Date.now().toString() + "r",
-      kind: "comment_reply",
-      postcardTitle: postcardForComment?.title ?? "声音明信片",
-      replyToName: replyTo,
-      text: savedCommentText,
-      date: time,
-    });
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -959,105 +915,54 @@ function DiscoverOthersTab({ onAddInteraction }: { onAddInteraction: (item: MyIn
 
 // ─── Conversation Chain Tab ───────────────────────────────────────────────────
 
-function MyInteractionItem({ item }: { item: MyInteraction }) {
-  const kindLabel =
-    item.kind === "postcard_voice"
-      ? "发送了语音留言"
-      : item.kind === "comment_reply"
-      ? `回复了 @${item.replyToName}`
-      : "发送了文字留言";
-
-  const kindIcon: "mic" | "chatbubble-ellipses" | "text" =
-    item.kind === "postcard_voice" ? "mic" : "chatbubble-ellipses";
-
+function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]; isLast?: boolean }) {
   return (
-    <View style={styles.myInteractionCard}>
-      <View style={styles.myInteractionAvatarWrap}>
-        <View style={styles.myInteractionAvatar}>
-          <Ionicons name={kindIcon} size={14} color="#fff" />
-        </View>
-      </View>
-      <View style={styles.myInteractionBody}>
-        <View style={styles.myInteractionHeader}>
-          <Text style={styles.myInteractionLabel} numberOfLines={1}>
-            我 · <Text style={styles.myInteractionKind}>{kindLabel}</Text>
-          </Text>
-          <Text style={styles.myInteractionDate}>{item.date}</Text>
-        </View>
-        <Text style={styles.myInteractionTarget} numberOfLines={1}>
-          {item.postcardTitle}
-        </Text>
-        <View style={styles.myInteractionTextWrap}>
-          {item.kind === "postcard_voice" ? (
-            <View style={styles.myInteractionVoiceRow}>
-              <Ionicons name="mic" size={11} color={Colors.light.primary} />
-              <Text style={styles.myInteractionVoiceLabel}>语音留言</Text>
-              <View style={styles.myInteractionVoiceDot} />
-              <Text style={styles.myInteractionVoiceLen}>{item.text}</Text>
+    <View>
+      <View style={styles.convCard}>
+        <Image source={item.avatar} style={styles.convAvatar} resizeMode="cover" />
+        <View style={styles.convBody}>
+          <View style={styles.convNameRow}>
+            <Text style={styles.convUsername} numberOfLines={1}>{item.username}</Text>
+            {item.isHost && (
+              <View style={styles.hostBadge}>
+                <Text style={styles.hostBadgeText}>主</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.convAction} numberOfLines={1}>{item.action}</Text>
+          <Text style={styles.convText} numberOfLines={2}>{item.text}</Text>
+          <ProgressBar progress={item.progress} total={item.total} />
+          <View style={styles.convFooter}>
+            <Text style={styles.convDate}>{item.date}</Text>
+            <View style={styles.convActions}>
+              <Pressable style={styles.convActionBtn} onPress={() => haptic()}>
+                <MaterialCommunityIcons name="chat-outline" size={14} color={Colors.light.textSecondary} />
+                <Text style={styles.convActionText}>回图</Text>
+              </Pressable>
+              <Pressable style={styles.convActionBtn} onPress={() => haptic()}>
+                <Ionicons name="bookmark-outline" size={14} color={Colors.light.textSecondary} />
+              </Pressable>
+              <Pressable style={styles.convActionBtn} onPress={() => haptic()}>
+                <Ionicons name="heart-outline" size={14} color={Colors.light.textSecondary} />
+                <Text style={styles.convActionText}>点赞</Text>
+              </Pressable>
             </View>
-          ) : (
-            <Text style={styles.myInteractionText} numberOfLines={2}>{item.text}</Text>
-          )}
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function ConversationItem({ item }: { item: typeof CONVERSATION_CHAIN[0] }) {
-  return (
-    <View style={styles.convCard}>
-      <Image source={item.avatar} style={styles.convAvatar} resizeMode="cover" />
-      <View style={styles.convBody}>
-        <View style={styles.convHeader}>
-          <Text style={styles.convUsername} numberOfLines={1}>{item.username}</Text>
-          {item.isHost && (
-            <View style={styles.hostBadge}>
-              <Text style={styles.hostBadgeText}>主</Text>
-            </View>
-          )}
-          <Text style={styles.convAction}>对您的留音进行了回应</Text>
-        </View>
-
-        <Text style={styles.convText} numberOfLines={2}>{item.text}</Text>
-
-        <ProgressBar progress={item.progress} total={item.total} />
-
-        <View style={styles.convFooter}>
-          <Text style={styles.convDate}>{item.date}</Text>
-          <View style={styles.convActions}>
-            <Pressable style={styles.convActionBtn} onPress={() => haptic()}>
-              <MaterialCommunityIcons name="chat-outline" size={14} color={Colors.light.textSecondary} />
-              <Text style={styles.convActionText}>回复</Text>
-            </Pressable>
-            <Pressable style={styles.convActionBtn} onPress={() => haptic()}>
-              <Ionicons name="heart-outline" size={14} color={Colors.light.textSecondary} />
-              <Text style={styles.convActionText}>点赞</Text>
-            </Pressable>
-            <Pressable onPress={() => haptic()}>
-              <Ionicons name="ellipsis-vertical" size={16} color={Colors.light.textSecondary} />
-            </Pressable>
           </View>
         </View>
       </View>
+      {!isLast && <View style={styles.convDivider} />}
     </View>
   );
 }
 
-function MyConversationChainTab({ myInteractions }: { myInteractions: MyInteraction[] }) {
+function MyConversationChainTab() {
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.tabContent}>
-      {myInteractions.length > 0 && (
-        <View style={styles.myInteractionSection}>
-          <Text style={styles.myInteractionSectionTitle}>我的互动记录</Text>
-          {myInteractions.map((i) => (
-            <MyInteractionItem key={i.id} item={i} />
-          ))}
-        </View>
-      )}
-      {CONVERSATION_CHAIN.map((c) => (
-        <ConversationItem key={c.id} item={c} />
-      ))}
+      <View style={styles.convList}>
+        {CONVERSATION_CHAIN.map((c, idx) => (
+          <ConversationItem key={c.id} item={c} isLast={idx === CONVERSATION_CHAIN.length - 1} />
+        ))}
+      </View>
     </ScrollView>
   );
 }
@@ -1066,11 +971,6 @@ function MyConversationChainTab({ myInteractions }: { myInteractions: MyInteract
 
 function SoundPostOfficeTab() {
   const [subTab, setSubTab] = useState<"discover" | "chain">("discover");
-  const [myInteractions, setMyInteractions] = useState<MyInteraction[]>([]);
-
-  const addInteraction = (item: MyInteraction) => {
-    setMyInteractions((prev) => [item, ...prev]);
-  };
 
   return (
     <View style={styles.postOfficeContainer}>
@@ -1095,8 +995,8 @@ function SoundPostOfficeTab() {
 
       <View style={{ flex: 1 }}>
         {subTab === "discover"
-          ? <DiscoverOthersTab onAddInteraction={addInteraction} />
-          : <MyConversationChainTab myInteractions={myInteractions} />
+          ? <DiscoverOthersTab />
+          : <MyConversationChainTab />
         }
       </View>
     </View>
@@ -1891,103 +1791,6 @@ const styles = StyleSheet.create({
     color: Colors.light.primary,
     fontWeight: "600",
   },
-  myInteractionSection: {
-    marginBottom: 8,
-    gap: 8,
-  },
-  myInteractionSectionTitle: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: Colors.light.textSecondary,
-    marginBottom: 2,
-    letterSpacing: 0.5,
-  },
-  myInteractionCard: {
-    flexDirection: "row",
-    gap: 10,
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.primary + "25",
-    shadowColor: Colors.light.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  myInteractionAvatarWrap: {
-    paddingTop: 2,
-  },
-  myInteractionAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.light.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  myInteractionBody: {
-    flex: 1,
-    gap: 3,
-  },
-  myInteractionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 2,
-  },
-  myInteractionLabel: {
-    fontSize: 12,
-    color: Colors.light.text,
-    flex: 1,
-  },
-  myInteractionKind: {
-    color: Colors.light.primary,
-    fontWeight: "600",
-  },
-  myInteractionDate: {
-    fontSize: 10,
-    color: Colors.light.textSecondary,
-    flexShrink: 0,
-    marginLeft: 6,
-  },
-  myInteractionTarget: {
-    fontSize: 11,
-    color: Colors.light.textSecondary,
-    marginBottom: 4,
-  },
-  myInteractionTextWrap: {
-    backgroundColor: "#F5FAF7",
-    borderRadius: 8,
-    padding: 8,
-  },
-  myInteractionText: {
-    fontSize: 13,
-    color: Colors.light.text,
-    lineHeight: 18,
-  },
-  myInteractionVoiceRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  myInteractionVoiceLabel: {
-    fontSize: 12,
-    color: Colors.light.text,
-    fontWeight: "500",
-  },
-  myInteractionVoiceDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: Colors.light.textSecondary,
-  },
-  myInteractionVoiceLen: {
-    fontSize: 11,
-    color: Colors.light.textSecondary,
-    fontWeight: "500",
-  },
   deliveryNote: {
     alignItems: "center",
     paddingVertical: 20,
@@ -1999,18 +1802,27 @@ const styles = StyleSheet.create({
   },
 
   // Conversation chain
+  convList: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
   convCard: {
     flexDirection: "row",
     gap: 12,
     backgroundColor: "#fff",
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  convDivider: {
+    height: 1,
+    backgroundColor: "#E8F5EE",
+    marginLeft: 68,
   },
   convAvatar: {
     width: 44,
@@ -2019,22 +1831,21 @@ const styles = StyleSheet.create({
   },
   convBody: {
     flex: 1,
-    gap: 8,
+    gap: 7,
   },
-  convHeader: {
+  convNameRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    flexWrap: "wrap",
   },
   convUsername: {
     fontSize: 14,
     fontWeight: "700",
     color: Colors.light.text,
-    maxWidth: 130,
+    maxWidth: 150,
   },
   hostBadge: {
-    backgroundColor: "#FF6B6B",
+    backgroundColor: Colors.light.primary,
     borderRadius: 4,
     paddingHorizontal: 5,
     paddingVertical: 1,
@@ -2047,16 +1858,18 @@ const styles = StyleSheet.create({
   convAction: {
     fontSize: 12,
     color: Colors.light.textSecondary,
+    lineHeight: 17,
   },
   convText: {
-    fontSize: 13,
+    fontSize: 13.5,
     color: Colors.light.text,
-    lineHeight: 18,
+    lineHeight: 20,
   },
   convFooter: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginTop: 2,
   },
   convDate: {
     fontSize: 11,
