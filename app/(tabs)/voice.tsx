@@ -396,22 +396,27 @@ function PostcardComment({
       {isReplying && (
         <View style={styles.commentReplyCard}>
           <View style={styles.commentReplySegment}>
-            {(["text", "mixed", "voice"] as const).map((mode) => {
-              const active = commentReplyMode === mode;
-              const label = mode === "text" ? "文字" : mode === "mixed" ? "文字+语音" : "纯语音";
-              const icon: "chatbubble-ellipses-outline" | "musical-notes-outline" | "mic-outline" =
-                mode === "text" ? "chatbubble-ellipses-outline" : mode === "mixed" ? "musical-notes-outline" : "mic-outline";
-              return (
-                <Pressable
-                  key={mode}
-                  style={[styles.commentReplySegBtn, active && styles.commentReplySegBtnActive]}
-                  onPress={() => { onCommentReplyModeChange(mode); haptic(); }}
-                >
-                  <Ionicons name={icon} size={12} color={active ? Colors.light.primary : Colors.light.textSecondary} />
-                  <Text style={[styles.commentReplySegLabel, active && styles.commentReplySegLabelActive]}>{label}</Text>
-                </Pressable>
-              );
-            })}
+            <Pressable
+              style={[styles.commentReplySegBtn, commentReplyMode === "text" && styles.commentReplySegBtnActive]}
+              onPress={() => { onCommentReplyModeChange("text"); haptic(); }}
+            >
+              <Ionicons name="chatbubble-outline" size={16} color={commentReplyMode === "text" ? Colors.light.primary : Colors.light.textSecondary} />
+            </Pressable>
+            <Pressable
+              style={[styles.commentReplySegBtn, commentReplyMode === "mixed" && styles.commentReplySegBtnActive]}
+              onPress={() => { onCommentReplyModeChange("mixed"); haptic(); }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                <Ionicons name="chatbubble-outline" size={12} color={commentReplyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary} />
+                <Ionicons name="mic-outline" size={12} color={commentReplyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary} />
+              </View>
+            </Pressable>
+            <Pressable
+              style={[styles.commentReplySegBtn, commentReplyMode === "voice" && styles.commentReplySegBtnActive]}
+              onPress={() => { onCommentReplyModeChange("voice"); haptic(); }}
+            >
+              <Ionicons name="mic-outline" size={16} color={commentReplyMode === "voice" ? Colors.light.primary : Colors.light.textSecondary} />
+            </Pressable>
           </View>
 
           {commentReplyMode === "voice" ? (
@@ -1702,22 +1707,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 9,
-    gap: 4,
+    paddingVertical: 7,
   },
   commentReplySegBtnActive: {
     backgroundColor: "#EAF7F0",
     borderBottomWidth: 2,
     borderBottomColor: Colors.light.primary,
-  },
-  commentReplySegLabel: {
-    fontSize: 11,
-    color: Colors.light.textSecondary,
-    fontWeight: "500",
-  },
-  commentReplySegLabelActive: {
-    color: Colors.light.primary,
-    fontWeight: "700",
   },
   commentReplyInputArea: {
     flexDirection: "row",
