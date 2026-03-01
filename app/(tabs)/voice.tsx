@@ -82,20 +82,25 @@ async function startRecording(): Promise<boolean> {
   }
 }
 
-async function stopRecording(): Promise<{ uri: string | null; duration: string }> {
-  const elapsed = Math.max(1, Math.floor((Date.now() - _gRecordingStart) / 1000));
+async function stopRecording(): Promise<{ uri: string | null; duration: string; recorded: boolean }> {
+  const start = _gRecordingStart;
+  _gRecordingStart = 0;
+  if (!_gRecording || start === 0) {
+    _gRecording = null;
+    return { uri: null, duration: "00:00", recorded: false };
+  }
+  const elapsed = Math.max(1, Math.floor((Date.now() - start) / 1000));
   const mins = String(Math.floor(elapsed / 60)).padStart(2, "0");
   const secs = String(elapsed % 60).padStart(2, "0");
   const duration = `${mins}:${secs}`;
-  if (!_gRecording) return { uri: null, duration };
   try {
     await _gRecording.stopAndUnloadAsync();
     const uri = _gRecording.getURI() ?? null;
     _gRecording = null;
-    return { uri, duration };
+    return { uri, duration, recorded: true };
   } catch {
     _gRecording = null;
-    return { uri: null, duration };
+    return { uri: null, duration, recorded: true };
   }
 }
 
@@ -608,14 +613,15 @@ function DiaryGroup({
   };
 
   const handleMixedRecordEnd = async () => {
-    const { duration } = await stopRecording();
+    const { duration, recorded } = await stopRecording();
     setIsRecording(false);
-    setMixedVoiceDur(duration);
+    if (recorded) setMixedVoiceDur(duration);
   };
 
   const submitVoiceReply = async (itemId: string, phone: string) => {
-    const { duration } = await stopRecording();
+    const { duration, recorded } = await stopRecording();
     setIsRecording(false);
+    if (!recorded) return;
     const capturedNowStr = nowStr();
     Alert.alert("录制完成", `时长 ${duration}，是否上传？`, [
       { text: "取消", style: "cancel" },
@@ -1254,8 +1260,9 @@ function DiscoverOthersTab() {
   };
 
   const submitVoiceReply = async (postcardId: string) => {
-    const { duration } = await stopRecording();
+    const { duration, recorded } = await stopRecording();
     setIsRecording(false);
+    if (!recorded) return;
     const capturedText = replyText;
     const capturedTime = nowStr();
     Alert.alert("录制完成", `时长 ${duration}，是否上传？`, [
@@ -1296,9 +1303,9 @@ function DiscoverOthersTab() {
   };
 
   const handlePostcardMixedRecordEnd = async () => {
-    const { duration } = await stopRecording();
+    const { duration, recorded } = await stopRecording();
     setIsRecording(false);
-    setPostcardMixedVoiceDur(duration);
+    if (recorded) setPostcardMixedVoiceDur(duration);
   };
 
   const submitReply = (postcardId: string) => {
@@ -1342,14 +1349,15 @@ function DiscoverOthersTab() {
   };
 
   const handleCommentMixedRecordEnd = async () => {
-    const { duration } = await stopRecording();
+    const { duration, recorded } = await stopRecording();
     setIsCommentRecording(false);
-    setCommentMixedVoiceDur(duration);
+    if (recorded) setCommentMixedVoiceDur(duration);
   };
 
   const submitCommentVoiceReply = async (commentId: string) => {
-    const { duration } = await stopRecording();
+    const { duration, recorded } = await stopRecording();
     setIsCommentRecording(false);
+    if (!recorded) return;
     const allComments = Object.values(commentsByPostcard).flat();
     const target = allComments.find((c) => c.id === commentId);
     const replyTo = target
@@ -1511,8 +1519,9 @@ function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]
     if (ok) { setIsRecording(true); haptic(Haptics.ImpactFeedbackStyle.Heavy); }
   };
   const submitVoiceReply = async () => {
-    const { duration } = await stopRecording();
+    const { duration, recorded } = await stopRecording();
     setIsRecording(false);
+    if (!recorded) return;
     Alert.alert("录制完成", `时长 ${duration}，是否上传？`, [
       { text: "取消", style: "cancel" },
       {
@@ -1614,9 +1623,9 @@ function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]
                           style={[styles.convReplyMicSmall, isRecording && styles.convReplyMicSmallActive]}
                           onPressIn={handleRecordStart}
                           onPressOut={async () => {
-                            const { duration } = await stopRecording();
+                            const { duration, recorded } = await stopRecording();
                             setIsRecording(false);
-                            setRecordedDuration(duration);
+                            if (recorded) setRecordedDuration(duration);
                           }}
                         >
                           <Ionicons name="mic" size={12} color={isRecording ? "#fff" : Colors.light.primary} />
