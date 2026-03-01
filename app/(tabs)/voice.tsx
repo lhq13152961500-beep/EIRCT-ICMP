@@ -62,6 +62,7 @@ let _gRecordingStart = 0;
 
 async function startRecording(): Promise<boolean> {
   if (Platform.OS === "web") return false;
+  if (_gRecording) return true;
   try {
     await stopGlobalAudio();
     const { status } = await Audio.requestPermissionsAsync();
@@ -115,14 +116,18 @@ function parseVoiceText(text: string): { body: string; voice: string | null } {
   return { body: text, voice: null };
 }
 
-function SubReplyContent({ text, style }: { text: string; style?: object }) {
+function SubReplyContent({ text, style, uri }: { text: string; style?: object; uri?: string | null }) {
   const { body, voice } = parseVoiceText(text);
   return (
     <View style={{ gap: 4 }}>
       {body.length > 0 && <Text style={style}>{body}</Text>}
       {voice && (
         <View style={styles.voiceMixedPill}>
-          <Ionicons name="mic" size={11} color={Colors.light.primary} />
+          {uri ? (
+            <PlayButton size={20} audioUrl={uri} />
+          ) : (
+            <Ionicons name="mic" size={11} color={Colors.light.primary} />
+          )}
           <View style={styles.voiceMixedWave}>
             {[3, 6, 4, 7, 5, 3, 6].map((h, i) => (
               <View key={i} style={[styles.voiceMixedBar, { height: h * 1.5 }]} />
@@ -461,7 +466,7 @@ function DiaryReplyItem({
             <View key={sr.id} style={styles.diarySubReplyBubble}>
               <View style={{ flexDirection: "row", alignItems: "baseline", flexWrap: "wrap", gap: 4 }}>
                 <Text style={styles.diarySubReplyAt}>@{sr.replyTo}</Text>
-                <SubReplyContent text={sr.text} style={styles.diarySubReplyText} />
+                <SubReplyContent text={sr.text} style={styles.diarySubReplyText} uri={sr.uri} />
               </View>
               <Text style={styles.diarySubReplyTime}>{sr.time}</Text>
             </View>
@@ -570,6 +575,7 @@ function DiaryGroup({
   const [replyMode, setReplyMode] = useState<"text" | "mixed" | "voice">("text");
   const [isRecording, setIsRecording] = useState(false);
   const [mixedVoiceDur, setMixedVoiceDur] = useState<string | null>(null);
+  const [mixedVoiceUri, setMixedVoiceUri] = useState<string | null>(null);
   const [subRepliesByItem, setSubRepliesByItem] = useState<Record<string, SubReply[]>>({});
 
   const nowStr = () => {
@@ -584,12 +590,14 @@ function DiaryGroup({
       setReplyMode("text");
       setIsRecording(false);
       setMixedVoiceDur(null);
+      setMixedVoiceUri(null);
     } else {
       setReplyingToId(itemId);
       setReplyText("");
       setReplyMode("text");
       setIsRecording(false);
       setMixedVoiceDur(null);
+      setMixedVoiceUri(null);
     }
   };
 
@@ -606,25 +614,31 @@ function DiaryGroup({
       time: nowStr(),
       text: combinedText,
       replyTo: phone,
+      uri: mixedVoiceUri,
     };
     setSubRepliesByItem((prev) => ({ ...prev, [itemId]: [...(prev[itemId] ?? []), newReply] }));
     setReplyingToId(null);
     setReplyText("");
     setMixedVoiceDur(null);
+    setMixedVoiceUri(null);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
   const handleMixedRecordEnd = async () => {
-    const { duration, recorded } = await stopRecording();
+    const { uri, duration, recorded } = await stopRecording();
     setIsRecording(false);
-    if (recorded) setMixedVoiceDur(duration);
+    if (recorded) {
+      setMixedVoiceDur(duration);
+      setMixedVoiceUri(uri);
+    }
   };
 
   const submitVoiceReply = async (itemId: string, phone: string) => {
-    const { duration, recorded } = await stopRecording();
+    const { uri, duration, recorded } = await stopRecording();
     setIsRecording(false);
     if (!recorded) return;
     const capturedNowStr = nowStr();
+    const capturedUri = uri;
     Alert.alert("录制完成", `时长 ${duration}，是否上传？`, [
       { text: "取消", style: "cancel" },
       {
@@ -636,6 +650,7 @@ function DiaryGroup({
             time: capturedNowStr,
             text: `🎤 语音 ${duration}`,
             replyTo: phone,
+            uri: capturedUri,
           };
           setSubRepliesByItem((prev) => ({ ...prev, [itemId]: [...(prev[itemId] ?? []), newReply] }));
           setReplyingToId(null);
@@ -707,7 +722,7 @@ function DiaryGroup({
                 : () => submitVoiceReply(r.id, r.phone)
               }
               mixedVoiceDur={replyingToId === r.id ? mixedVoiceDur : null}
-              onClearMixedVoice={() => setMixedVoiceDur(null)}
+              onClearMixedVoice={() => { setMixedVoiceDur(null); setMixedVoiceUri(null); }}
               audioUrl={getDemoAudio(r.id)}
             />
           ))}
@@ -750,10 +765,10 @@ function MyDiaryTab() {
 
 // ─── Comment Types ────────────────────────────────────────────────────────────
 
-type VoiceComment = { id: string; type: "voice"; title: string; duration: string; date: string; phone: string };
-type TextComment  = { id: string; type: "text";  username: string; time: string; text: string };
+type VoiceComment = { id: string; type: "voice"; title: string; duration: string; date: string; phone: string; uri?: string | null };
+type TextComment  = { id: string; type: "text";  username: string; time: string; text: string; uri?: string | null };
 type CommentItem  = VoiceComment | TextComment;
-type SubReply       = { id: string; username: string; time: string; text: string; replyTo: string };
+type SubReply       = { id: string; username: string; time: string; text: string; replyTo: string; uri?: string | null };
 
 // ─── Sound Postcard Card ──────────────────────────────────────────────────────
 
@@ -825,7 +840,7 @@ function PostcardComment({
               </Pressable>
             </View>
           ) : (
-            <Text style={styles.uniCommentText}>{item.text}</Text>
+            <SubReplyContent text={item.text} style={styles.uniCommentText} uri={item.uri} />
           )}
         </View>
       </Pressable>
@@ -847,7 +862,7 @@ function PostcardComment({
                 <Text style={styles.subReplyMeta}>{r.username} · {r.time}</Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "baseline", gap: 3 }}>
                   <Text style={styles.subReplyAt}>@{r.replyTo}</Text>
-                  <SubReplyContent text={r.text} style={styles.subReplyText} />
+                  <SubReplyContent text={r.text} style={styles.subReplyText} uri={r.uri} />
                 </View>
               </View>
             </View>
@@ -1217,11 +1232,13 @@ function DiscoverOthersTab() {
   const [replyMode, setReplyMode] = useState<"text" | "mixed" | "voice">("text");
   const [isRecording, setIsRecording] = useState(false);
   const [postcardMixedVoiceDur, setPostcardMixedVoiceDur] = useState<string | null>(null);
+  const [postcardMixedVoiceUri, setPostcardMixedVoiceUri] = useState<string | null>(null);
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
   const [commentReplyText, setCommentReplyText] = useState("");
   const [commentReplyMode, setCommentReplyMode] = useState<"text" | "mixed" | "voice">("text");
   const [isCommentRecording, setIsCommentRecording] = useState(false);
   const [commentMixedVoiceDur, setCommentMixedVoiceDur] = useState<string | null>(null);
+  const [commentMixedVoiceUri, setCommentMixedVoiceUri] = useState<string | null>(null);
   const [subRepliesByComment, setSubRepliesByComment] = useState<Record<string, SubReply[]>>({});
 
   const toggleLike = (id: string) => {
@@ -1247,12 +1264,14 @@ function DiscoverOthersTab() {
       setReplyMode("text");
       setIsRecording(false);
       setPostcardMixedVoiceDur(null);
+      setPostcardMixedVoiceUri(null);
     } else {
       setReplyingToId(id);
       setReplyText("");
       setReplyMode("text");
       setIsRecording(false);
       setPostcardMixedVoiceDur(null);
+      setPostcardMixedVoiceUri(null);
     }
   };
 
@@ -1262,11 +1281,12 @@ function DiscoverOthersTab() {
   };
 
   const submitVoiceReply = async (postcardId: string) => {
-    const { duration, recorded } = await stopRecording();
+    const { uri, duration, recorded } = await stopRecording();
     setIsRecording(false);
     if (!recorded) return;
     const capturedText = replyText;
     const capturedTime = nowStr();
+    const capturedUri = uri;
     Alert.alert("录制完成", `时长 ${duration}，是否上传？`, [
       { text: "取消", style: "cancel" },
       {
@@ -1280,6 +1300,7 @@ function DiscoverOthersTab() {
               username: "我",
               time: capturedTime,
               text: `${capturedText.trim()}\n🎤 语音 ${duration}`,
+              uri: capturedUri,
             } as TextComment;
             setReplyText("");
           } else {
@@ -1290,6 +1311,7 @@ function DiscoverOthersTab() {
               duration,
               date: capturedTime,
               phone: "我",
+              uri: capturedUri,
             } as VoiceComment;
           }
           setCommentsByPostcard((prev) => ({
@@ -1305,9 +1327,12 @@ function DiscoverOthersTab() {
   };
 
   const handlePostcardMixedRecordEnd = async () => {
-    const { duration, recorded } = await stopRecording();
+    const { uri, duration, recorded } = await stopRecording();
     setIsRecording(false);
-    if (recorded) setPostcardMixedVoiceDur(duration);
+    if (recorded) {
+      setPostcardMixedVoiceDur(duration);
+      setPostcardMixedVoiceUri(uri);
+    }
   };
 
   const submitReply = (postcardId: string) => {
@@ -1322,6 +1347,7 @@ function DiscoverOthersTab() {
       username: "我",
       time,
       text: combinedText,
+      uri: postcardMixedVoiceUri,
     };
     setCommentsByPostcard((prev) => ({
       ...prev,
@@ -1331,6 +1357,7 @@ function DiscoverOthersTab() {
     setReplyingToId(null);
     setReplyText("");
     setPostcardMixedVoiceDur(null);
+    setPostcardMixedVoiceUri(null);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -1341,23 +1368,28 @@ function DiscoverOthersTab() {
       setCommentReplyMode("text");
       setIsCommentRecording(false);
       setCommentMixedVoiceDur(null);
+      setCommentMixedVoiceUri(null);
     } else {
       setReplyingToCommentId(commentId);
       setCommentReplyText("");
       setCommentReplyMode("text");
       setIsCommentRecording(false);
       setCommentMixedVoiceDur(null);
+      setCommentMixedVoiceUri(null);
     }
   };
 
   const handleCommentMixedRecordEnd = async () => {
-    const { duration, recorded } = await stopRecording();
+    const { uri, duration, recorded } = await stopRecording();
     setIsCommentRecording(false);
-    if (recorded) setCommentMixedVoiceDur(duration);
+    if (recorded) {
+      setCommentMixedVoiceDur(duration);
+      setCommentMixedVoiceUri(uri);
+    }
   };
 
   const submitCommentVoiceReply = async (commentId: string) => {
-    const { duration, recorded } = await stopRecording();
+    const { uri, duration, recorded } = await stopRecording();
     setIsCommentRecording(false);
     if (!recorded) return;
     const allComments = Object.values(commentsByPostcard).flat();
@@ -1367,6 +1399,7 @@ function DiscoverOthersTab() {
       : "对方";
     const capturedCommentText = commentReplyText;
     const capturedTime = nowStr();
+    const capturedUri = uri;
     Alert.alert("录制完成", `时长 ${duration}，是否上传？`, [
       { text: "取消", style: "cancel" },
       {
@@ -1382,6 +1415,7 @@ function DiscoverOthersTab() {
             time: capturedTime,
             text: combinedText,
             replyTo,
+            uri: capturedUri,
           };
           setSubRepliesByComment((prev) => ({
             ...prev,
@@ -1415,6 +1449,7 @@ function DiscoverOthersTab() {
       time,
       text: combinedText,
       replyTo,
+      uri: commentMixedVoiceUri,
     };
     setSubRepliesByComment((prev) => ({
       ...prev,
@@ -1423,6 +1458,7 @@ function DiscoverOthersTab() {
     setReplyingToCommentId(null);
     setCommentReplyText("");
     setCommentMixedVoiceDur(null);
+    setCommentMixedVoiceUri(null);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -1464,7 +1500,7 @@ function DiscoverOthersTab() {
           onRecordEnd={() => submitVoiceReply(p.id)}
           onMixedRecordEnd={handlePostcardMixedRecordEnd}
           postcardMixedVoiceDur={replyingToId === p.id ? postcardMixedVoiceDur : null}
-          onClearPostcardMixedVoice={() => setPostcardMixedVoiceDur(null)}
+          onClearPostcardMixedVoice={() => { setPostcardMixedVoiceDur(null); setPostcardMixedVoiceUri(null); }}
           subRepliesByComment={subRepliesByComment}
           replyingToCommentId={replyingToCommentId}
           onReplyToComment={replyToComment}
@@ -1481,7 +1517,7 @@ function DiscoverOthersTab() {
           onCommentRecordEnd={(commentId) => submitCommentVoiceReply(commentId)}
           onCommentMixedRecordEnd={handleCommentMixedRecordEnd}
           commentMixedVoiceDur={commentMixedVoiceDur}
-          onClearCommentMixedVoice={() => setCommentMixedVoiceDur(null)}
+          onClearCommentMixedVoice={() => { setCommentMixedVoiceDur(null); setCommentMixedVoiceUri(null); }}
         />
       ))}
 
@@ -2118,11 +2154,6 @@ const styles = StyleSheet.create({
   discoverHeaderText: {
     fontSize: 13,
     color: Colors.light.textSecondary,
-  },
-  filterBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
   },
 
   postcardCard: {
