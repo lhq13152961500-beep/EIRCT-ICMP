@@ -9,6 +9,7 @@ import {
   Platform,
   Dimensions,
   TextInput,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -53,6 +54,49 @@ async function ensureAudioMode() {
     await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, staysActiveInBackground: false });
     _audioModeSet = true;
   } catch {}
+}
+
+// ─── Recording Manager ────────────────────────────────────────────────────────
+let _gRecording: Audio.Recording | null = null;
+let _gRecordingStart = 0;
+
+async function startRecording(): Promise<boolean> {
+  if (Platform.OS === "web") return false;
+  try {
+    await stopGlobalAudio();
+    const { status } = await Audio.requestPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("需要麦克风权限", "请在系统设置中允许此应用使用麦克风");
+      return false;
+    }
+    await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+    const { recording } = await Audio.Recording.createAsync(
+      Audio.RecordingOptionsPresets.HIGH_QUALITY
+    );
+    _gRecording = recording;
+    _gRecordingStart = Date.now();
+    _audioModeSet = false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function stopRecording(): Promise<{ uri: string | null; duration: string }> {
+  const elapsed = Math.max(1, Math.floor((Date.now() - _gRecordingStart) / 1000));
+  const mins = String(Math.floor(elapsed / 60)).padStart(2, "0");
+  const secs = String(elapsed % 60).padStart(2, "0");
+  const duration = `${mins}:${secs}`;
+  if (!_gRecording) return { uri: null, duration };
+  try {
+    await _gRecording.stopAndUnloadAsync();
+    const uri = _gRecording.getURI() ?? null;
+    _gRecording = null;
+    return { uri, duration };
+  } catch {
+    _gRecording = null;
+    return { uri: null, duration };
+  }
 }
 
 // ─── Data ────────────────────────────────────────────────────────────────────
@@ -507,18 +551,18 @@ function DiaryGroup({
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
-  const submitVoiceReply = (itemId: string, phone: string) => {
-    if (!isRecording) return;
-    const dur = `00:${String(Math.floor(Math.random() * 25) + 5).padStart(2, "0")}`;
+  const submitVoiceReply = async (itemId: string, phone: string) => {
+    const { duration } = await stopRecording();
+    setIsRecording(false);
     const newReply: SubReply = {
       id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
       username: "我",
       time: nowStr(),
-      text: `🎤 语音回复 ${dur}`,
+      text: `🎤 语音回复 ${duration}`,
       replyTo: phone,
     };
     setSubRepliesByItem((prev) => ({ ...prev, [itemId]: [...(prev[itemId] ?? []), newReply] }));
-    setIsRecording(false);
+    setReplyingToId(null);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -574,7 +618,10 @@ function DiaryGroup({
               replyMode={replyMode}
               onReplyModeChange={setReplyMode}
               isRecording={replyingToId === r.id && isRecording}
-              onRecordStart={() => setIsRecording(true)}
+              onRecordStart={async () => {
+                const ok = await startRecording();
+                if (ok) setIsRecording(true);
+              }}
               onRecordEnd={() => submitVoiceReply(r.id, r.phone)}
               audioUrl={getDemoAudio(r.id)}
             />
@@ -1084,16 +1131,15 @@ function DiscoverOthersTab() {
     return `${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")} ${String(n.getHours()).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}`;
   };
 
-  const submitVoiceReply = (postcardId: string) => {
-    if (!isRecording) return;
-    const time = nowStr();
-    const dur = `00:${String(Math.floor(Math.random() * 25) + 5).padStart(2, "0")}`;
+  const submitVoiceReply = async (postcardId: string) => {
+    const { duration } = await stopRecording();
+    setIsRecording(false);
     const newComment: VoiceComment = {
       id: Date.now().toString(),
       type: "voice",
       title: "我的语音留言",
-      duration: dur,
-      date: time,
+      duration,
+      date: nowStr(),
       phone: "我",
     };
     setCommentsByPostcard((prev) => ({
@@ -1101,7 +1147,6 @@ function DiscoverOthersTab() {
       [postcardId]: [...(prev[postcardId] ?? []), newComment],
     }));
     setExpandedIds((prev) => ({ ...prev, [postcardId]: true }));
-    setIsRecording(false);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -1139,10 +1184,9 @@ function DiscoverOthersTab() {
     }
   };
 
-  const submitCommentVoiceReply = (commentId: string) => {
-    if (!isCommentRecording) return;
-    const time = nowStr();
-    const dur = `00:${String(Math.floor(Math.random() * 25) + 5).padStart(2, "0")}`;
+  const submitCommentVoiceReply = async (commentId: string) => {
+    const { duration } = await stopRecording();
+    setIsCommentRecording(false);
     const allComments = Object.values(commentsByPostcard).flat();
     const target = allComments.find((c) => c.id === commentId);
     const replyTo = target
@@ -1151,15 +1195,14 @@ function DiscoverOthersTab() {
     const newReply: SubReply = {
       id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
       username: "我",
-      time,
-      text: `🎤 语音留言 ${dur}`,
+      time: nowStr(),
+      text: `🎤 语音留言 ${duration}`,
       replyTo,
     };
     setSubRepliesByComment((prev) => ({
       ...prev,
       [commentId]: [...(prev[commentId] ?? []), newReply],
     }));
-    setIsCommentRecording(false);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -1219,7 +1262,10 @@ function DiscoverOthersTab() {
           onReplyTextChange={setReplyText}
           onSubmitReply={() => submitReply(p.id)}
           isRecording={isRecording}
-          onRecordStart={() => setIsRecording(true)}
+          onRecordStart={async () => {
+            const ok = await startRecording();
+            if (ok) setIsRecording(true);
+          }}
           onRecordEnd={() => submitVoiceReply(p.id)}
           subRepliesByComment={subRepliesByComment}
           replyingToCommentId={replyingToCommentId}
@@ -1230,7 +1276,10 @@ function DiscoverOthersTab() {
           commentReplyMode={commentReplyMode}
           onCommentReplyModeChange={setCommentReplyMode}
           isCommentRecording={isCommentRecording}
-          onCommentRecordStart={() => setIsCommentRecording(true)}
+          onCommentRecordStart={async () => {
+            const ok = await startRecording();
+            if (ok) setIsCommentRecording(true);
+          }}
           onCommentRecordEnd={(commentId) => submitCommentVoiceReply(commentId)}
         />
       ))}
@@ -1263,8 +1312,12 @@ function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]
     setIsReplying(false); setReplyText("");
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
-  const submitVoiceReply = () => {
-    if (!isRecording) return;
+  const handleRecordStart = async () => {
+    const ok = await startRecording();
+    if (ok) { setIsRecording(true); haptic(Haptics.ImpactFeedbackStyle.Heavy); }
+  };
+  const submitVoiceReply = async () => {
+    await stopRecording();
     setIsReplying(false); setIsRecording(false);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
@@ -1322,7 +1375,7 @@ function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]
               {replyMode === "voice" ? (
                 <Pressable
                   style={[styles.convReplyMicArea, isRecording && styles.convReplyMicAreaActive]}
-                  onPressIn={() => { setIsRecording(true); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+                  onPressIn={handleRecordStart}
                   onPressOut={submitVoiceReply}
                 >
                   <View style={[styles.convReplyMicRing, isRecording && styles.convReplyMicRingActive]}>
@@ -1347,8 +1400,8 @@ function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]
                     {replyMode === "mixed" && (
                       <Pressable
                         style={[styles.convReplyMicSmall, isRecording && styles.convReplyMicSmallActive]}
-                        onPressIn={() => { setIsRecording(true); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
-                        onPressOut={() => setIsRecording(false)}
+                        onPressIn={handleRecordStart}
+                        onPressOut={async () => { await stopRecording(); setIsRecording(false); }}
                       >
                         <Ionicons name="mic" size={12} color={isRecording ? "#fff" : Colors.light.primary} />
                       </Pressable>

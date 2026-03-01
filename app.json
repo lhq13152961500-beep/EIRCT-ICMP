@@ -15,10 +15,14 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.myapp"
+      "bundleIdentifier": "com.myapp",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "录制声音日记和语音留言需要使用麦克风"
+      }
     },
     "android": {
       "package": "com.myapp",
+      "permissions": ["android.permission.RECORD_AUDIO"],
       "adaptiveIcon": {
         "backgroundColor": "#3DAA6F",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
