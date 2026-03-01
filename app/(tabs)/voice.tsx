@@ -554,15 +554,20 @@ function DiaryGroup({
   const submitVoiceReply = async (itemId: string, phone: string) => {
     const { duration } = await stopRecording();
     setIsRecording(false);
+    const voicePart = `🎤 语音 ${duration}`;
+    const combinedText = replyText.trim()
+      ? `${replyText.trim()}\n${voicePart}`
+      : voicePart;
     const newReply: SubReply = {
       id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
       username: "我",
       time: nowStr(),
-      text: `🎤 语音回复 ${duration}`,
+      text: combinedText,
       replyTo: phone,
     };
     setSubRepliesByItem((prev) => ({ ...prev, [itemId]: [...(prev[itemId] ?? []), newReply] }));
     setReplyingToId(null);
+    setReplyText("");
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -1134,19 +1139,33 @@ function DiscoverOthersTab() {
   const submitVoiceReply = async (postcardId: string) => {
     const { duration } = await stopRecording();
     setIsRecording(false);
-    const newComment: VoiceComment = {
-      id: Date.now().toString(),
-      type: "voice",
-      title: "我的语音留言",
-      duration,
-      date: nowStr(),
-      phone: "我",
-    };
+    const time = nowStr();
+    let newComment: CommentItem;
+    if (replyText.trim()) {
+      newComment = {
+        id: Date.now().toString(),
+        type: "text",
+        username: "我",
+        time,
+        text: `${replyText.trim()}\n🎤 语音 ${duration}`,
+      } as TextComment;
+      setReplyText("");
+    } else {
+      newComment = {
+        id: Date.now().toString(),
+        type: "voice",
+        title: "我的语音留言",
+        duration,
+        date: time,
+        phone: "我",
+      } as VoiceComment;
+    }
     setCommentsByPostcard((prev) => ({
       ...prev,
       [postcardId]: [...(prev[postcardId] ?? []), newComment],
     }));
     setExpandedIds((prev) => ({ ...prev, [postcardId]: true }));
+    setReplyingToId(null);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -1192,17 +1211,23 @@ function DiscoverOthersTab() {
     const replyTo = target
       ? target.type === "voice" ? target.phone : target.username
       : "对方";
+    const voicePart = `🎤 语音 ${duration}`;
+    const combinedText = commentReplyText.trim()
+      ? `${commentReplyText.trim()}\n${voicePart}`
+      : voicePart;
     const newReply: SubReply = {
       id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
       username: "我",
       time: nowStr(),
-      text: `🎤 语音留言 ${duration}`,
+      text: combinedText,
       replyTo,
     };
     setSubRepliesByComment((prev) => ({
       ...prev,
       [commentId]: [...(prev[commentId] ?? []), newReply],
     }));
+    setCommentReplyText("");
+    setReplyingToCommentId(null);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -1298,18 +1323,21 @@ function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]
   const [replyMode, setReplyMode] = useState<"text" | "mixed" | "voice">("text");
   const [replyText, setReplyText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [recordedDuration, setRecordedDuration] = useState<string | null>(null);
   const [isLiked, setIsLiked] = useState(false);
 
   const toggleReply = () => {
     setIsReplying((v) => {
-      if (v) { setReplyText(""); setReplyMode("text"); setIsRecording(false); }
+      if (v) { setReplyText(""); setReplyMode("text"); setIsRecording(false); setRecordedDuration(null); }
       return !v;
     });
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
   const submitReply = () => {
-    if (!replyText.trim()) return;
-    setIsReplying(false); setReplyText("");
+    const hasText = replyText.trim().length > 0;
+    const hasVoice = !!recordedDuration;
+    if (!hasText && !hasVoice) return;
+    setIsReplying(false); setReplyText(""); setRecordedDuration(null);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
   const handleRecordStart = async () => {
@@ -1398,18 +1426,32 @@ function ConversationItem({ item, isLast }: { item: typeof CONVERSATION_CHAIN[0]
                   />
                   <View style={styles.commentReplyActions}>
                     {replyMode === "mixed" && (
-                      <Pressable
-                        style={[styles.convReplyMicSmall, isRecording && styles.convReplyMicSmallActive]}
-                        onPressIn={handleRecordStart}
-                        onPressOut={async () => { await stopRecording(); setIsRecording(false); }}
-                      >
-                        <Ionicons name="mic" size={12} color={isRecording ? "#fff" : Colors.light.primary} />
-                      </Pressable>
+                      recordedDuration ? (
+                        <View style={styles.convRecordedChip}>
+                          <Ionicons name="mic" size={11} color={Colors.light.primary} />
+                          <Text style={styles.convRecordedChipText}>{recordedDuration}</Text>
+                          <Pressable onPress={() => setRecordedDuration(null)}>
+                            <Ionicons name="close-circle" size={13} color={Colors.light.textSecondary} />
+                          </Pressable>
+                        </View>
+                      ) : (
+                        <Pressable
+                          style={[styles.convReplyMicSmall, isRecording && styles.convReplyMicSmallActive]}
+                          onPressIn={handleRecordStart}
+                          onPressOut={async () => {
+                            const { duration } = await stopRecording();
+                            setIsRecording(false);
+                            setRecordedDuration(duration);
+                          }}
+                        >
+                          <Ionicons name="mic" size={12} color={isRecording ? "#fff" : Colors.light.primary} />
+                        </Pressable>
+                      )
                     )}
                     <Pressable
-                      style={[styles.convReplySendBtn, replyText.trim().length === 0 && { opacity: 0.38 }]}
+                      style={[styles.convReplySendBtn, (!replyText.trim() && !recordedDuration) && { opacity: 0.38 }]}
                       onPress={submitReply}
-                      disabled={replyText.trim().length === 0}
+                      disabled={!replyText.trim() && !recordedDuration}
                     >
                       <Ionicons name="arrow-up" size={14} color="#fff" />
                     </Pressable>
@@ -2553,6 +2595,22 @@ const styles = StyleSheet.create({
   },
   convReplyMicSmallActive: {
     backgroundColor: Colors.light.primary,
+  },
+  convRecordedChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#EAF7F0",
+    borderRadius: 12,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: Colors.light.primary,
+  },
+  convRecordedChipText: {
+    fontSize: 11,
+    color: Colors.light.primary,
+    fontWeight: "600",
   },
   convReplyMicArea: {
     flexDirection: "row",
