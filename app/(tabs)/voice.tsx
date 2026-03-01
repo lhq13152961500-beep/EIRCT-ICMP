@@ -304,7 +304,15 @@ function MyDiaryTab() {
 type VoiceComment = { id: string; type: "voice"; title: string; duration: string; date: string; phone: string };
 type TextComment  = { id: string; type: "text";  username: string; time: string; text: string };
 type CommentItem  = VoiceComment | TextComment;
-type SubReply     = { id: string; username: string; time: string; text: string; replyTo: string };
+type SubReply       = { id: string; username: string; time: string; text: string; replyTo: string };
+type MyInteraction  = {
+  id: string;
+  kind: "postcard_text" | "postcard_voice" | "comment_reply";
+  postcardTitle: string;
+  replyToName?: string;
+  text: string;
+  date: string;
+};
 
 // ─── Sound Postcard Card ──────────────────────────────────────────────────────
 
@@ -342,18 +350,6 @@ function PostcardComment({
           <View style={styles.uniCommentHeader}>
             <Text style={styles.uniCommentName}>{name}</Text>
             <Text style={styles.uniCommentTime}>{time}</Text>
-            <View style={styles.uniCommentReplyHint}>
-              <Ionicons
-                name="chatbubble-outline"
-                size={11}
-                color={isReplying ? Colors.light.primary : Colors.light.textSecondary}
-              />
-              {subReplies.length > 0 && (
-                <Text style={[styles.uniCommentReplyHintCount, isReplying && { color: Colors.light.primary }]}>
-                  {subReplies.length}
-                </Text>
-              )}
-            </View>
           </View>
           {isVoice ? (
             <View style={styles.uniCommentVoiceRow}>
@@ -636,7 +632,7 @@ function SoundPostcard({
   );
 }
 
-function DiscoverOthersTab() {
+function DiscoverOthersTab({ onAddInteraction }: { onAddInteraction: (item: MyInteraction) => void }) {
   const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>(
     Object.fromEntries(SOUND_POSTCARDS.map((p) => [p.id, p.likeCount]))
@@ -683,10 +679,14 @@ function DiscoverOthersTab() {
     }
   };
 
+  const nowStr = () => {
+    const n = new Date();
+    return `${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")} ${String(n.getHours()).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}`;
+  };
+
   const submitVoiceReply = (postcardId: string) => {
     if (!isRecording) return;
-    const now = new Date();
-    const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const time = nowStr();
     const dur = `00:${String(Math.floor(Math.random() * 25) + 5).padStart(2, "0")}`;
     const newComment: VoiceComment = {
       id: Date.now().toString(),
@@ -702,13 +702,20 @@ function DiscoverOthersTab() {
     }));
     setExpandedIds((prev) => ({ ...prev, [postcardId]: true }));
     setIsRecording(false);
+    const postcard = SOUND_POSTCARDS.find((p) => p.id === postcardId);
+    onAddInteraction({
+      id: Date.now().toString() + "v",
+      kind: "postcard_voice",
+      postcardTitle: postcard?.title ?? "声音明信片",
+      text: dur,
+      date: time,
+    });
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
   const submitReply = (postcardId: string) => {
     if (!replyText.trim()) return;
-    const now = new Date();
-    const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const time = nowStr();
     const newComment: TextComment = {
       id: Date.now().toString(),
       type: "text",
@@ -722,7 +729,16 @@ function DiscoverOthersTab() {
     }));
     setExpandedIds((prev) => ({ ...prev, [postcardId]: true }));
     setReplyingToId(null);
+    const savedText = replyText.trim();
     setReplyText("");
+    const postcard = SOUND_POSTCARDS.find((p) => p.id === postcardId);
+    onAddInteraction({
+      id: Date.now().toString() + "t",
+      kind: "postcard_text",
+      postcardTitle: postcard?.title ?? "声音明信片",
+      text: savedText,
+      date: time,
+    });
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -757,7 +773,19 @@ function DiscoverOthersTab() {
       [commentId]: [...(prev[commentId] ?? []), newReply],
     }));
     setReplyingToCommentId(null);
+    const savedCommentText = commentReplyText.trim();
     setCommentReplyText("");
+    const postcardForComment = SOUND_POSTCARDS.find((p) =>
+      p.comments.some((c) => c.id === commentId)
+    );
+    onAddInteraction({
+      id: Date.now().toString() + "r",
+      kind: "comment_reply",
+      postcardTitle: postcardForComment?.title ?? "声音明信片",
+      replyToName: replyTo,
+      text: savedCommentText,
+      date: time,
+    });
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -813,6 +841,51 @@ function DiscoverOthersTab() {
 
 // ─── Conversation Chain Tab ───────────────────────────────────────────────────
 
+function MyInteractionItem({ item }: { item: MyInteraction }) {
+  const kindLabel =
+    item.kind === "postcard_voice"
+      ? "发送了语音留言"
+      : item.kind === "comment_reply"
+      ? `回复了 @${item.replyToName}`
+      : "发送了文字留言";
+
+  const kindIcon: "mic" | "chatbubble-ellipses" | "text" =
+    item.kind === "postcard_voice" ? "mic" : "chatbubble-ellipses";
+
+  return (
+    <View style={styles.myInteractionCard}>
+      <View style={styles.myInteractionAvatarWrap}>
+        <View style={styles.myInteractionAvatar}>
+          <Ionicons name={kindIcon} size={14} color="#fff" />
+        </View>
+      </View>
+      <View style={styles.myInteractionBody}>
+        <View style={styles.myInteractionHeader}>
+          <Text style={styles.myInteractionLabel} numberOfLines={1}>
+            我 · <Text style={styles.myInteractionKind}>{kindLabel}</Text>
+          </Text>
+          <Text style={styles.myInteractionDate}>{item.date}</Text>
+        </View>
+        <Text style={styles.myInteractionTarget} numberOfLines={1}>
+          {item.postcardTitle}
+        </Text>
+        <View style={styles.myInteractionTextWrap}>
+          {item.kind === "postcard_voice" ? (
+            <View style={styles.myInteractionVoiceRow}>
+              <Ionicons name="mic" size={11} color={Colors.light.primary} />
+              <Text style={styles.myInteractionVoiceLabel}>语音留言</Text>
+              <View style={styles.myInteractionVoiceDot} />
+              <Text style={styles.myInteractionVoiceLen}>{item.text}</Text>
+            </View>
+          ) : (
+            <Text style={styles.myInteractionText} numberOfLines={2}>{item.text}</Text>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function ConversationItem({ item }: { item: typeof CONVERSATION_CHAIN[0] }) {
   return (
     <View style={styles.convCard}>
@@ -853,9 +926,17 @@ function ConversationItem({ item }: { item: typeof CONVERSATION_CHAIN[0] }) {
   );
 }
 
-function MyConversationChainTab() {
+function MyConversationChainTab({ myInteractions }: { myInteractions: MyInteraction[] }) {
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.tabContent}>
+      {myInteractions.length > 0 && (
+        <View style={styles.myInteractionSection}>
+          <Text style={styles.myInteractionSectionTitle}>我的互动记录</Text>
+          {myInteractions.map((i) => (
+            <MyInteractionItem key={i.id} item={i} />
+          ))}
+        </View>
+      )}
       {CONVERSATION_CHAIN.map((c) => (
         <ConversationItem key={c.id} item={c} />
       ))}
@@ -867,6 +948,11 @@ function MyConversationChainTab() {
 
 function SoundPostOfficeTab() {
   const [subTab, setSubTab] = useState<"discover" | "chain">("discover");
+  const [myInteractions, setMyInteractions] = useState<MyInteraction[]>([]);
+
+  const addInteraction = (item: MyInteraction) => {
+    setMyInteractions((prev) => [item, ...prev]);
+  };
 
   return (
     <View style={styles.postOfficeContainer}>
@@ -890,7 +976,10 @@ function SoundPostOfficeTab() {
       </View>
 
       <View style={{ flex: 1 }}>
-        {subTab === "discover" ? <DiscoverOthersTab /> : <MyConversationChainTab />}
+        {subTab === "discover"
+          ? <DiscoverOthersTab onAddInteraction={addInteraction} />
+          : <MyConversationChainTab myInteractions={myInteractions} />
+        }
       </View>
     </View>
   );
@@ -1487,21 +1576,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: Colors.light.text,
+    flex: 1,
+    marginRight: 8,
   },
   uniCommentTime: {
     fontSize: 10,
     color: Colors.light.textSecondary,
-    flex: 1,
-  },
-  uniCommentReplyHint: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-  },
-  uniCommentReplyHintCount: {
-    fontSize: 10,
-    color: Colors.light.textSecondary,
-    fontWeight: "600",
+    flexShrink: 0,
   },
   uniCommentText: {
     fontSize: 13,
@@ -1609,6 +1690,103 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#fff",
     fontWeight: "700",
+  },
+  myInteractionSection: {
+    marginBottom: 8,
+    gap: 8,
+  },
+  myInteractionSectionTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.light.textSecondary,
+    marginBottom: 2,
+    letterSpacing: 0.5,
+  },
+  myInteractionCard: {
+    flexDirection: "row",
+    gap: 10,
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.primary + "25",
+    shadowColor: Colors.light.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  myInteractionAvatarWrap: {
+    paddingTop: 2,
+  },
+  myInteractionAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.light.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  myInteractionBody: {
+    flex: 1,
+    gap: 3,
+  },
+  myInteractionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 2,
+  },
+  myInteractionLabel: {
+    fontSize: 12,
+    color: Colors.light.text,
+    flex: 1,
+  },
+  myInteractionKind: {
+    color: Colors.light.primary,
+    fontWeight: "600",
+  },
+  myInteractionDate: {
+    fontSize: 10,
+    color: Colors.light.textSecondary,
+    flexShrink: 0,
+    marginLeft: 6,
+  },
+  myInteractionTarget: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+    marginBottom: 4,
+  },
+  myInteractionTextWrap: {
+    backgroundColor: "#F5FAF7",
+    borderRadius: 8,
+    padding: 8,
+  },
+  myInteractionText: {
+    fontSize: 13,
+    color: Colors.light.text,
+    lineHeight: 18,
+  },
+  myInteractionVoiceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  myInteractionVoiceLabel: {
+    fontSize: 12,
+    color: Colors.light.text,
+    fontWeight: "500",
+  },
+  myInteractionVoiceDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: Colors.light.textSecondary,
+  },
+  myInteractionVoiceLen: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+    fontWeight: "500",
   },
   deliveryNote: {
     alignItems: "center",
