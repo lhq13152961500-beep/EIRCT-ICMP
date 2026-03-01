@@ -218,10 +218,10 @@ function DiaryGroup({
           style={[styles.diaryStatItem, styles.diaryStatBtn, isExpanded && styles.diaryStatBtnActive]}
           onPress={() => { onToggleExpand(); haptic(); }}
         >
-          <MaterialCommunityIcons
-            name="headphones"
-            size={18}
-            color={isExpanded ? Colors.light.primary : "#555"}
+          <Image
+            source={require("@/assets/images/audio-comment-icon.png")}
+            style={{ width: 20, height: 20 }}
+            tintColor={isExpanded ? Colors.light.primary : "#555"}
           />
           <Text style={[styles.diaryStatCount, { color: isExpanded ? Colors.light.primary : "#888" }]}>
             {group.listenCount}
@@ -338,7 +338,11 @@ function SoundPostcard({
           </View>
         ))}
         <View style={styles.postcardStats}>
-          <MaterialCommunityIcons name="headphones" size={16} color="#666" />
+          <Image
+            source={require("@/assets/images/audio-comment-icon.png")}
+            style={{ width: 18, height: 18 }}
+            tintColor="#666"
+          />
           <Text style={styles.postcardStatNum}>{item.listenCount}</Text>
           <Pressable
             style={styles.postcardLikeBtn}
