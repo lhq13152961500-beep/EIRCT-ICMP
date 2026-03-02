@@ -372,6 +372,14 @@ export default function MicScreen() {
           } catch (e) { console.warn("[loc] getCurrent failed:", e); }
         }
 
+        // 4) Fallback: GPS unavailable on this device — use a temporary demo location
+        if (mounted && !gotFix) {
+          console.log("[loc] using fallback demo location");
+          const FALLBACK_LAT = 43.8223;
+          const FALLBACK_LNG = 87.5987;
+          update({ latitude: FALLBACK_LAT, longitude: FALLBACK_LNG });
+        }
+
         if (mounted) setIsLocating(false);
       })().catch(() => {});
     }
