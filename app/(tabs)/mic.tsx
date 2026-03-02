@@ -550,9 +550,23 @@ export default function MicScreen() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
+      mediaTypes: ["images"],
+      quality: 0.85,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      setSelectedImage(result.assets[0].uri);
+    }
+  }, []);
+
+  const takePhoto = useCallback(async () => {
+    haptic();
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("需要相机权限", "请在系统设置中允许访问相机");
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ["images"],
       quality: 0.85,
     });
     if (!result.canceled && result.assets.length > 0) {
@@ -997,28 +1011,38 @@ export default function MicScreen() {
         {/* Image Picker Section */}
         <View style={styles.imageSection}>
           <View style={styles.imageSectionHeader}>
-            <Ionicons name="image-outline" size={16} color={Colors.light.text} />
+            <Ionicons name="image-outline" size={15} color={Colors.light.textSecondary} />
             <Text style={styles.imageSectionTitle}>添加风景图片</Text>
-            {selectedImage && (
-              <Pressable onPress={() => { setSelectedImage(null); haptic(); }} style={styles.imageRemoveBtn}>
-                <Ionicons name="close-circle" size={16} color="#BDB8B3" />
-                <Text style={styles.imageRemoveText}>移除</Text>
-              </Pressable>
-            )}
           </View>
           {selectedImage ? (
-            <Pressable onPress={() => { haptic(); setShowImageViewer(true); }} style={styles.imagePreviewWrap}>
-              <Image source={{ uri: selectedImage }} style={styles.imagePreview} resizeMode="cover" />
-              <View style={styles.imagePreviewBadge}>
-                <Ionicons name="expand-outline" size={13} color="#fff" />
-                <Text style={styles.imagePreviewBadgeText}>点击查看</Text>
+            <View style={styles.imagePreviewWrap}>
+              <Pressable onPress={() => { haptic(); setShowImageViewer(true); }}>
+                <Image source={{ uri: selectedImage }} style={styles.imagePreview} resizeMode="cover" />
+              </Pressable>
+              <Pressable style={styles.imagePreviewRemove} onPress={() => { setSelectedImage(null); haptic(); }}>
+                <Ionicons name="close-circle" size={22} color="#fff" />
+              </Pressable>
+              <View style={styles.imagePreviewHint}>
+                <Ionicons name="expand-outline" size={12} color="#fff" />
+                <Text style={styles.imagePreviewHintText}>点击查看大图</Text>
               </View>
-            </Pressable>
+            </View>
           ) : (
-            <Pressable style={styles.imageAddBtn} onPress={pickImage}>
-              <Ionicons name="add" size={26} color={Colors.light.primary} />
-              <Text style={styles.imageAddText}>从相册选择</Text>
-            </Pressable>
+            <View style={styles.imageButtonRow}>
+              <Pressable style={styles.imageActionBtn} onPress={takePhoto}>
+                <View style={styles.imageActionIcon}>
+                  <Ionicons name="camera-outline" size={22} color={Colors.light.primary} />
+                </View>
+                <Text style={styles.imageActionLabel}>当下拍摄</Text>
+              </Pressable>
+              <View style={styles.imageActionDivider} />
+              <Pressable style={styles.imageActionBtn} onPress={pickImage}>
+                <View style={styles.imageActionIcon}>
+                  <Ionicons name="images-outline" size={22} color={Colors.light.primary} />
+                </View>
+                <Text style={styles.imageActionLabel}>相册选择</Text>
+              </Pressable>
+            </View>
           )}
         </View>
 
@@ -1395,39 +1419,50 @@ const styles = StyleSheet.create({
   imageSection: {
     marginHorizontal: 16, marginTop: 8, marginBottom: 4,
     backgroundColor: "#fff", borderRadius: 20,
-    padding: 16,
+    paddingHorizontal: 16, paddingTop: 14, paddingBottom: 16,
     shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
   imageSectionHeader: {
-    flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12,
+    flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 12,
   },
-  imageSectionTitle: { fontSize: 14, fontWeight: "600", color: Colors.light.text, flex: 1 },
-  imageRemoveBtn: { flexDirection: "row", alignItems: "center", gap: 3 },
-  imageRemoveText: { fontSize: 12, color: "#BDB8B3" },
-  imageAddBtn: {
-    borderWidth: 1.5, borderColor: "#E2DED8", borderStyle: "dashed",
-    borderRadius: 14, height: 90,
+  imageSectionTitle: { fontSize: 13, fontWeight: "600", color: Colors.light.textSecondary },
+  imageButtonRow: {
+    flexDirection: "row", alignItems: "center",
+    borderWidth: 1, borderColor: "#EAE6E0", borderRadius: 14,
+    overflow: "hidden",
+  },
+  imageActionBtn: {
+    flex: 1, paddingVertical: 16,
     alignItems: "center", justifyContent: "center", gap: 6,
-    backgroundColor: "#FAFAF8",
   },
-  imageAddText: { fontSize: 13, color: Colors.light.primary, fontWeight: "600" },
+  imageActionIcon: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: "#EAF7F0",
+    alignItems: "center", justifyContent: "center",
+  },
+  imageActionLabel: { fontSize: 13, fontWeight: "600", color: Colors.light.text },
+  imageActionDivider: { width: 1, height: 60, backgroundColor: "#EAE6E0" },
   imagePreviewWrap: { position: "relative", borderRadius: 14, overflow: "hidden" },
-  imagePreview: { width: "100%", height: 160, borderRadius: 14 },
-  imagePreviewBadge: {
-    position: "absolute", bottom: 8, right: 8,
+  imagePreview: { width: "100%", height: 170 },
+  imagePreviewRemove: {
+    position: "absolute", top: 8, right: 8,
+    backgroundColor: "rgba(0,0,0,0.45)", borderRadius: 12,
+  },
+  imagePreviewHint: {
+    position: "absolute", bottom: 8, left: 8,
     flexDirection: "row", alignItems: "center", gap: 4,
     backgroundColor: "rgba(0,0,0,0.45)", borderRadius: 10,
-    paddingHorizontal: 8, paddingVertical: 4,
+    paddingHorizontal: 8, paddingVertical: 3,
   },
-  imagePreviewBadgeText: { fontSize: 11, color: "#fff", fontWeight: "600" },
+  imagePreviewHintText: { fontSize: 11, color: "#fff", fontWeight: "500" },
   imageViewerOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.92)",
+    flex: 1, backgroundColor: "rgba(0,0,0,0.94)",
     alignItems: "center", justifyContent: "center",
   },
   imageViewerImg: { width: "100%", height: "100%" },
   imageViewerClose: {
     position: "absolute", top: 54, right: 20,
-    backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 20,
     width: 40, height: 40, alignItems: "center", justifyContent: "center",
   },
 });

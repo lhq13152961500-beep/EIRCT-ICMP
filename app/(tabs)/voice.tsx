@@ -737,8 +737,7 @@ function DiaryGroup({
   );
 }
 
-function MyPublishedCard({ rec }: { rec: PublishedRecording }) {
-  const [viewerVisible, setViewerVisible] = useState(false);
+function MyPublishedCard({ rec, onViewImage }: { rec: PublishedRecording; onViewImage: (uri: string) => void }) {
   const d = new Date(rec.publishedAt);
   const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   const mins = Math.floor(rec.durationSeconds / 60).toString().padStart(2, "0");
@@ -748,7 +747,7 @@ function MyPublishedCard({ rec }: { rec: PublishedRecording }) {
     <View style={styles.myPublishedCard}>
       {/* Left: image or icon */}
       {rec.imageUri ? (
-        <Pressable onPress={() => setViewerVisible(true)} style={styles.myPublishedImgWrap}>
+        <Pressable onPress={() => onViewImage(rec.imageUri!)} style={styles.myPublishedImgWrap}>
           <Image source={{ uri: rec.imageUri }} style={styles.myPublishedImg} resizeMode="cover" />
           <View style={styles.myPublishedImgOverlay}>
             <Ionicons name="expand-outline" size={12} color="#fff" />
@@ -774,30 +773,13 @@ function MyPublishedCard({ rec }: { rec: PublishedRecording }) {
         <Ionicons name="people-outline" size={12} color={Colors.light.primary} />
         <Text style={styles.myPublishedBadgeText}>100m</Text>
       </View>
-
-      {/* Full-screen image viewer */}
-      {rec.imageUri && (
-        <Modal
-          visible={viewerVisible}
-          animationType="fade"
-          transparent
-          statusBarTranslucent
-          onRequestClose={() => setViewerVisible(false)}
-        >
-          <Pressable style={styles.myPublishedViewer} onPress={() => setViewerVisible(false)}>
-            <Image source={{ uri: rec.imageUri }} style={styles.myPublishedViewerImg} resizeMode="contain" />
-            <Pressable style={styles.myPublishedViewerClose} onPress={() => setViewerVisible(false)}>
-              <Ionicons name="close" size={22} color="#fff" />
-            </Pressable>
-          </Pressable>
-        </Modal>
-      )}
     </View>
   );
 }
 
 function MyDiaryTab() {
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
+  const [viewerImage, setViewerImage] = useState<string | null>(null);
   const { myRecordings } = useRecordings();
 
   const toggleExpand = (id: string) => {
@@ -807,42 +789,62 @@ function MyDiaryTab() {
   const totalCount = MY_DIARY_GROUPS.length + myRecordings.length;
 
   return (
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.tabContent}
-    >
-      <View style={styles.diaryHeader}>
-        <Text style={styles.diaryHeaderText}>共 {totalCount} 份记忆</Text>
-        <Pressable onPress={() => haptic()} style={styles.filterBtn}>
-          <Ionicons name="options-outline" size={20} color={Colors.light.text} />
-        </Pressable>
-      </View>
-
-      {/* My published recordings from mic tab */}
-      {myRecordings.length > 0 && (
-        <View style={styles.myPublishedSection}>
-          <View style={styles.myPublishedSectionHeader}>
-            <View style={styles.myPublishedDot} />
-            <Text style={styles.myPublishedSectionTitle}>我的声音随记</Text>
-            <View style={styles.myPublishedCountBadge}>
-              <Text style={styles.myPublishedCountText}>{myRecordings.length}</Text>
-            </View>
-          </View>
-          {myRecordings.map((rec) => (
-            <MyPublishedCard key={rec.id} rec={rec} />
-          ))}
+    <View style={{ flex: 1 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.tabContent}
+      >
+        <View style={styles.diaryHeader}>
+          <Text style={styles.diaryHeaderText}>共 {totalCount} 份记忆</Text>
+          <Pressable onPress={() => haptic()} style={styles.filterBtn}>
+            <Ionicons name="options-outline" size={20} color={Colors.light.text} />
+          </Pressable>
         </View>
-      )}
 
-      {MY_DIARY_GROUPS.map((g) => (
-        <DiaryGroup
-          key={g.id}
-          group={g}
-          isExpanded={!!expandedIds[g.id]}
-          onToggleExpand={() => toggleExpand(g.id)}
-        />
-      ))}
-    </ScrollView>
+        {/* My published recordings from mic tab */}
+        {myRecordings.length > 0 && (
+          <View style={styles.myPublishedSection}>
+            <View style={styles.myPublishedSectionHeader}>
+              <View style={styles.myPublishedDot} />
+              <Text style={styles.myPublishedSectionTitle}>我的声音随记</Text>
+              <View style={styles.myPublishedCountBadge}>
+                <Text style={styles.myPublishedCountText}>{myRecordings.length}</Text>
+              </View>
+            </View>
+            {myRecordings.map((rec) => (
+              <MyPublishedCard key={rec.id} rec={rec} onViewImage={setViewerImage} />
+            ))}
+          </View>
+        )}
+
+        {MY_DIARY_GROUPS.map((g) => (
+          <DiaryGroup
+            key={g.id}
+            group={g}
+            isExpanded={!!expandedIds[g.id]}
+            onToggleExpand={() => toggleExpand(g.id)}
+          />
+        ))}
+      </ScrollView>
+
+      {/* Full-screen image viewer — rendered at tab level so it always appears above everything */}
+      <Modal
+        visible={!!viewerImage}
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => setViewerImage(null)}
+      >
+        <Pressable style={styles.myPublishedViewer} onPress={() => setViewerImage(null)}>
+          {viewerImage && (
+            <Image source={{ uri: viewerImage }} style={styles.myPublishedViewerImg} resizeMode="contain" />
+          )}
+          <Pressable style={styles.myPublishedViewerClose} onPress={() => setViewerImage(null)}>
+            <Ionicons name="close" size={22} color="#fff" />
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
   );
 }
 
