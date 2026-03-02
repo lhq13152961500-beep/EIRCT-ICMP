@@ -619,21 +619,6 @@ export default function MicScreen() {
 
         {renderLocationCard()}
 
-        {/* Dev-only: simulate being at the landmark */}
-        {__DEV__ && (
-          <Pressable
-            onPress={() => {
-              setIsLocating(false);
-              setLocationStatus({ state: "in_range", landmark: LANDMARKS[0], distance: 12 });
-              haptic();
-            }}
-            style={({ pressed }) => [styles.simBtn, { opacity: pressed ? 0.7 : 1 }]}
-          >
-            <Ionicons name="location" size={12} color={Colors.light.primary} />
-            <Text style={styles.simBtnText}>模拟到达地标（仅开发调试）</Text>
-          </Pressable>
-        )}
-
         {/* Timer */}
         <Text
           style={[
@@ -768,15 +753,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#F5F5F0" },
   content: { paddingHorizontal: 20, alignItems: "center", gap: 18 },
   pageTitle: { fontSize: 18, fontWeight: "600", color: Colors.light.text, marginTop: 8, alignSelf: "center" },
-
-  // Dev simulation button
-  simBtn: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    alignSelf: "center", paddingHorizontal: 12, paddingVertical: 5,
-    borderRadius: 10, borderWidth: 1, borderColor: Colors.light.primary,
-    borderStyle: "dashed",
-  },
-  simBtnText: { fontSize: 11, color: Colors.light.primary },
 
   // Location
   locationCard: {
