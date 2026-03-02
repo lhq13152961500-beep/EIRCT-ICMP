@@ -73,40 +73,6 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
   return "当前位置";
 }
 
-// ─── IP Geolocation fallback ─────────────────────────────────────────────────
-
-interface IpGeoResult { lat: number; lng: number; city: string; region: string }
-
-async function getIpGeolocation(): Promise<IpGeoResult | null> {
-  try {
-    const res = await fetch("https://ipapi.co/json/", {
-      headers: { "Accept": "application/json" },
-    });
-    if (!res.ok) throw new Error("ipapi status " + res.status);
-    const data = await res.json();
-    if (data.latitude && data.longitude) {
-      return {
-        lat: data.latitude,
-        lng: data.longitude,
-        city: data.city ?? "",
-        region: data.region ?? "",
-      };
-    }
-  } catch { /* ignore */ }
-  // Mirror fallback: ipinfo.io (HTTPS, no key required)
-  try {
-    const res = await fetch("https://ipinfo.io/json", { headers: { "Accept": "application/json" } });
-    if (!res.ok) throw new Error("ipinfo status " + res.status);
-    const data = await res.json();
-    // ipinfo returns "lat,lng" as a string in "loc" field
-    const [lat, lng] = (data.loc ?? "").split(",").map(Number);
-    if (lat && lng) {
-      return { lat, lng, city: data.city ?? "", region: data.region ?? "" };
-    }
-  } catch { /* ignore */ }
-  return null;
-}
-
 // ─── Audio Presets ────────────────────────────────────────────────────────────
 
 const ENV_PRESET = Audio.RecordingOptionsPresets.HIGH_QUALITY;
@@ -150,8 +116,7 @@ type RecordingState = "idle" | "recording" | "paused" | "finished";
 type LocationStatus =
   | { state: "none" }
   | { state: "denied" }
-  | { state: "located"; lat: number; lng: number; locationName: string }
-  | { state: "ip_located"; lat: number; lng: number; locationName: string };
+  | { state: "located"; lat: number; lng: number; locationName: string };
 
 // ─── Waveform ────────────────────────────────────────────────────────────────
 
@@ -288,7 +253,6 @@ export default function MicScreen() {
     let mounted = true;
     let gotFix = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    let ipTimerId: ReturnType<typeof setTimeout> | null = null;
     let webWatchId: number | null = null;
 
     setIsLocating(true);
@@ -330,25 +294,10 @@ export default function MicScreen() {
         setIsLocating(false);
       }
     } else {
-      // ── IP geolocation: fires after 3 s if GPS hasn't responded ──────────
-      ipTimerId = setTimeout(async () => {
-        if (!mounted || gotFix) return;
-        console.log("[loc] GPS silent after 3s, trying IP geolocation…");
-        const ip = await getIpGeolocation();
-        if (!mounted || gotFix) return; // GPS may have arrived while we waited
-        if (ip) {
-          const locName = [ip.city, ip.region].filter(Boolean).join(" · ") || "当前城市";
-          console.log("[loc] IP geolocation:", locName);
-          setIsLocating(false);
-          setLocationStatus({ state: "ip_located", lat: ip.lat, lng: ip.lng, locationName: locName });
-        }
-      }, 3000);
-
       (async () => {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (!mounted) return;
         if (status !== "granted") {
-          if (ipTimerId) clearTimeout(ipTimerId);
           setIsLocating(false);
           setLocationStatus({ state: "denied" });
           return;
@@ -371,7 +320,6 @@ export default function MicScreen() {
               Location.watchPositionAsync(
                 { accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: true, distanceInterval: 5 },
                 (l) => {
-                  if (ipTimerId) clearTimeout(ipTimerId);
                   console.log("[loc] watch fired", l.coords.latitude, l.coords.longitude);
                   update(l.coords);
                 }
@@ -390,7 +338,6 @@ export default function MicScreen() {
               12000, "getCurrent"
             );
             if (mounted) {
-              if (ipTimerId) clearTimeout(ipTimerId);
               console.log("[loc] getCurrent succeeded");
               update(pos.coords);
             }
@@ -404,7 +351,6 @@ export default function MicScreen() {
     return () => {
       mounted = false;
       if (timeoutId) clearTimeout(timeoutId);
-      if (ipTimerId) clearTimeout(ipTimerId);
       if (webWatchId !== null && typeof navigator !== "undefined" && navigator.geolocation) {
         navigator.geolocation.clearWatch(webWatchId);
       }
@@ -558,17 +504,14 @@ export default function MicScreen() {
   // ── Publish ────────────────────────────────────────────────────────────────
 
   const handlePublish = useCallback(() => {
-    if (locationStatus.state !== "located" && locationStatus.state !== "ip_located") {
-      Alert.alert("无法发布", "请先等待定位完成后再发布。");
+    if (locationStatus.state !== "located") {
+      Alert.alert("无法发布", "请先等待 GPS 定位成功后再发布。");
       return;
     }
     const { lat, lng, locationName } = locationStatus;
-    const isIpOnly = locationStatus.state === "ip_located";
     Alert.alert(
       "发布声音随记",
-      isIpOnly
-        ? `将在「${locationName}」附近发布这段录音 (${formatTime(elapsed)})。\n\n注意：当前使用 IP 粗略定位，精度约数公里，GPS 定位精度更高。是否继续？`
-        : `将在「${locationName}」发布这段录音 (${formatTime(elapsed)})，50 米内的旅人可以听见，是否确认？`,
+      `将在「${locationName}」发布这段录音 (${formatTime(elapsed)})，50 米内的旅人可以听见，是否确认？`,
       [
         { text: "取消", style: "cancel" },
         {
@@ -615,7 +558,7 @@ export default function MicScreen() {
     ]);
   }, []);
 
-  const gpsReady = locationStatus.state === "located" || locationStatus.state === "ip_located";
+  const gpsReady = locationStatus.state === "located";
 
   // ── Location Card ──────────────────────────────────────────────────────────
 
@@ -648,25 +591,6 @@ export default function MicScreen() {
             {resolving ? "正在解析地址…" : locationStatus.locationName}
           </Text>
           <Text style={styles.locationDistText}>发布后 50 米内的旅人可听见</Text>
-        </View>
-      );
-    }
-
-    if (locationStatus.state === "ip_located") {
-      return (
-        <View style={[styles.locationCard, { borderColor: "#F5C842", borderWidth: 1 }]}>
-          <View style={styles.locationDotRow}>
-            <View style={[styles.locationDot, { backgroundColor: "#F5C842" }]} />
-            <Text style={styles.locationLabel}>大致位置（IP 定位）</Text>
-            <View style={[styles.locationBadge, { backgroundColor: "#F5C842" }]}>
-              <Ionicons name="wifi" size={10} color="#fff" />
-              <Text style={styles.locationBadgeText}>粗略</Text>
-            </View>
-          </View>
-          <Text style={styles.locationName}>{locationStatus.locationName}</Text>
-          <Text style={[styles.locationDistText, { color: "#B8860B" }]}>
-            精度约数公里，GPS 信号好时会自动升级
-          </Text>
         </View>
       );
     }
