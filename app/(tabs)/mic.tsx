@@ -9,37 +9,29 @@ import {
   Switch,
   Image,
   Alert,
+  Animated,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
+import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
+
+// ─── Landmark Definitions ─────────────────────────────────────────────────────
+
+const LANDMARKS = [
+  { name: "云栖竹径 · 黄岭村", lat: 30.2168, lng: 120.0555 },
+];
+
+const RANGE_METERS = 100;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const haptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
   if (Platform.OS !== "web") Haptics.impactAsync(style).catch(() => {});
 };
-
-const MUSIC_LIST = [
-  {
-    id: 1,
-    name: "空山新雨",
-    mood: "宁静",
-    thumb: require("@/assets/images/diary-thumb-1.png"),
-  },
-  {
-    id: 2,
-    name: "晨曦微露",
-    mood: "欢快",
-    thumb: require("@/assets/images/diary-thumb-2.png"),
-  },
-  {
-    id: 3,
-    name: "古村斜阳",
-    mood: "怀旧",
-    thumb: require("@/assets/images/sound-thumb-1.png"),
-  },
-];
 
 function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60).toString().padStart(2, "0");
@@ -47,18 +39,176 @@ function formatTime(seconds: number) {
   return `${m}:${s}`;
 }
 
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDistance(meters: number): string {
+  if (meters < 1000) return `${Math.round(meters)} 米`;
+  return `${(meters / 1000).toFixed(1)} 公里`;
+}
+
+// ─── Audio Presets ────────────────────────────────────────────────────────────
+
+// Environment ON: high-quality stereo — captures ALL sounds incl. ambient
+const ENV_PRESET = Audio.RecordingOptionsPresets.HIGH_QUALITY;
+
+// Environment OFF: voice-optimized mono — focuses on human speech
+const VOICE_ONLY_PRESET: Audio.RecordingOptions = {
+  isMeteringEnabled: true,
+  android: {
+    extension: ".m4a",
+    outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+    audioEncoder: Audio.AndroidAudioEncoder.AAC,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    bitRate: 32000,
+  },
+  ios: {
+    extension: ".m4a",
+    outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+    audioQuality: Audio.IOSAudioQuality.MEDIUM,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    bitRate: 32000,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: { mimeType: "audio/webm", bitsPerSecond: 32000 },
+};
+
+// ─── Background Music Data ────────────────────────────────────────────────────
+
+const MUSIC_LIST = [
+  { id: 1, name: "空山新雨", mood: "宁静", thumb: require("@/assets/images/diary-thumb-1.png") },
+  { id: 2, name: "晨曦微露", mood: "欢快", thumb: require("@/assets/images/diary-thumb-2.png") },
+  { id: 3, name: "古村斜阳", mood: "怀旧", thumb: require("@/assets/images/sound-thumb-1.png") },
+];
+
+// ─── Location Status Types ────────────────────────────────────────────────────
+
+type LocationStatus =
+  | { state: "loading" }
+  | { state: "denied" }
+  | { state: "in_range"; landmark: typeof LANDMARKS[0]; distance: number }
+  | { state: "out_of_range"; nearest: typeof LANDMARKS[0]; distance: number };
+
+// ─── Animated Waveform ────────────────────────────────────────────────────────
+
+function WaveformBars({ active }: { active: boolean }) {
+  const heights = [5, 9, 14, 8, 18, 11, 6, 15, 10, 7, 16, 9, 13];
+  const anims = useRef(heights.map(() => new Animated.Value(1))).current;
+
+  useEffect(() => {
+    if (!active) {
+      anims.forEach((a) => Animated.timing(a, { toValue: 1, duration: 200, useNativeDriver: false }).start());
+      return;
+    }
+    const loops = anims.map((a, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(a, { toValue: 0.3 + Math.random() * 0.7, duration: 200 + i * 40, useNativeDriver: false }),
+          Animated.timing(a, { toValue: 0.7 + Math.random() * 0.3, duration: 200 + i * 30, useNativeDriver: false }),
+        ])
+      )
+    );
+    loops.forEach((l) => l.start());
+    return () => loops.forEach((l) => l.stop());
+  }, [active]);
+
+  return (
+    <View style={styles.waveRow}>
+      {heights.map((h, i) => (
+        <Animated.View
+          key={i}
+          style={[
+            styles.waveBar,
+            { height: anims[i].interpolate({ inputRange: [0, 1], outputRange: [3, h] }) },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
 export default function MicScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>({ state: "loading" });
   const [isRecording, setIsRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [envSound, setEnvSound] = useState(true);
   const [selectedMusic, setSelectedMusic] = useState<number | null>(1);
+  const [lastUri, setLastUri] = useState<string | null>(null);
 
   const recordingRef = useRef<Audio.Recording | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const locationSubRef = useRef<Location.LocationSubscription | null>(null);
+  const envSoundRef = useRef(envSound);
+  envSoundRef.current = envSound;
+
+  // ── Location Tracking ──────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      setLocationStatus({ state: "out_of_range", nearest: LANDMARKS[0], distance: 999999 });
+      return;
+    }
+    let mounted = true;
+
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (!mounted) return;
+      if (status !== "granted") {
+        setLocationStatus({ state: "denied" });
+        return;
+      }
+
+      const updateFromCoords = (coords: { latitude: number; longitude: number }) => {
+        if (!mounted) return;
+        let nearest = LANDMARKS[0];
+        let minDist = Infinity;
+        for (const lm of LANDMARKS) {
+          const d = haversineMeters(coords.latitude, coords.longitude, lm.lat, lm.lng);
+          if (d < minDist) { minDist = d; nearest = lm; }
+        }
+        if (minDist <= RANGE_METERS) {
+          setLocationStatus({ state: "in_range", landmark: nearest, distance: minDist });
+        } else {
+          setLocationStatus({ state: "out_of_range", nearest, distance: minDist });
+        }
+      };
+
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      updateFromCoords(loc.coords);
+
+      const sub = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, distanceInterval: 10 },
+        (loc) => updateFromCoords(loc.coords)
+      );
+      locationSubRef.current = sub;
+    })();
+
+    return () => {
+      mounted = false;
+      locationSubRef.current?.remove();
+      locationSubRef.current = null;
+    };
+  }, []);
+
+  // ── Recording Cleanup ──────────────────────────────────────────────────────
 
   useEffect(() => {
     return () => {
@@ -66,6 +216,8 @@ export default function MicScreen() {
       recordingRef.current?.stopAndUnloadAsync().catch(() => {});
     };
   }, []);
+
+  // ── Start Recording ────────────────────────────────────────────────────────
 
   const startRecording = useCallback(async () => {
     if (Platform.OS === "web") {
@@ -79,12 +231,13 @@ export default function MicScreen() {
         return;
       }
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
+
+      const preset = envSoundRef.current ? ENV_PRESET : VOICE_ONLY_PRESET;
+      const { recording } = await Audio.Recording.createAsync(preset);
       recordingRef.current = recording;
       setIsRecording(true);
       setElapsed(0);
+      setLastUri(null);
       timerRef.current = setInterval(() => {
         setElapsed((prev) => prev + 1);
       }, 1000);
@@ -94,7 +247,9 @@ export default function MicScreen() {
     }
   }, []);
 
-  const stopRecording = useCallback(async () => {
+  // ── Stop Recording ─────────────────────────────────────────────────────────
+
+  const stopRecording = useCallback(async (elapsedSeconds: number) => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -106,24 +261,104 @@ export default function MicScreen() {
     try {
       await rec.stopAndUnloadAsync();
       const uri = rec.getURI();
+      setLastUri(uri);
       haptic(Haptics.ImpactFeedbackStyle.Medium);
-      Alert.alert(
-        "录制完成",
-        `时长 ${formatTime(elapsed)}，声音随记已保存`,
-        [{ text: "好的", style: "default" }]
-      );
     } catch {
       // ignore
     }
-  }, [elapsed]);
+  }, []);
+
+  // ── Publish Flow ───────────────────────────────────────────────────────────
+
+  const handlePublish = useCallback(() => {
+    if (locationStatus.state !== "in_range") {
+      const dist =
+        locationStatus.state === "out_of_range"
+          ? `\n\n当前距地标 ${formatDistance(locationStatus.distance)}，请前往地标范围内再发布。`
+          : "\n\n无法获取位置，请开启定位权限后再发布。";
+      Alert.alert("无法发布", `发布录音必须在地标 ${RANGE_METERS} 米范围内。${dist}`);
+      return;
+    }
+    Alert.alert(
+      "发布声音随记",
+      `将在「${locationStatus.landmark.name}」发布这段录音，是否确认？`,
+      [
+        { text: "取消", style: "cancel" },
+        {
+          text: "发布",
+          onPress: () => {
+            haptic(Haptics.ImpactFeedbackStyle.Medium);
+            setLastUri(null);
+            setElapsed(0);
+            Alert.alert("发布成功", "你的声音随记已发布到地标，等待其他旅人聆听 🌿");
+          },
+        },
+      ]
+    );
+  }, [locationStatus]);
 
   const handleMicPress = () => {
     if (isRecording) {
-      stopRecording();
+      stopRecording(elapsed);
     } else {
       startRecording();
     }
   };
+
+  // ── Location Card Content ──────────────────────────────────────────────────
+
+  const renderLocationCard = () => {
+    switch (locationStatus.state) {
+      case "loading":
+        return (
+          <View style={styles.locationCard}>
+            <ActivityIndicator size="small" color={Colors.light.primary} />
+            <Text style={styles.locationLabel}>正在获取位置...</Text>
+          </View>
+        );
+      case "denied":
+        return (
+          <View style={[styles.locationCard, styles.locationCardWarn]}>
+            <View style={styles.locationDotRow}>
+              <View style={[styles.locationDot, { backgroundColor: "#E8524A" }]} />
+              <Text style={styles.locationLabel}>无法获取位置信息</Text>
+            </View>
+            <Text style={styles.locationNameSmall}>请在设置中允许位置权限</Text>
+          </View>
+        );
+      case "in_range":
+        return (
+          <View style={styles.locationCard}>
+            <View style={styles.locationDotRow}>
+              <View style={[styles.locationDot, styles.locationDotPulse]} />
+              <Text style={styles.locationLabel}>当前关联地标</Text>
+              <View style={styles.locationBadge}>
+                <Ionicons name="checkmark" size={10} color="#fff" />
+                <Text style={styles.locationBadgeText}>已关联</Text>
+              </View>
+            </View>
+            <Text style={styles.locationName}>{locationStatus.landmark.name}</Text>
+            <Text style={styles.locationDistText}>距地标 {formatDistance(locationStatus.distance)}</Text>
+          </View>
+        );
+      case "out_of_range":
+        return (
+          <View style={[styles.locationCard, styles.locationCardWarn]}>
+            <View style={styles.locationDotRow}>
+              <View style={[styles.locationDot, { backgroundColor: "#F5974E" }]} />
+              <Text style={styles.locationLabel}>未进入地标范围</Text>
+            </View>
+            <Text style={styles.locationName}>{locationStatus.nearest.name}</Text>
+            <View style={styles.locationDistRow}>
+              <Ionicons name="navigate-outline" size={12} color="#F5974E" />
+              <Text style={styles.locationDistWarn}>距地标 {formatDistance(locationStatus.distance)}，需进入 {RANGE_METERS} 米内关联</Text>
+            </View>
+          </View>
+        );
+    }
+  };
+
+  const inRange = locationStatus.state === "in_range";
 
   return (
     <View style={[styles.root, { paddingTop: topPad }]}>
@@ -135,13 +370,7 @@ export default function MicScreen() {
         <Text style={styles.pageTitle}>声音随记</Text>
 
         {/* Location Card */}
-        <View style={styles.locationCard}>
-          <View style={styles.locationDotRow}>
-            <View style={styles.locationDot} />
-            <Text style={styles.locationLabel}>当前关联地标</Text>
-          </View>
-          <Text style={styles.locationName}>云栖竹径 · 黄岭村</Text>
-        </View>
+        {renderLocationCard()}
 
         {/* Timer */}
         <Text style={[styles.timer, isRecording && styles.timerActive]}>
@@ -153,7 +382,7 @@ export default function MicScreen() {
           style={({ pressed }) => [
             styles.micBtn,
             isRecording && styles.micBtnRecording,
-            pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
+            pressed && { opacity: 0.88, transform: [{ scale: 0.96 }] },
           ]}
           onPress={handleMicPress}
         >
@@ -164,12 +393,27 @@ export default function MicScreen() {
           )}
         </Pressable>
 
-        {/* Waveform animation when recording */}
+        {/* Waveform / Hint / Post-recording actions */}
         {isRecording ? (
-          <View style={styles.waveRow}>
-            {[5, 9, 14, 8, 18, 11, 6, 15, 10, 7, 16, 9, 13].map((h, i) => (
-              <View key={i} style={[styles.waveBar, { height: h }]} />
-            ))}
+          <WaveformBars active={isRecording} />
+        ) : lastUri ? (
+          <View style={styles.postRecordRow}>
+            <Pressable
+              style={styles.discardBtn}
+              onPress={() => { setLastUri(null); setElapsed(0); haptic(); }}
+            >
+              <Ionicons name="trash-outline" size={18} color="#E8524A" />
+              <Text style={styles.discardBtnText}>丢弃</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.publishBtn, !inRange && styles.publishBtnDisabled]}
+              onPress={handlePublish}
+            >
+              <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
+              <Text style={styles.publishBtnText}>
+                {inRange ? "发布到地标" : "需在地标范围内"}
+              </Text>
+            </Pressable>
           </View>
         ) : (
           <Text style={styles.hint}>点击按钮开始采集声音</Text>
@@ -177,22 +421,48 @@ export default function MicScreen() {
 
         {/* Environment Sound Card */}
         <View style={styles.envCard}>
-          <View style={styles.envIconWrap}>
-            <Ionicons name="partly-sunny-outline" size={20} color="#6C8FD6" />
+          <View style={[styles.envIconWrap, !envSound && styles.envIconWrapVoice]}>
+            <Ionicons
+              name={envSound ? "partly-sunny-outline" : "person-outline"}
+              size={20}
+              color={envSound ? "#6C8FD6" : Colors.light.primary}
+            />
           </View>
           <View style={styles.envInfo}>
             <Text style={styles.envTitle}>环境声音采集</Text>
-            <Text style={styles.envSub}>同步录入现场鸟鸣、溪流声</Text>
+            <Text style={styles.envSub}>
+              {envSound
+                ? "开启：同步录入现场鸟鸣、溪流声"
+                : "关闭：过滤环境声，仅保留人声"}
+            </Text>
           </View>
           <Switch
             value={envSound}
             onValueChange={(v) => {
+              if (isRecording) {
+                Alert.alert("提示", "请先停止录音再切换模式");
+                return;
+              }
               setEnvSound(v);
               haptic();
             }}
             trackColor={{ false: "#D9D9D9", true: Colors.light.primary }}
             thumbColor="#fff"
           />
+        </View>
+
+        {/* Recording Mode Tip */}
+        <View style={styles.modeTip}>
+          <Ionicons
+            name="information-circle-outline"
+            size={14}
+            color={Colors.light.textSecondary}
+          />
+          <Text style={styles.modeTipText}>
+            {envSound
+              ? "全音模式：高清立体声录制，保留一切自然声音"
+              : "人声模式：单声道优化，过滤环境噪音、突出说话声"}
+          </Text>
         </View>
 
         {/* Background Music */}
@@ -214,11 +484,8 @@ export default function MicScreen() {
               return (
                 <Pressable
                   key={m.id}
-                  style={[styles.musicCard, selected && styles.musicCardSelected]}
-                  onPress={() => {
-                    setSelectedMusic(m.id);
-                    haptic();
-                  }}
+                  style={styles.musicCard}
+                  onPress={() => { setSelectedMusic(m.id); haptic(); }}
                 >
                   <Image
                     source={m.thumb}
@@ -227,7 +494,7 @@ export default function MicScreen() {
                   />
                   {selected && (
                     <View style={styles.musicPlayOverlay}>
-                      <Ionicons name="musical-note" size={16} color="#fff" />
+                      <Ionicons name="musical-note" size={14} color="#fff" />
                     </View>
                   )}
                   <Text style={styles.musicName} numberOfLines={1}>{m.name}</Text>
@@ -242,6 +509,8 @@ export default function MicScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -250,7 +519,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 20,
     alignItems: "center",
-    gap: 20,
+    gap: 18,
   },
   pageTitle: {
     fontSize: 18,
@@ -266,14 +535,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFEF8",
     borderRadius: 16,
     paddingHorizontal: 18,
-    paddingVertical: 16,
+    paddingVertical: 14,
     alignItems: "center",
-    gap: 6,
+    gap: 4,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 1,
+  },
+  locationCardWarn: {
+    backgroundColor: "#FFFBF5",
   },
   locationDotRow: {
     flexDirection: "row",
@@ -286,15 +558,56 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: Colors.light.primary,
   },
+  locationDotPulse: {
+    backgroundColor: Colors.light.primary,
+  },
   locationLabel: {
     fontSize: 12,
     color: Colors.light.textSecondary,
   },
+  locationBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: Colors.light.primary,
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    marginLeft: 4,
+  },
+  locationBadgeText: {
+    fontSize: 10,
+    color: "#fff",
+    fontWeight: "600",
+  },
   locationName: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "700",
     color: Colors.light.text,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
+    textAlign: "center",
+  },
+  locationNameSmall: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    textAlign: "center",
+  },
+  locationDistText: {
+    fontSize: 11,
+    color: Colors.light.primary,
+    fontWeight: "500",
+  },
+  locationDistRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2,
+  },
+  locationDistWarn: {
+    fontSize: 11,
+    color: "#F5974E",
+    flexShrink: 1,
+    textAlign: "center",
   },
 
   // Timer
@@ -334,11 +647,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
 
-  // Hint / waveform
+  // Hint
   hint: {
     fontSize: 13,
     color: Colors.light.textSecondary,
   },
+
+  // Waveform
   waveRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -349,7 +664,47 @@ const styles = StyleSheet.create({
     width: 3,
     borderRadius: 2,
     backgroundColor: Colors.light.primary,
-    opacity: 0.75,
+    opacity: 0.8,
+  },
+
+  // Post-recording actions
+  postRecordRow: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "center",
+  },
+  discardBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#E8524A",
+    backgroundColor: "#FFF5F5",
+  },
+  discardBtnText: {
+    fontSize: 14,
+    color: "#E8524A",
+    fontWeight: "600",
+  },
+  publishBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 22,
+    backgroundColor: Colors.light.primary,
+  },
+  publishBtnDisabled: {
+    backgroundColor: "#9DCFB3",
+  },
+  publishBtnText: {
+    fontSize: 14,
+    color: "#fff",
+    fontWeight: "600",
   },
 
   // Environment sound card
@@ -376,6 +731,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  envIconWrapVoice: {
+    backgroundColor: "#EAF7F0",
+  },
   envInfo: {
     flex: 1,
     gap: 2,
@@ -388,6 +746,21 @@ const styles = StyleSheet.create({
   envSub: {
     fontSize: 11,
     color: Colors.light.textSecondary,
+  },
+
+  // Mode tip
+  modeTip: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    width: "100%",
+    paddingHorizontal: 4,
+  },
+  modeTipText: {
+    flex: 1,
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+    lineHeight: 16,
   },
 
   // Music section
@@ -419,7 +792,6 @@ const styles = StyleSheet.create({
     gap: 6,
     alignItems: "center",
   },
-  musicCardSelected: {},
   musicThumb: {
     width: 110,
     height: 110,

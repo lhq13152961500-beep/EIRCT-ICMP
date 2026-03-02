@@ -17,12 +17,13 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.myapp",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "录制声音日记和语音留言需要使用麦克风"
+        "NSMicrophoneUsageDescription": "录制声音日记和语音留言需要使用麦克风",
+        "NSLocationWhenInUseUsageDescription": "关联地标和发布录音需要获取您的位置信息"
       }
     },
     "android": {
       "package": "com.myapp",
-      "permissions": ["android.permission.RECORD_AUDIO"],
+      "permissions": ["android.permission.RECORD_AUDIO", "android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION"],
       "adaptiveIcon": {
         "backgroundColor": "#3DAA6F",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
