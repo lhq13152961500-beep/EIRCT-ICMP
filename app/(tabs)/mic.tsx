@@ -603,7 +603,7 @@ export default function MicScreen() {
                 lng,
                 durationSeconds: elapsed,
               }) as PublishedRecording;
-              addMyRecording({ ...rec, title, locationName, lat, lng, durationSeconds: elapsed, publishedAt: rec.publishedAt ?? new Date().toISOString(), imageUri: selectedImage ?? undefined });
+              addMyRecording({ ...rec, title, locationName, lat, lng, durationSeconds: elapsed, publishedAt: rec.publishedAt ?? new Date().toISOString(), imageUri: selectedImage ?? undefined, audioUri: finishedUri ?? undefined });
             } catch {
               addMyRecording({
                 id: Date.now().toString() + Math.random().toString(36).slice(2),
@@ -614,6 +614,7 @@ export default function MicScreen() {
                 durationSeconds: elapsed,
                 publishedAt: new Date().toISOString(),
                 imageUri: selectedImage ?? undefined,
+                audioUri: finishedUri ?? undefined,
               });
             } finally {
               setIsPublishing(false);

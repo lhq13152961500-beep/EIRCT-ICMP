@@ -752,52 +752,43 @@ function MyPublishedCard({ rec, onViewImage }: { rec: PublishedRecording; onView
   const secs = (rec.durationSeconds % 60).toString().padStart(2, "0");
   const dur = `${mins}:${secs}`;
   return (
-    <View style={styles.postcardCard}>
-      {/* Top row: image/icon + title + play button */}
-      <View style={styles.postcardTop}>
+    <View style={styles.diaryGroup}>
+      {/* Header row — identical layout to DiaryGroup */}
+      <View style={styles.diaryMainCard}>
         {rec.imageUri ? (
           <Pressable onPress={() => onViewImage(rec.imageUri!)} style={styles.myPubImgBtn}>
-            <Image source={{ uri: rec.imageUri }} style={styles.myPubImg} resizeMode="cover" />
+            <Image source={{ uri: rec.imageUri }} style={styles.diaryMainThumb} resizeMode="cover" />
           </Pressable>
         ) : (
-          <View style={[styles.postcardTypeIcon, { backgroundColor: "#EAF7F0" }]}>
-            <Ionicons name="mic" size={22} color={Colors.light.primary} />
+          <View style={[styles.diaryMainThumb, { backgroundColor: "#EAF7F0", alignItems: "center", justifyContent: "center" }]}>
+            <Ionicons name="mic" size={26} color={Colors.light.primary} />
           </View>
         )}
-        <View style={styles.postcardTitleWrap}>
-          <Text style={styles.postcardTitle} numberOfLines={1}>{rec.title}</Text>
-          <Text style={styles.postcardDatetime}>
-            {dateStr}
-          </Text>
+        <View style={styles.diaryMainInfo}>
+          <Text style={styles.diaryMainTitle} numberOfLines={1}>{rec.title}</Text>
+          <View style={styles.diaryMainMeta}>
+            <Ionicons name="calendar-outline" size={11} color={Colors.light.textSecondary} />
+            <Text style={styles.diaryMainMetaText}>{dateStr}</Text>
+            <Ionicons name="time-outline" size={11} color={Colors.light.textSecondary} />
+            <Text style={styles.diaryMainMetaText}>{dur}</Text>
+          </View>
+          <View style={styles.diaryMainMeta}>
+            <Ionicons name="location-outline" size={11} color={Colors.light.textSecondary} />
+            <Text style={styles.diaryMainMetaText} numberOfLines={1}>{rec.locationName}</Text>
+          </View>
         </View>
-        <View style={styles.postcardPlayWrap}>
-          <Pressable style={[styles.postcardPlayBtn, { backgroundColor: Colors.light.primary }]} onPress={() => haptic(Haptics.ImpactFeedbackStyle.Medium)}>
-            <Ionicons name="play" size={18} color="#fff" />
-          </Pressable>
-          <Text style={styles.postcardDuration}>{dur}</Text>
-        </View>
+        <PlayButton size={32} audioUrl={rec.audioUri} />
       </View>
 
-      {/* Location line */}
-      <Text style={styles.postcardSender}>
-        <Ionicons name="location-outline" size={12} color={Colors.light.textSecondary} /> {rec.locationName}
-      </Text>
-
-      {/* Stats row */}
-      <View style={styles.postcardTagRow}>
-        <View style={[styles.postcardTagPill, { backgroundColor: "#EAF7F0" }]}>
-          <Ionicons name="people-outline" size={11} color={Colors.light.primary} />
-          <Text style={[styles.postcardTagText, { color: Colors.light.primary }]}>100m 可见</Text>
+      {/* Stats row — identical to DiaryGroup */}
+      <View style={styles.diaryStatsRow}>
+        <View style={styles.diaryStatItem}>
+          <Ionicons name="ear-outline" size={18} color="#888" />
+          <Text style={[styles.diaryStatCount, { color: "#888" }]}>0</Text>
         </View>
-        <View style={styles.postcardStats}>
-          <View style={styles.postcardExpandBtn}>
-            <Ionicons name="chatbubble-outline" size={16} color="#aaa" />
-            <Text style={styles.postcardStatNum}>0</Text>
-          </View>
-          <View style={styles.postcardLikeBtn}>
-            <Ionicons name="heart-outline" size={17} color="#FF4D6A" />
-            <Text style={[styles.postcardStatNum, { color: "#FF4D6A" }]}>0</Text>
-          </View>
+        <View style={styles.diaryStatItem}>
+          <Ionicons name="heart" size={16} color="#FF4D6A" />
+          <Text style={[styles.diaryStatCount, { color: "#FF4D6A" }]}>0</Text>
         </View>
       </View>
     </View>
@@ -2140,9 +2131,9 @@ const styles = StyleSheet.create({
     width: 16, height: 16, alignItems: "center", justifyContent: "center",
   },
   myPubImgBtn: {
-    width: 46, height: 46, borderRadius: 12, overflow: "hidden",
+    width: 72, height: 56, borderRadius: 10, overflow: "hidden",
   },
-  myPubImg: { width: 46, height: 46 },
+  myPubImg: { width: 72, height: 56 },
   myPublishedViewer: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.92)",
     alignItems: "center", justifyContent: "center",

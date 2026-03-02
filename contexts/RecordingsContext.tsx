@@ -9,6 +9,7 @@ export interface PublishedRecording {
   durationSeconds: number;
   publishedAt: string;
   imageUri?: string;
+  audioUri?: string;
 }
 
 interface RecordingsContextValue {
