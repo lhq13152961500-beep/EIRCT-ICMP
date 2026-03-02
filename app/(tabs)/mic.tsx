@@ -551,7 +551,8 @@ export default function MicScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
-      quality: 0.85,
+      allowsEditing: true,
+      quality: 0.9,
     });
     if (!result.canceled && result.assets.length > 0) {
       setSelectedImage(result.assets[0].uri);
@@ -567,7 +568,8 @@ export default function MicScreen() {
     }
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ["images"],
-      quality: 0.85,
+      allowsEditing: true,
+      quality: 0.9,
     });
     if (!result.canceled && result.assets.length > 0) {
       setSelectedImage(result.assets[0].uri);
@@ -1010,37 +1012,47 @@ export default function MicScreen() {
 
         {/* Image Picker Section */}
         <View style={styles.imageSection}>
-          <View style={styles.imageSectionHeader}>
-            <Ionicons name="image-outline" size={15} color={Colors.light.textSecondary} />
-            <Text style={styles.imageSectionTitle}>添加风景图片</Text>
+          <View style={styles.musicHeader}>
+            <Text style={styles.musicTitle}>添加风景图片</Text>
+            {selectedImage && (
+              <Pressable onPress={() => { setSelectedImage(null); haptic(); }} style={styles.imageResetBtn}>
+                <Ionicons name="refresh-outline" size={14} color={Colors.light.textSecondary} />
+                <Text style={styles.imageResetText}>重新选择</Text>
+              </Pressable>
+            )}
           </View>
           {selectedImage ? (
-            <View style={styles.imagePreviewWrap}>
-              <Pressable onPress={() => { haptic(); setShowImageViewer(true); }}>
-                <Image source={{ uri: selectedImage }} style={styles.imagePreview} resizeMode="cover" />
+            /* Selected: show thumbnail card + full-view card side by side */
+            <View style={styles.imageSelectedRow}>
+              <Pressable onPress={() => { haptic(); setShowImageViewer(true); }} style={styles.imageSelectedCard}>
+                <Image source={{ uri: selectedImage }} style={styles.imageSelectedThumb} resizeMode="cover" />
+                <View style={styles.imageSelectedOverlay}>
+                  <Ionicons name="expand-outline" size={13} color="#fff" />
+                </View>
               </Pressable>
-              <Pressable style={styles.imagePreviewRemove} onPress={() => { setSelectedImage(null); haptic(); }}>
-                <Ionicons name="close-circle" size={22} color="#fff" />
-              </Pressable>
-              <View style={styles.imagePreviewHint}>
-                <Ionicons name="expand-outline" size={12} color="#fff" />
-                <Text style={styles.imagePreviewHintText}>点击查看大图</Text>
+              <View style={styles.imageSelectedInfo}>
+                <Ionicons name="checkmark-circle" size={20} color={Colors.light.primary} />
+                <Text style={styles.imageSelectedLabel}>已添加</Text>
+                <Text style={styles.imageSelectedSub}>裁剪后的图片将显示{"\n"}在日记卡片左侧</Text>
+                <Text style={styles.imageSelectedSub}>点击缩略图{"\n"}可全屏查看</Text>
               </View>
             </View>
           ) : (
+            /* Not selected: two action cards matching music card style */
             <View style={styles.imageButtonRow}>
-              <Pressable style={styles.imageActionBtn} onPress={takePhoto}>
-                <View style={styles.imageActionIcon}>
-                  <Ionicons name="camera-outline" size={22} color={Colors.light.primary} />
+              <Pressable style={styles.imageActionCard} onPress={takePhoto}>
+                <View style={[styles.musicThumb, styles.imageActionThumb]}>
+                  <Ionicons name="camera-outline" size={32} color={Colors.light.primary} />
                 </View>
-                <Text style={styles.imageActionLabel}>当下拍摄</Text>
+                <Text style={styles.musicName}>当下拍摄</Text>
+                <Text style={styles.musicMood}>实时拍照</Text>
               </Pressable>
-              <View style={styles.imageActionDivider} />
-              <Pressable style={styles.imageActionBtn} onPress={pickImage}>
-                <View style={styles.imageActionIcon}>
-                  <Ionicons name="images-outline" size={22} color={Colors.light.primary} />
+              <Pressable style={styles.imageActionCard} onPress={pickImage}>
+                <View style={[styles.musicThumb, styles.imageActionThumb]}>
+                  <Ionicons name="images-outline" size={32} color={Colors.light.primary} />
                 </View>
-                <Text style={styles.imageActionLabel}>相册选择</Text>
+                <Text style={styles.musicName}>相册选择</Text>
+                <Text style={styles.musicMood}>从图库选取</Text>
               </Pressable>
             </View>
           )}
@@ -1416,45 +1428,30 @@ const styles = StyleSheet.create({
   },
   mapPickBtnText: { fontSize: 13, color: "#fff", fontWeight: "600" as const },
 
-  imageSection: {
-    marginHorizontal: 16, marginTop: 8, marginBottom: 4,
-    backgroundColor: "#fff", borderRadius: 20,
-    paddingHorizontal: 16, paddingTop: 14, paddingBottom: 16,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
-  },
-  imageSectionHeader: {
-    flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 12,
-  },
-  imageSectionTitle: { fontSize: 13, fontWeight: "600", color: Colors.light.textSecondary },
-  imageButtonRow: {
-    flexDirection: "row", alignItems: "center",
-    borderWidth: 1, borderColor: "#EAE6E0", borderRadius: 14,
-    overflow: "hidden",
-  },
-  imageActionBtn: {
-    flex: 1, paddingVertical: 16,
-    alignItems: "center", justifyContent: "center", gap: 6,
-  },
-  imageActionIcon: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: "#EAF7F0",
+  imageSection: { width: "100%", gap: 14 },
+  imageResetBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  imageResetText: { fontSize: 13, color: Colors.light.textSecondary },
+  imageButtonRow: { flexDirection: "row", gap: 12 },
+  imageActionCard: { width: 100, gap: 6, alignItems: "center" },
+  imageActionThumb: {
+    backgroundColor: "#EDF9F3", borderColor: "#C6EDD9",
     alignItems: "center", justifyContent: "center",
   },
-  imageActionLabel: { fontSize: 13, fontWeight: "600", color: Colors.light.text },
-  imageActionDivider: { width: 1, height: 60, backgroundColor: "#EAE6E0" },
-  imagePreviewWrap: { position: "relative", borderRadius: 14, overflow: "hidden" },
-  imagePreview: { width: "100%", height: 170 },
-  imagePreviewRemove: {
-    position: "absolute", top: 8, right: 8,
-    backgroundColor: "rgba(0,0,0,0.45)", borderRadius: 12,
+  imageSelectedRow: { flexDirection: "row", gap: 14, alignItems: "center" },
+  imageSelectedCard: {
+    width: 100, height: 100, borderRadius: 14, overflow: "hidden",
+    position: "relative",
+    borderWidth: 2.5, borderColor: Colors.light.primary,
   },
-  imagePreviewHint: {
-    position: "absolute", bottom: 8, left: 8,
-    flexDirection: "row", alignItems: "center", gap: 4,
-    backgroundColor: "rgba(0,0,0,0.45)", borderRadius: 10,
-    paddingHorizontal: 8, paddingVertical: 3,
+  imageSelectedThumb: { width: "100%", height: "100%" },
+  imageSelectedOverlay: {
+    position: "absolute", bottom: 5, right: 5,
+    backgroundColor: "rgba(0,0,0,0.45)", borderRadius: 8,
+    width: 22, height: 22, alignItems: "center", justifyContent: "center",
   },
-  imagePreviewHintText: { fontSize: 11, color: "#fff", fontWeight: "500" },
+  imageSelectedInfo: { flex: 1, gap: 5 },
+  imageSelectedLabel: { fontSize: 14, fontWeight: "700", color: Colors.light.primary },
+  imageSelectedSub: { fontSize: 11, color: Colors.light.textSecondary, lineHeight: 16 },
   imageViewerOverlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.94)",
     alignItems: "center", justifyContent: "center",
