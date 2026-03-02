@@ -746,6 +746,7 @@ function DiaryGroup({
 }
 
 function MyPublishedCard({ rec, onViewImage }: { rec: PublishedRecording; onViewImage: (uri: string) => void }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const d = new Date(rec.publishedAt);
   const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   const mins = Math.floor(rec.durationSeconds / 60).toString().padStart(2, "0");
@@ -782,15 +783,30 @@ function MyPublishedCard({ rec, onViewImage }: { rec: PublishedRecording; onView
 
       {/* Stats row — identical to DiaryGroup */}
       <View style={styles.diaryStatsRow}>
-        <View style={styles.diaryStatItem}>
-          <Image source={require("@/assets/images/audio-comment-icon.png")} style={{ width: 26, height: 26 }} tintColor="#555" />
-          <Text style={[styles.diaryStatCount, { color: "#888" }]}>0</Text>
-        </View>
+        <Pressable
+          style={[styles.diaryStatItem, styles.diaryStatBtn, isExpanded && styles.diaryStatBtnActive]}
+          onPress={() => { setIsExpanded((v) => !v); haptic(); }}
+        >
+          <Image
+            source={require("@/assets/images/audio-comment-icon.png")}
+            style={{ width: 26, height: 26 }}
+            tintColor={isExpanded ? Colors.light.primary : "#555"}
+          />
+          <Text style={[styles.diaryStatCount, { color: isExpanded ? Colors.light.primary : "#888" }]}>0</Text>
+        </Pressable>
         <View style={styles.diaryStatItem}>
           <Ionicons name="heart" size={16} color="#FF4D6A" />
           <Text style={[styles.diaryStatCount, { color: "#FF4D6A" }]}>0</Text>
         </View>
       </View>
+
+      {isExpanded && (
+        <View style={styles.replyList}>
+          <Text style={{ color: Colors.light.textSecondary, fontSize: 13, textAlign: "center", paddingVertical: 8 }}>
+            暂无留言
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -829,9 +845,11 @@ function MyDiaryTab() {
                 <Text style={styles.myPublishedCountText}>{myRecordings.length}</Text>
               </View>
             </View>
-            {myRecordings.map((rec) => (
-              <MyPublishedCard key={rec.id} rec={rec} onViewImage={setViewerImage} />
-            ))}
+            <View>
+              {myRecordings.map((rec) => (
+                <MyPublishedCard key={rec.id} rec={rec} onViewImage={setViewerImage} />
+              ))}
+            </View>
           </View>
         )}
 

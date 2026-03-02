@@ -628,7 +628,7 @@ export default function MicScreen() {
         },
       ]
     );
-  }, [locationStatus, elapsed, addMyRecording]);
+  }, [locationStatus, elapsed, addMyRecording, selectedImage, finishedUri]);
 
   const handleDiscard = useCallback(() => {
     Alert.alert("丢弃录音", "确认丢弃这段录音？", [
