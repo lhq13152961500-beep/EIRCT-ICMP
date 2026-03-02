@@ -235,6 +235,9 @@ export default function MicScreen() {
   const [envSound, setEnvSound]     = useState(true);
   const [selectedMusic, setSelectedMusic] = useState<number | null>(null);
   const [showMusicModal, setShowMusicModal] = useState(false);
+  const [previewingMusic, setPreviewingMusic] = useState<number | null>(null);
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewSoundMusicRef = useRef<Audio.Sound | null>(null);
   const [isPreviewing, setIsPreviewing]   = useState(false);
   const [finishedUri, setFinishedUri]     = useState<string | null>(null);
 
@@ -263,6 +266,8 @@ export default function MicScreen() {
       stopTimer();
       recordingRef.current?.stopAndUnloadAsync().catch(() => {});
       previewSoundRef.current?.unloadAsync().catch(() => {});
+      if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+      previewSoundMusicRef.current?.unloadAsync().catch(() => {});
     };
   }, []);
 
@@ -364,7 +369,7 @@ export default function MicScreen() {
         }
 
         if (mounted) setIsLocating(false);
-      })();
+      })().catch(() => {});
     }
 
     return () => {
@@ -576,6 +581,24 @@ export default function MicScreen() {
       },
     ]);
   }, []);
+
+  const stopMusicPreview = useCallback(async () => {
+    if (previewTimerRef.current) { clearTimeout(previewTimerRef.current); previewTimerRef.current = null; }
+    if (previewSoundMusicRef.current) {
+      await previewSoundMusicRef.current.stopAsync().catch(() => {});
+      await previewSoundMusicRef.current.unloadAsync().catch(() => {});
+      previewSoundMusicRef.current = null;
+    }
+    setPreviewingMusic(null);
+  }, []);
+
+  const toggleMusicPreview = useCallback(async (id: number) => {
+    haptic();
+    if (previewingMusic === id) { await stopMusicPreview(); return; }
+    await stopMusicPreview();
+    setPreviewingMusic(id);
+    previewTimerRef.current = setTimeout(() => setPreviewingMusic(null), 4000);
+  }, [previewingMusic, stopMusicPreview]);
 
   const confirmMapLocation = useCallback(async (lat: number, lng: number) => {
     const name = await reverseGeocode(lat, lng);
@@ -837,15 +860,12 @@ export default function MicScreen() {
         <View style={styles.musicSection}>
           <View style={styles.musicHeader}>
             <Text style={styles.musicTitle}>推荐背景配乐</Text>
-            <Pressable onPress={() => { haptic(); setShowMusicModal(true); }}>
-              <Text style={styles.musicSeeAll}>查看全部</Text>
-            </Pressable>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.musicScroll}>
             {/* 不添加 card */}
             <Pressable
               style={styles.musicCard}
-              onPress={() => { setSelectedMusic(null); haptic(); }}
+              onPress={() => { setSelectedMusic(null); haptic(); stopMusicPreview(); }}
             >
               <View style={[
                 styles.musicThumb,
@@ -864,6 +884,7 @@ export default function MicScreen() {
             {/* Recommended: first 4 tracks */}
             {MUSIC_LIST.slice(0, 4).map((m) => {
               const selected = selectedMusic === m.id;
+              const playing = previewingMusic === m.id;
               return (
                 <Pressable key={m.id} style={styles.musicCard} onPress={() => { setSelectedMusic(m.id); haptic(); }}>
                   <View style={styles.musicThumbWrap}>
@@ -872,14 +893,23 @@ export default function MicScreen() {
                       style={[styles.musicThumb, selected && { borderColor: Colors.light.primary }]}
                       resizeMode="cover"
                     />
-                    {selected && (
-                      <View style={styles.musicPlayOverlay}>
-                        <Ionicons name="musical-note" size={14} color="#fff" />
-                      </View>
-                    )}
+                    {/* Preview / playing button — always visible */}
+                    <Pressable
+                      style={[styles.musicPlayOverlay, playing && styles.musicPlayOverlayActive]}
+                      onPress={(e) => { e.stopPropagation?.(); toggleMusicPreview(m.id); }}
+                      hitSlop={8}
+                    >
+                      <Ionicons
+                        name={playing ? "stop" : "musical-note"}
+                        size={13}
+                        color="#fff"
+                      />
+                    </Pressable>
                   </View>
                   <Text style={[styles.musicName, selected && { color: Colors.light.primary }]} numberOfLines={1}>{m.name}</Text>
-                  <Text style={styles.musicMood}>{m.mood}</Text>
+                  <Text style={[styles.musicMood, playing && { color: Colors.light.primary }]}>
+                    {playing ? "试听中…" : m.mood}
+                  </Text>
                 </Pressable>
               );
             })}
@@ -1076,8 +1106,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#EAF7F0", alignItems: "center", justifyContent: "center",
   },
   musicPlayOverlay: {
-    position: "absolute", top: 6, right: 6, width: 24, height: 24,
-    borderRadius: 12, backgroundColor: Colors.light.primary, alignItems: "center", justifyContent: "center",
+    position: "absolute", top: 6, right: 6, width: 26, height: 26,
+    borderRadius: 13, backgroundColor: Colors.light.primary, alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 3, elevation: 3,
+  },
+  musicPlayOverlayActive: {
+    backgroundColor: "#E8524A",
   },
   musicName: { fontSize: 13, fontWeight: "600", color: Colors.light.text, textAlign: "center" },
   musicMood: { fontSize: 11, color: Colors.light.textSecondary, textAlign: "center" },
