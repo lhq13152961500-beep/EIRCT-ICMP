@@ -235,6 +235,7 @@ export default function MicScreen() {
   useEffect(() => {
     if (Platform.OS === "web") return; // web: already initialized via lazy state
     let mounted = true;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -243,6 +244,7 @@ export default function MicScreen() {
 
       const update = ({ latitude, longitude }: { latitude: number; longitude: number }) => {
         if (!mounted) return;
+        if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
         let nearest = LANDMARKS[0]; let minDist = Infinity;
         for (const lm of LANDMARKS) {
           const d = haversineMeters(latitude, longitude, lm.lat, lm.lng);
@@ -255,22 +257,38 @@ export default function MicScreen() {
         );
       };
 
-      // Balanced accuracy returns faster (cell/WiFi) for the initial fix
+      // Step 1: last known position — returns instantly from cache, no GPS wait
       try {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        update(loc.coords);
-      } catch { /* GPS cold-start failed – the watcher below will pick it up */ }
+        const last = await Location.getLastKnownPositionAsync({});
+        if (last && mounted) update(last.coords);
+      } catch { /* no cached position — that's fine */ }
 
-      // Continuous high-accuracy watch for precise range validation
-      const sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 5 },
-        (l) => update(l.coords)
-      );
-      if (mounted) locationSubRef.current = sub;
+      // Step 2: if still loading after 8 s, give up and show out-of-range
+      if (mounted) {
+        timeoutId = setTimeout(() => {
+          if (mounted) {
+            setLocationStatus((prev) =>
+              prev.state === "loading"
+                ? { state: "out_of_range", nearest: LANDMARKS[0], distance: 999999 }
+                : prev
+            );
+          }
+        }, 8000);
+      }
+
+      // Step 3: continuous high-accuracy watch refines the result over time
+      try {
+        const sub = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.High, distanceInterval: 5 },
+          (l) => update(l.coords)
+        );
+        if (mounted) locationSubRef.current = sub;
+      } catch { /* watch failed */ }
     })();
 
     return () => {
       mounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
       locationSubRef.current?.remove();
       locationSubRef.current = null;
     };
