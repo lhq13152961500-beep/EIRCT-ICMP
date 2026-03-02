@@ -745,7 +745,7 @@ function DiaryGroup({
   );
 }
 
-function MyPublishedCard({ rec, onViewImage }: { rec: PublishedRecording; onViewImage: (uri: string) => void }) {
+function MyPublishedCard({ rec, onViewImage, isHighlighted }: { rec: PublishedRecording; onViewImage: (uri: string) => void; isHighlighted?: boolean }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const d = new Date(rec.publishedAt);
   const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -753,7 +753,7 @@ function MyPublishedCard({ rec, onViewImage }: { rec: PublishedRecording; onView
   const secs = (rec.durationSeconds % 60).toString().padStart(2, "0");
   const dur = `${mins}:${secs}`;
   return (
-    <View style={styles.diaryGroup}>
+    <View style={[styles.diaryGroup, isHighlighted && styles.myPublishedCardHighlight]}>
       {/* Header row — identical layout to DiaryGroup */}
       <View style={styles.diaryMainCard}>
         {rec.imageUri ? (
@@ -814,13 +814,29 @@ function MyPublishedCard({ rec, onViewImage }: { rec: PublishedRecording; onView
 function MyDiaryTab() {
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
   const [viewerImage, setViewerImage] = useState<string | null>(null);
-  const { myRecordings } = useRecordings();
+  const [highlightedIds, setHighlightedIds] = useState<string[]>([]);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { myRecordings, newIds, acknowledgeNew } = useRecordings();
 
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const handleNewDotPress = () => {
+    if (newIds.length === 0) return;
+    haptic(Haptics.ImpactFeedbackStyle.Light);
+    const ids = [...newIds];
+    acknowledgeNew();
+    setHighlightedIds(ids);
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => {
+      setHighlightedIds([]);
+      highlightTimer.current = null;
+    }, 2000);
+  };
+
   const totalCount = MY_DIARY_GROUPS.length + myRecordings.length;
+  const hasNew = newIds.length > 0;
 
   return (
     <View style={{ flex: 1 }}>
@@ -839,15 +855,30 @@ function MyDiaryTab() {
         {myRecordings.length > 0 && (
           <View style={styles.myPublishedSection}>
             <View style={styles.myPublishedSectionHeader}>
-              <View style={styles.myPublishedDot} />
+              {hasNew ? (
+                <Pressable onPress={handleNewDotPress} style={styles.myPublishedNewDot} hitSlop={10} />
+              ) : (
+                <View style={styles.myPublishedDot} />
+              )}
               <Text style={styles.myPublishedSectionTitle}>我的声音随记</Text>
               <View style={styles.myPublishedCountBadge}>
                 <Text style={styles.myPublishedCountText}>{myRecordings.length}</Text>
               </View>
+              {hasNew && (
+                <Pressable onPress={handleNewDotPress} style={styles.myPublishedNewBadge}>
+                  <Text style={styles.myPublishedNewBadgeText}>新</Text>
+                </Pressable>
+              )}
             </View>
             <View>
               {myRecordings.map((rec) => (
-                <MyPublishedCard key={rec.id} rec={rec} onViewImage={setViewerImage} />
+                <React.Fragment key={rec.id}>
+                  <MyPublishedCard
+                    rec={rec}
+                    onViewImage={setViewerImage}
+                    isHighlighted={highlightedIds.includes(rec.id)}
+                  />
+                </React.Fragment>
               ))}
             </View>
           </View>
@@ -2118,6 +2149,19 @@ const styles = StyleSheet.create({
   },
   myPublishedDot: {
     width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.light.primary,
+  },
+  myPublishedNewDot: {
+    width: 11, height: 11, borderRadius: 6,
+    backgroundColor: Colors.light.primary,
+    borderWidth: 2, borderColor: Colors.light.primary + "50",
+  },
+  myPublishedNewBadge: {
+    backgroundColor: "#FF4D6A", borderRadius: 8,
+    paddingHorizontal: 6, paddingVertical: 1, marginLeft: 2,
+  },
+  myPublishedNewBadgeText: { fontSize: 10, color: "#fff", fontWeight: "700" },
+  myPublishedCardHighlight: {
+    borderWidth: 2, borderColor: Colors.light.primary,
   },
   myPublishedSectionTitle: {
     fontSize: 13, fontWeight: "700", color: Colors.light.text,

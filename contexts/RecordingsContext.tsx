@@ -15,22 +15,32 @@ export interface PublishedRecording {
 interface RecordingsContextValue {
   myRecordings: PublishedRecording[];
   addMyRecording: (rec: PublishedRecording) => void;
+  newIds: string[];
+  acknowledgeNew: () => void;
 }
 
 const RecordingsContext = createContext<RecordingsContextValue>({
   myRecordings: [],
   addMyRecording: () => {},
+  newIds: [],
+  acknowledgeNew: () => {},
 });
 
 export function RecordingsProvider({ children }: { children: React.ReactNode }) {
   const [myRecordings, setMyRecordings] = useState<PublishedRecording[]>([]);
+  const [newIds, setNewIds] = useState<string[]>([]);
 
   const addMyRecording = useCallback((rec: PublishedRecording) => {
     setMyRecordings((prev) => [rec, ...prev]);
+    setNewIds((prev) => [rec.id, ...prev]);
+  }, []);
+
+  const acknowledgeNew = useCallback(() => {
+    setNewIds([]);
   }, []);
 
   return (
-    <RecordingsContext.Provider value={{ myRecordings, addMyRecording }}>
+    <RecordingsContext.Provider value={{ myRecordings, addMyRecording, newIds, acknowledgeNew }}>
       {children}
     </RecordingsContext.Provider>
   );
