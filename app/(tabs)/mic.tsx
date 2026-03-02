@@ -1058,7 +1058,7 @@ export default function MicScreen() {
 
       {/* ── Floating Publish Bar — shown only in finished state ── */}
       {recState === "finished" && (
-        <View style={[styles.publishBar, { paddingBottom: bottomPad + 12 }]}>
+        <View style={[styles.publishBar, { bottom: Platform.OS === "web" ? 84 : 60 + insets.bottom }]}>
           <View style={styles.publishBarInfo}>
             <Ionicons name="musical-note" size={14} color={Colors.light.primary} />
             <Text style={styles.publishBarDur}>{formatTime(elapsed)}</Text>
@@ -1168,12 +1168,13 @@ const styles = StyleSheet.create({
   finishedRow: { flexDirection: "row", gap: 10, flexWrap: "wrap", justifyContent: "center" },
 
   publishBar: {
-    position: "absolute", bottom: 0, left: 0, right: 0,
+    position: "absolute", left: 0, right: 0,
     backgroundColor: "#fff",
     borderTopWidth: 1, borderTopColor: "#ECEAE5",
-    paddingHorizontal: 20, paddingTop: 12,
+    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12,
     flexDirection: "row", alignItems: "center", gap: 12,
     shadowColor: "#000", shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 8,
+    zIndex: 100,
   },
   publishBarInfo: {
     flex: 1, flexDirection: "row", alignItems: "center", gap: 5, overflow: "hidden",
