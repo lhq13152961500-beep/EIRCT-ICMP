@@ -18,13 +18,7 @@ import { Audio } from "expo-av";
 import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
-
-// ─── Landmark Definitions ─────────────────────────────────────────────────────
-
-const LANDMARKS = [
-  { name: "云栖竹径 · 黄岭村", lat: 30.2168, lng: 120.0555 },
-];
-const RANGE_METERS = 100;
+import { apiRequest, getApiUrl } from "@/lib/query-client";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,20 +32,34 @@ function formatTime(seconds: number) {
   return `${m}:${s}`;
 }
 
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const toRad = (v: number) => (v * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
+// ─── Reverse Geocoding ────────────────────────────────────────────────────────
 
-function formatDistance(meters: number): string {
-  if (meters < 1000) return `${Math.round(meters)} 米`;
-  return `${(meters / 1000).toFixed(1)} 公里`;
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  try {
+    if (Platform.OS !== "web") {
+      const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+      if (results.length > 0) {
+        const r = results[0];
+        const parts = [r.name, r.district, r.city].filter(Boolean);
+        return parts.slice(0, 2).join(" · ") || "当前位置";
+      }
+    } else {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=zh`,
+        { headers: { "User-Agent": "guanyou-app/1.0" } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const addr = data.address ?? {};
+        const parts = [
+          addr.tourism ?? addr.amenity ?? addr.road,
+          addr.suburb ?? addr.district ?? addr.town,
+        ].filter(Boolean);
+        return parts.join(" · ") || data.display_name?.split(",")[0] || "当前位置";
+      }
+    }
+  } catch { /* ignore */ }
+  return "当前位置";
 }
 
 // ─── Audio Presets ────────────────────────────────────────────────────────────
@@ -95,9 +103,9 @@ const MUSIC_LIST = [
 type RecordingState = "idle" | "recording" | "paused" | "finished";
 
 type LocationStatus =
+  | { state: "none" }
   | { state: "denied" }
-  | { state: "in_range"; landmark: typeof LANDMARKS[0]; distance: number }
-  | { state: "out_of_range"; nearest: typeof LANDMARKS[0]; distance: number };
+  | { state: "located"; lat: number; lng: number; locationName: string };
 
 // ─── Waveform ────────────────────────────────────────────────────────────────
 
@@ -189,10 +197,8 @@ export default function MicScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const [locationStatus, setLocationStatus] = useState<LocationStatus>(
-    { state: "out_of_range", nearest: LANDMARKS[0], distance: 999999 }
-  );
-  const [isLocating, setIsLocating] = useState(Platform.OS !== "web");
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>({ state: "none" });
+  const [isLocating, setIsLocating] = useState(true);
   const [recState, setRecState]     = useState<RecordingState>("idle");
   const [elapsed, setElapsed]       = useState(0);
   const [envSound, setEnvSound]     = useState(true);
@@ -239,16 +245,13 @@ export default function MicScreen() {
       if (!mounted) return;
       if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
       setIsLocating(false);
-      let nearest = LANDMARKS[0]; let minDist = Infinity;
-      for (const lm of LANDMARKS) {
-        const d = haversineMeters(latitude, longitude, lm.lat, lm.lng);
-        if (d < minDist) { minDist = d; nearest = lm; }
-      }
-      setLocationStatus(
-        minDist <= RANGE_METERS
-          ? { state: "in_range", landmark: nearest, distance: minDist }
-          : { state: "out_of_range", nearest, distance: minDist }
-      );
+      // Set coordinates immediately with placeholder name, then resolve address
+      setLocationStatus({ state: "located", lat: latitude, lng: longitude, locationName: "正在解析地址…" });
+      reverseGeocode(latitude, longitude).then((name) => {
+        if (mounted) {
+          setLocationStatus({ state: "located", lat: latitude, lng: longitude, locationName: name });
+        }
+      });
     };
 
     // ── 8-second timeout: stop spinner even if GPS never resolves
@@ -282,6 +285,7 @@ export default function MicScreen() {
           setLocationStatus({ state: "denied" });
           return;
         }
+
         // Last known position — instant from cache
         try {
           const last = await Location.getLastKnownPositionAsync({});
@@ -452,27 +456,32 @@ export default function MicScreen() {
   // ── Publish ────────────────────────────────────────────────────────────────
 
   const handlePublish = useCallback(() => {
-    if (locationStatus.state !== "in_range") {
-      const dist =
-        locationStatus.state === "out_of_range"
-          ? `\n\n当前距地标 ${formatDistance(locationStatus.distance)}，请前往地标 ${RANGE_METERS} 米内再发布。`
-          : "\n\n无法获取位置，请开启定位权限后再发布。";
-      Alert.alert("无法发布", `发布录音必须在地标范围内。${dist}`);
+    if (locationStatus.state !== "located") {
+      Alert.alert("无法发布", "请先开启定位权限并等待 GPS 定位成功后再发布。");
       return;
     }
+    const { lat, lng, locationName } = locationStatus;
     Alert.alert(
       "发布声音随记",
-      `将在「${locationStatus.landmark.name}」发布这段录音 (${formatTime(elapsed)})，是否确认？`,
+      `将在「${locationName}」发布这段录音 (${formatTime(elapsed)})，50 米内的旅人可以听见，是否确认？`,
       [
         { text: "取消", style: "cancel" },
         {
           text: "发布",
-          onPress: () => {
+          onPress: async () => {
             haptic(Haptics.ImpactFeedbackStyle.Medium);
+            try {
+              await apiRequest("POST", "/api/recordings", {
+                locationName,
+                lat,
+                lng,
+                durationSeconds: elapsed,
+              });
+            } catch { /* non-critical — local state still resets */ }
             setFinishedUri(null);
             setElapsed(0);
             setRecState("idle");
-            Alert.alert("发布成功 🌿", "你的声音随记已发布到地标，等待其他旅人聆听");
+            Alert.alert("发布成功 🌿", `已发布到「${locationName}」，附近 50 米的旅人可以聆听`);
           },
         },
       ]
@@ -501,61 +510,60 @@ export default function MicScreen() {
     ]);
   }, []);
 
-  const inRange = locationStatus.state === "in_range";
+  const gpsReady = locationStatus.state === "located";
 
   // ── Location Card ──────────────────────────────────────────────────────────
 
   const renderLocationCard = () => {
-    switch (locationStatus.state) {
-      case "denied":
-        return (
-          <View style={[styles.locationCard, styles.locationCardWarn]}>
-            <View style={styles.locationDotRow}>
-              <View style={[styles.locationDot, { backgroundColor: "#E8524A" }]} />
-              <Text style={styles.locationLabel}>无法获取位置信息</Text>
-            </View>
-            <Text style={styles.locationNameSmall}>请在设置中允许位置权限</Text>
+    if (locationStatus.state === "denied") {
+      return (
+        <View style={[styles.locationCard, styles.locationCardWarn]}>
+          <View style={styles.locationDotRow}>
+            <View style={[styles.locationDot, { backgroundColor: "#E8524A" }]} />
+            <Text style={styles.locationLabel}>无法获取位置信息</Text>
           </View>
-        );
-      case "in_range":
-        return (
-          <View style={styles.locationCard}>
-            <View style={styles.locationDotRow}>
-              <View style={styles.locationDot} />
-              <Text style={styles.locationLabel}>当前关联地标</Text>
-              <View style={styles.locationBadge}>
-                <Ionicons name="checkmark" size={10} color="#fff" />
-                <Text style={styles.locationBadgeText}>已关联</Text>
-              </View>
-            </View>
-            <Text style={styles.locationName}>{locationStatus.landmark.name}</Text>
-            <Text style={styles.locationDistText}>距地标 {formatDistance(locationStatus.distance)}</Text>
-          </View>
-        );
-      case "out_of_range":
-        return (
-          <View style={[styles.locationCard, styles.locationCardWarn]}>
-            <View style={styles.locationDotRow}>
-              <View style={[styles.locationDot, { backgroundColor: isLocating ? "#B0B0B0" : "#F5974E" }]} />
-              <Text style={styles.locationLabel}>
-                {isLocating ? "正在获取精确位置…" : "未进入地标范围"}
-              </Text>
-              {isLocating && (
-                <ActivityIndicator size="small" color={Colors.light.primary} style={{ marginLeft: 6 }} />
-              )}
-            </View>
-            <Text style={styles.locationName}>{locationStatus.nearest.name}</Text>
-            {!isLocating && (
-              <View style={styles.locationDistRow}>
-                <Ionicons name="navigate-outline" size={12} color="#F5974E" />
-                <Text style={styles.locationDistWarn}>
-                  距地标 {formatDistance(locationStatus.distance)}，需进入 {RANGE_METERS} 米内关联
-                </Text>
-              </View>
-            )}
-          </View>
-        );
+          <Text style={styles.locationNameSmall}>请在设置中允许位置权限</Text>
+        </View>
+      );
     }
+
+    if (locationStatus.state === "located") {
+      const resolving = locationStatus.locationName === "正在解析地址…";
+      return (
+        <View style={styles.locationCard}>
+          <View style={styles.locationDotRow}>
+            <View style={styles.locationDot} />
+            <Text style={styles.locationLabel}>当前位置</Text>
+            <View style={styles.locationBadge}>
+              <Ionicons name="location" size={10} color="#fff" />
+              <Text style={styles.locationBadgeText}>GPS 已定位</Text>
+            </View>
+          </View>
+          <Text style={styles.locationName}>
+            {resolving ? "正在解析地址…" : locationStatus.locationName}
+          </Text>
+          <Text style={styles.locationDistText}>发布后 50 米内的旅人可听见</Text>
+        </View>
+      );
+    }
+
+    // state === "none"
+    return (
+      <View style={[styles.locationCard, styles.locationCardWarn]}>
+        <View style={styles.locationDotRow}>
+          <View style={[styles.locationDot, { backgroundColor: isLocating ? "#B0B0B0" : "#F5974E" }]} />
+          <Text style={styles.locationLabel}>
+            {isLocating ? "正在获取位置…" : "无法获取位置"}
+          </Text>
+          {isLocating && (
+            <ActivityIndicator size="small" color={Colors.light.primary} style={{ marginLeft: 6 }} />
+          )}
+        </View>
+        {!isLocating && (
+          <Text style={styles.locationNameSmall}>请确认已开启定位权限并处于有信号区域</Text>
+        )}
+      </View>
+    );
   };
 
   // ── Controls ───────────────────────────────────────────────────────────────
@@ -597,10 +605,10 @@ export default function MicScreen() {
             <CtrlBtn icon="trash-outline" label="丢弃" onPress={handleDiscard} variant="danger" />
             <CtrlBtn
               icon="cloud-upload-outline"
-              label={inRange ? "发布" : "需在范围内"}
+              label={gpsReady ? "发布" : "需要定位"}
               onPress={handlePublish}
               variant="primary"
-              disabled={!inRange}
+              disabled={!gpsReady}
             />
           </View>
         );

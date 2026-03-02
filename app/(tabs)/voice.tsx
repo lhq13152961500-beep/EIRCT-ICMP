@@ -10,12 +10,15 @@ import {
   Dimensions,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as Location from "expo-location";
 import { Audio } from "expo-av";
 import Colors from "@/constants/colors";
+import { getApiUrl } from "@/lib/query-client";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TAB_BAR_HEIGHT = 80;
@@ -1218,7 +1221,72 @@ function SoundPostcard({
   );
 }
 
+interface NearbyRec {
+  id: string;
+  locationName: string;
+  lat: number;
+  lng: number;
+  durationSeconds: number;
+  createdAt: string;
+}
+
 function DiscoverOthersTab() {
+  const [nearbyRecs, setNearbyRecs] = useState<NearbyRec[]>([]);
+  const [nearbyLoading, setNearbyLoading] = useState(true);
+  const [nearbyError, setNearbyError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async (lat: number, lng: number) => {
+      try {
+        const url = new URL("/api/recordings/nearby", getApiUrl());
+        url.searchParams.set("lat", String(lat));
+        url.searchParams.set("lng", String(lng));
+        url.searchParams.set("radius", "50");
+        const res = await fetch(url.toString());
+        if (!cancelled && res.ok) {
+          const data: NearbyRec[] = await res.json();
+          setNearbyRecs(data);
+        }
+      } catch {
+        if (!cancelled) setNearbyError(true);
+      } finally {
+        if (!cancelled) setNearbyLoading(false);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      if (typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => { if (!cancelled) load(pos.coords.latitude, pos.coords.longitude); },
+          () => { if (!cancelled) { setNearbyLoading(false); setNearbyError(true); } }
+        );
+      } else {
+        setNearbyLoading(false);
+      }
+    } else {
+      (async () => {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (!cancelled && status === "granted") {
+          try {
+            const last = await Location.getLastKnownPositionAsync({});
+            if (last && !cancelled) {
+              load(last.coords.latitude, last.coords.longitude);
+            } else {
+              const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+              if (!cancelled) load(pos.coords.latitude, pos.coords.longitude);
+            }
+          } catch {
+            if (!cancelled) { setNearbyLoading(false); setNearbyError(true); }
+          }
+        } else if (!cancelled) {
+          setNearbyLoading(false);
+        }
+      })();
+    }
+    return () => { cancelled = true; };
+  }, []);
+
   const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>(
     Object.fromEntries(SOUND_POSTCARDS.map((p) => [p.id, p.likeCount]))
@@ -1473,6 +1541,50 @@ function DiscoverOthersTab() {
         <Pressable style={styles.filterBtn} onPress={() => haptic()}>
           <Ionicons name="options-outline" size={20} color={Colors.light.text} />
         </Pressable>
+      </View>
+
+      {/* ── 附近声音随记 ──────────────────────────────────── */}
+      <View style={styles.nearbySection}>
+        <View style={styles.nearbySectionHeader}>
+          <Ionicons name="radio-outline" size={14} color={Colors.light.primary} />
+          <Text style={styles.nearbySectionTitle}>附近 50 米的声音随记</Text>
+        </View>
+        {nearbyLoading ? (
+          <View style={styles.nearbyEmpty}>
+            <ActivityIndicator size="small" color={Colors.light.primary} />
+            <Text style={styles.nearbyEmptyText}>正在探测附近声音…</Text>
+          </View>
+        ) : nearbyRecs.length === 0 ? (
+          <View style={styles.nearbyEmpty}>
+            <Ionicons name="ear-outline" size={20} color="#ccc" />
+            <Text style={styles.nearbyEmptyText}>
+              {nearbyError ? "无法获取位置，请开启定位权限" : "此处暂无声音随记，先录一段？"}
+            </Text>
+          </View>
+        ) : (
+          nearbyRecs.map((rec) => {
+            const mins = Math.floor(rec.durationSeconds / 60).toString().padStart(2, "0");
+            const secs = (rec.durationSeconds % 60).toString().padStart(2, "0");
+            const dateStr = new Date(rec.createdAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
+            return (
+              <View key={rec.id} style={styles.nearbyCard}>
+                <View style={styles.nearbyCardLeft}>
+                  <View style={styles.nearbyPlayBtn}>
+                    <Ionicons name="play" size={12} color="#fff" />
+                  </View>
+                  <View>
+                    <Text style={styles.nearbyCardName} numberOfLines={1}>{rec.locationName}</Text>
+                    <Text style={styles.nearbyCardMeta}>{dateStr} · {mins}:{secs}</Text>
+                  </View>
+                </View>
+                <View style={styles.nearbyCardRight}>
+                  <Ionicons name="location" size={12} color={Colors.light.primary} />
+                  <Text style={styles.nearbyCardDist}>50 米内</Text>
+                </View>
+              </View>
+            );
+          })
+        )}
       </View>
 
       {SOUND_POSTCARDS.map((p) => (
@@ -2154,6 +2266,81 @@ const styles = StyleSheet.create({
   discoverHeaderText: {
     fontSize: 13,
     color: Colors.light.textSecondary,
+  },
+
+  nearbySection: {
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  nearbySectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 10,
+  },
+  nearbySectionTitle: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    color: Colors.light.primary,
+    letterSpacing: 0.3,
+  },
+  nearbyEmpty: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 8,
+  },
+  nearbyEmptyText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+  },
+  nearbyCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#F0F0F0",
+  },
+  nearbyCardLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  nearbyPlayBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.light.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  nearbyCardName: {
+    fontSize: 13,
+    fontWeight: "500" as const,
+    color: Colors.light.text,
+    maxWidth: 180,
+  },
+  nearbyCardMeta: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+    marginTop: 1,
+  },
+  nearbyCardRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+  nearbyCardDist: {
+    fontSize: 11,
+    color: Colors.light.primary,
   },
 
   postcardCard: {
