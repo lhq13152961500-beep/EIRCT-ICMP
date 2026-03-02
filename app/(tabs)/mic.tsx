@@ -525,15 +525,7 @@ export default function MicScreen() {
         return <Text style={styles.hint}>点击按钮开始采集声音</Text>;
 
       case "recording":
-        return (
-          <>
-            <WaveformBars active={true} />
-            <View style={styles.ctrlRow}>
-              <CtrlBtn icon="pause-circle-outline" label="暂停" onPress={pauseRecording} variant="outline" />
-              <CtrlBtn icon="trash-outline" label="删除" onPress={deleteRecording} variant="danger" />
-            </View>
-          </>
-        );
+        return <WaveformBars active={true} />;
 
       case "paused":
         return (
@@ -546,7 +538,6 @@ export default function MicScreen() {
                 onPress={togglePreview}
                 variant="ghost"
               />
-              <CtrlBtn icon="mic-circle-outline" label="继续" onPress={resumeRecording} variant="outline" />
               <CtrlBtn icon="trash-outline" label="删除" onPress={deleteRecording} variant="danger" />
               <CtrlBtn icon="checkmark-circle-outline" label="完成" onPress={finishRecording} variant="primary" />
             </View>
@@ -575,7 +566,7 @@ export default function MicScreen() {
     }
   };
 
-  const showMicBtn = recState === "idle" || recState === "recording";
+  const showMicBtn = recState === "idle" || recState === "recording" || recState === "paused";
 
   return (
     <View style={[styles.root, { paddingTop: topPad }]}>
@@ -607,10 +598,18 @@ export default function MicScreen() {
               recState === "recording" && styles.micBtnRecording,
               pressed && { opacity: 0.88, transform: [{ scale: 0.96 }] },
             ]}
-            onPress={recState === "recording" ? pauseRecording : startRecording}
+            onPress={
+              recState === "recording"
+                ? pauseRecording
+                : recState === "paused"
+                ? resumeRecording
+                : startRecording
+            }
           >
             {recState === "recording" ? (
               <Ionicons name="pause" size={38} color="#fff" />
+            ) : recState === "paused" ? (
+              <Ionicons name="mic" size={40} color="#fff" />
             ) : (
               <Ionicons name="mic" size={44} color="#fff" />
             )}
