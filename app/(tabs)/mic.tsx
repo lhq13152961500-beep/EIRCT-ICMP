@@ -886,25 +886,35 @@ export default function MicScreen() {
               const selected = selectedMusic === m.id;
               const playing = previewingMusic === m.id;
               return (
-                <Pressable key={m.id} style={styles.musicCard} onPress={() => { setSelectedMusic(m.id); haptic(); }}>
+                <Pressable
+                  key={m.id}
+                  style={styles.musicCard}
+                  onPress={() => {
+                    setSelectedMusic(m.id);
+                    haptic();
+                    if (previewingMusic !== null && previewingMusic !== m.id) stopMusicPreview();
+                  }}
+                >
                   <View style={styles.musicThumbWrap}>
                     <Image
                       source={m.thumb}
                       style={[styles.musicThumb, selected && { borderColor: Colors.light.primary }]}
                       resizeMode="cover"
                     />
-                    {/* Preview / playing button — always visible */}
-                    <Pressable
-                      style={[styles.musicPlayOverlay, playing && styles.musicPlayOverlayActive]}
-                      onPress={(e) => { e.stopPropagation?.(); toggleMusicPreview(m.id); }}
-                      hitSlop={8}
-                    >
-                      <Ionicons
-                        name={playing ? "stop" : "musical-note"}
-                        size={13}
-                        color="#fff"
-                      />
-                    </Pressable>
+                    {/* Preview button — only visible on selected card */}
+                    {selected && (
+                      <Pressable
+                        style={[styles.musicPlayOverlay, playing && styles.musicPlayOverlayActive]}
+                        onPress={(e) => { e.stopPropagation?.(); toggleMusicPreview(m.id); }}
+                        hitSlop={8}
+                      >
+                        <Ionicons
+                          name={playing ? "stop" : "musical-note"}
+                          size={13}
+                          color="#fff"
+                        />
+                      </Pressable>
+                    )}
                   </View>
                   <Text style={[styles.musicName, selected && { color: Colors.light.primary }]} numberOfLines={1}>{m.name}</Text>
                   <Text style={[styles.musicMood, playing && { color: Colors.light.primary }]}>
@@ -962,27 +972,46 @@ export default function MicScreen() {
 
               {MUSIC_LIST.map((m) => {
                 const selected = selectedMusic === m.id;
+                const playing = previewingMusic === m.id;
                 return (
-                  <Pressable
+                  <View
                     key={m.id}
                     style={[styles.musicRow, selected && styles.musicRowSelected]}
-                    onPress={() => { setSelectedMusic(m.id); haptic(); setShowMusicModal(false); }}
                   >
+                    {/* Thumbnail — with selected checkmark overlay */}
                     <View style={styles.musicRowThumbWrap}>
                       <Image source={m.thumb} style={styles.musicRowThumb} resizeMode="cover" />
                       <View style={[styles.musicRowMoodBadge, { backgroundColor: m.color }]}>
                         <Text style={styles.musicRowMoodText}>{m.mood}</Text>
                       </View>
+                      {selected && (
+                        <View style={styles.musicRowSelectedBadge}>
+                          <Ionicons name="checkmark" size={11} color="#fff" />
+                        </View>
+                      )}
                     </View>
-                    <View style={styles.musicRowInfo}>
+
+                    {/* Info — tap to select */}
+                    <Pressable
+                      style={styles.musicRowInfo}
+                      onPress={() => { setSelectedMusic(m.id); haptic(); setShowMusicModal(false); stopMusicPreview(); }}
+                    >
                       <Text style={[styles.musicRowName, selected && { color: Colors.light.primary }]}>{m.name}</Text>
                       <Text style={styles.musicRowDesc} numberOfLines={2}>{m.desc}</Text>
-                    </View>
-                    {selected
-                      ? <Ionicons name="checkmark-circle" size={22} color={Colors.light.primary} />
-                      : <Ionicons name="play-circle-outline" size={22} color="#CCC" />
-                    }
-                  </Pressable>
+                    </Pressable>
+
+                    {/* Play/stop button — always for preview */}
+                    <Pressable
+                      onPress={() => toggleMusicPreview(m.id)}
+                      hitSlop={8}
+                      style={styles.musicRowPlayBtn}
+                    >
+                      {playing
+                        ? <Ionicons name="stop-circle" size={26} color="#E8524A" />
+                        : <Ionicons name="play-circle-outline" size={26} color={Colors.light.primary} />
+                      }
+                    </Pressable>
+                  </View>
                 );
               })}
             </ScrollView>
@@ -1149,6 +1178,13 @@ const styles = StyleSheet.create({
   },
   musicRowMoodText: { fontSize: 9, color: "#fff", fontWeight: "700" as const },
   musicRowInfo: { flex: 1, gap: 4 },
+  musicRowPlayBtn: { padding: 4, alignItems: "center", justifyContent: "center" },
+  musicRowSelectedBadge: {
+    position: "absolute", top: -4, left: -4, width: 20, height: 20,
+    borderRadius: 10, backgroundColor: Colors.light.primary,
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 1.5, borderColor: "#fff",
+  },
   musicRowName: { fontSize: 15, fontWeight: "600", color: Colors.light.text },
   musicRowDesc: { fontSize: 12, color: Colors.light.textSecondary, lineHeight: 17 },
 
