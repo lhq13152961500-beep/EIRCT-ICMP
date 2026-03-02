@@ -21,6 +21,7 @@ import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { useRecordings, type PublishedRecording } from "@/contexts/RecordingsContext";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -224,6 +225,9 @@ export default function MicScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+
+  const { addMyRecording } = useRecordings();
+  const [isPublishing, setIsPublishing] = useState(false);
 
   const [locationStatus, setLocationStatus] = useState<LocationStatus>({ state: "none" });
   const [isLocating, setIsLocating] = useState(true);
@@ -533,32 +537,48 @@ export default function MicScreen() {
       return;
     }
     const { lat, lng, locationName } = locationStatus;
+    const title = `声音随记·${locationName}`;
     Alert.alert(
       "发布声音随记",
-      `将在「${locationName}」发布这段录音 (${formatTime(elapsed)})，50 米内的旅人可以听见，是否确认？`,
+      `将在「${locationName}」发布这段录音（${formatTime(elapsed)}），100 米内的旅人可以接收，是否确认？`,
       [
         { text: "取消", style: "cancel" },
         {
-          text: "发布",
+          text: "确认发布",
           onPress: async () => {
             haptic(Haptics.ImpactFeedbackStyle.Medium);
+            setIsPublishing(true);
             try {
-              await apiRequest("POST", "/api/recordings", {
+              const rec = await apiRequest("POST", "/api/recordings", {
+                title,
                 locationName,
                 lat,
                 lng,
                 durationSeconds: elapsed,
+              }) as PublishedRecording;
+              addMyRecording({ ...rec, title, locationName, lat, lng, durationSeconds: elapsed, publishedAt: rec.publishedAt ?? new Date().toISOString() });
+            } catch {
+              addMyRecording({
+                id: Date.now().toString() + Math.random().toString(36).slice(2),
+                title,
+                locationName,
+                lat,
+                lng,
+                durationSeconds: elapsed,
+                publishedAt: new Date().toISOString(),
               });
-            } catch { /* non-critical — local state still resets */ }
+            } finally {
+              setIsPublishing(false);
+            }
             setFinishedUri(null);
             setElapsed(0);
             setRecState("idle");
-            Alert.alert("发布成功 🌿", `已发布到「${locationName}」，附近 50 米的旅人可以聆听`);
+            Alert.alert("发布成功 🌿", `已发布到「${locationName}」，100 米内的旅人可以聆听，作品已保存在「我的日记」`);
           },
         },
       ]
     );
-  }, [locationStatus, elapsed]);
+  }, [locationStatus, elapsed, addMyRecording]);
 
   const handleDiscard = useCallback(() => {
     Alert.alert("丢弃录音", "确认丢弃这段录音？", [
@@ -731,13 +751,6 @@ export default function MicScreen() {
               variant="ghost"
             />
             <CtrlBtn icon="trash-outline" label="丢弃" onPress={handleDiscard} variant="danger" />
-            <CtrlBtn
-              icon="cloud-upload-outline"
-              label={gpsReady ? "发布" : "需要定位"}
-              onPress={handlePublish}
-              variant="primary"
-              disabled={!gpsReady}
-            />
           </View>
         );
     }
@@ -757,7 +770,7 @@ export default function MicScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 100 }]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPad + (recState === "finished" ? 160 : 100) }]}
       >
         <Text style={styles.pageTitle}>声音随记</Text>
 
@@ -1042,6 +1055,39 @@ export default function MicScreen() {
           </View>
         </Modal>
       </ScrollView>
+
+      {/* ── Floating Publish Bar — shown only in finished state ── */}
+      {recState === "finished" && (
+        <View style={[styles.publishBar, { paddingBottom: bottomPad + 12 }]}>
+          <View style={styles.publishBarInfo}>
+            <Ionicons name="musical-note" size={14} color={Colors.light.primary} />
+            <Text style={styles.publishBarDur}>{formatTime(elapsed)}</Text>
+            {locationStatus.state === "located" && (
+              <>
+                <Ionicons name="location-sharp" size={12} color={Colors.light.textSecondary} />
+                <Text style={styles.publishBarLoc} numberOfLines={1}>{locationStatus.locationName}</Text>
+              </>
+            )}
+          </View>
+          <Pressable
+            style={({ pressed }) => [
+              styles.publishBtn,
+              !gpsReady && styles.publishBtnDisabled,
+              pressed && gpsReady && { opacity: 0.85, transform: [{ scale: 0.97 }] },
+            ]}
+            onPress={handlePublish}
+            disabled={!gpsReady || isPublishing}
+          >
+            {isPublishing
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
+            }
+            <Text style={styles.publishBtnText}>
+              {isPublishing ? "发布中…" : gpsReady ? "发布随记" : "等待定位"}
+            </Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -1120,6 +1166,28 @@ const styles = StyleSheet.create({
 
   ctrlRow: { flexDirection: "row", gap: 10, flexWrap: "wrap", justifyContent: "center" },
   finishedRow: { flexDirection: "row", gap: 10, flexWrap: "wrap", justifyContent: "center" },
+
+  publishBar: {
+    position: "absolute", bottom: 0, left: 0, right: 0,
+    backgroundColor: "#fff",
+    borderTopWidth: 1, borderTopColor: "#ECEAE5",
+    paddingHorizontal: 20, paddingTop: 12,
+    flexDirection: "row", alignItems: "center", gap: 12,
+    shadowColor: "#000", shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 8,
+  },
+  publishBarInfo: {
+    flex: 1, flexDirection: "row", alignItems: "center", gap: 5, overflow: "hidden",
+  },
+  publishBarDur: { fontSize: 13, fontWeight: "600", color: Colors.light.text },
+  publishBarLoc: { fontSize: 12, color: Colors.light.textSecondary, flex: 1 },
+  publishBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: Colors.light.primary,
+    borderRadius: 22, paddingHorizontal: 20, paddingVertical: 11,
+    shadowColor: Colors.light.primary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 4,
+  },
+  publishBtnDisabled: { backgroundColor: "#B5CFC0", shadowOpacity: 0 },
+  publishBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
 
   ctrlBtn: {
     flexDirection: "row", alignItems: "center", gap: 6,

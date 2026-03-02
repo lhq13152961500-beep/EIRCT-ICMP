@@ -19,6 +19,7 @@ import * as Location from "expo-location";
 import { Audio } from "expo-av";
 import Colors from "@/constants/colors";
 import { getApiUrl } from "@/lib/query-client";
+import { useRecordings, type PublishedRecording } from "@/contexts/RecordingsContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TAB_BAR_HEIGHT = 80;
@@ -735,12 +736,44 @@ function DiaryGroup({
   );
 }
 
+function MyPublishedCard({ rec }: { rec: PublishedRecording }) {
+  const d = new Date(rec.publishedAt);
+  const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const mins = Math.floor(rec.durationSeconds / 60).toString().padStart(2, "0");
+  const secs = (rec.durationSeconds % 60).toString().padStart(2, "0");
+  const dur = `${mins}:${secs}`;
+  return (
+    <View style={styles.myPublishedCard}>
+      <View style={styles.myPublishedIcon}>
+        <Ionicons name="mic" size={20} color={Colors.light.primary} />
+      </View>
+      <View style={styles.myPublishedInfo}>
+        <Text style={styles.myPublishedTitle} numberOfLines={1}>{rec.title}</Text>
+        <View style={styles.myPublishedMeta}>
+          <Ionicons name="location-outline" size={11} color={Colors.light.textSecondary} />
+          <Text style={styles.myPublishedMetaText} numberOfLines={1}>{rec.locationName}</Text>
+          <Ionicons name="time-outline" size={11} color={Colors.light.textSecondary} />
+          <Text style={styles.myPublishedMetaText}>{dur}</Text>
+        </View>
+        <Text style={styles.myPublishedDate}>{dateStr}</Text>
+      </View>
+      <View style={styles.myPublishedBadge}>
+        <Ionicons name="people-outline" size={12} color={Colors.light.primary} />
+        <Text style={styles.myPublishedBadgeText}>100m</Text>
+      </View>
+    </View>
+  );
+}
+
 function MyDiaryTab() {
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
+  const { myRecordings } = useRecordings();
 
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
+
+  const totalCount = MY_DIARY_GROUPS.length + myRecordings.length + 10;
 
   return (
     <ScrollView
@@ -748,11 +781,27 @@ function MyDiaryTab() {
       contentContainerStyle={styles.tabContent}
     >
       <View style={styles.diaryHeader}>
-        <Text style={styles.diaryHeaderText}>共 12 份记忆</Text>
+        <Text style={styles.diaryHeaderText}>共 {totalCount} 份记忆</Text>
         <Pressable onPress={() => haptic()} style={styles.filterBtn}>
           <Ionicons name="options-outline" size={20} color={Colors.light.text} />
         </Pressable>
       </View>
+
+      {/* My published recordings from mic tab */}
+      {myRecordings.length > 0 && (
+        <View style={styles.myPublishedSection}>
+          <View style={styles.myPublishedSectionHeader}>
+            <View style={styles.myPublishedDot} />
+            <Text style={styles.myPublishedSectionTitle}>我的声音随记</Text>
+            <View style={styles.myPublishedCountBadge}>
+              <Text style={styles.myPublishedCountText}>{myRecordings.length}</Text>
+            </View>
+          </View>
+          {myRecordings.map((rec) => (
+            <MyPublishedCard key={rec.id} rec={rec} />
+          ))}
+        </View>
+      )}
 
       {MY_DIARY_GROUPS.map((g) => (
         <DiaryGroup
@@ -1242,7 +1291,7 @@ function DiscoverOthersTab() {
         const url = new URL("/api/recordings/nearby", getApiUrl());
         url.searchParams.set("lat", String(lat));
         url.searchParams.set("lng", String(lng));
-        url.searchParams.set("radius", "50");
+        url.searchParams.set("radius", "100");
         const res = await fetch(url.toString());
         if (!cancelled && res.ok) {
           const data: NearbyRec[] = await res.json();
@@ -1992,6 +2041,44 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
   },
+
+  // My published recordings section
+  myPublishedSection: { marginBottom: 6 },
+  myPublishedSectionHeader: {
+    flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10,
+  },
+  myPublishedDot: {
+    width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.light.primary,
+  },
+  myPublishedSectionTitle: {
+    fontSize: 13, fontWeight: "700", color: Colors.light.text,
+  },
+  myPublishedCountBadge: {
+    backgroundColor: Colors.light.primary, borderRadius: 8,
+    paddingHorizontal: 7, paddingVertical: 1,
+  },
+  myPublishedCountText: { fontSize: 11, color: "#fff", fontWeight: "700" },
+  myPublishedCard: {
+    backgroundColor: "#fff", borderRadius: 14, marginBottom: 10,
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderLeftWidth: 3, borderLeftColor: Colors.light.primary,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+  },
+  myPublishedIcon: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: "#EAF7F0", alignItems: "center", justifyContent: "center",
+  },
+  myPublishedInfo: { flex: 1, gap: 3 },
+  myPublishedTitle: { fontSize: 14, fontWeight: "600", color: Colors.light.text },
+  myPublishedMeta: { flexDirection: "row", alignItems: "center", gap: 4, flexWrap: "wrap" },
+  myPublishedMetaText: { fontSize: 11, color: Colors.light.textSecondary },
+  myPublishedDate: { fontSize: 11, color: Colors.light.textSecondary },
+  myPublishedBadge: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: "#EAF7F0", borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3,
+  },
+  myPublishedBadgeText: { fontSize: 10, color: Colors.light.primary, fontWeight: "700" },
 
   // Diary group
   diaryGroup: {

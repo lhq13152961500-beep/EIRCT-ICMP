@@ -6,11 +6,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // POST /api/recordings — publish a sound recording with GPS location
   app.post("/api/recordings", async (req, res) => {
     try {
-      const { locationName, lat, lng, durationSeconds } = req.body as InsertRecording;
+      const { title, locationName, lat, lng, durationSeconds } = req.body as InsertRecording;
       if (typeof lat !== "number" || typeof lng !== "number") {
         return res.status(400).json({ error: "lat and lng are required numbers" });
       }
       const rec = await storage.addRecording({
+        title: title || "声音随记",
         locationName: locationName || "未知位置",
         lat,
         lng,
