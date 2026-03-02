@@ -190,7 +190,11 @@ export default function MicScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const [locationStatus, setLocationStatus] = useState<LocationStatus>({ state: "loading" });
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>(() =>
+    Platform.OS === "web"
+      ? { state: "out_of_range", nearest: LANDMARKS[0], distance: 999999 }
+      : { state: "loading" }
+  );
   const [recState, setRecState]     = useState<RecordingState>("idle");
   const [elapsed, setElapsed]       = useState(0);
   const [envSound, setEnvSound]     = useState(true);
@@ -229,10 +233,7 @@ export default function MicScreen() {
   // ── Location Tracking ──────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (Platform.OS === "web") {
-      setLocationStatus({ state: "out_of_range", nearest: LANDMARKS[0], distance: 999999 });
-      return;
-    }
+    if (Platform.OS === "web") return; // web: already initialized via lazy state
     let mounted = true;
 
     (async () => {
@@ -254,13 +255,18 @@ export default function MicScreen() {
         );
       };
 
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      update(loc.coords);
+      // Balanced accuracy returns faster (cell/WiFi) for the initial fix
+      try {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        update(loc.coords);
+      } catch { /* GPS cold-start failed – the watcher below will pick it up */ }
+
+      // Continuous high-accuracy watch for precise range validation
       const sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 10 },
+        { accuracy: Location.Accuracy.High, distanceInterval: 5 },
         (l) => update(l.coords)
       );
-      locationSubRef.current = sub;
+      if (mounted) locationSubRef.current = sub;
     })();
 
     return () => {
