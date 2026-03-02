@@ -872,13 +872,21 @@ export default function MicScreen() {
                 styles.musicNoThumb,
                 selectedMusic === null && { borderColor: Colors.light.primary },
               ]}>
-                {selectedMusic === null
-                  ? <Ionicons name="close-circle" size={28} color={Colors.light.primary} />
-                  : <Ionicons name="close-circle-outline" size={28} color="#C0C0C0" />
-                }
+                {/* Music note with diagonal strikethrough */}
+                <View style={{ alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons
+                    name="musical-note-outline"
+                    size={30}
+                    color={selectedMusic === null ? Colors.light.primary : "#BDB8B3"}
+                  />
+                  <View style={[
+                    styles.musicNoThumbLine,
+                    selectedMusic === null && { backgroundColor: Colors.light.primary },
+                  ]} />
+                </View>
               </View>
               <Text style={[styles.musicName, selectedMusic === null && { color: Colors.light.primary }]}>不添加</Text>
-              <Text style={styles.musicMood}>纯净</Text>
+              <Text style={styles.musicMood}>纯净原声</Text>
             </Pressable>
 
             {/* Recommended: first 4 tracks */}
@@ -927,10 +935,16 @@ export default function MicScreen() {
             {/* "更多" card to open modal */}
             <Pressable style={styles.musicCard} onPress={() => { haptic(); setShowMusicModal(true); }}>
               <View style={[styles.musicThumb, styles.musicMoreThumb]}>
-                <Ionicons name="ellipsis-horizontal" size={24} color={Colors.light.primary} />
+                <View style={{ alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name="musical-notes-outline" size={28} color={Colors.light.primary} />
+                  {/* "+" badge */}
+                  <View style={styles.musicMoreBadge}>
+                    <Text style={styles.musicMoreBadgeText}>+</Text>
+                  </View>
+                </View>
               </View>
               <Text style={[styles.musicName, { color: Colors.light.primary }]}>更多</Text>
-              <Text style={styles.musicMood}>全部</Text>
+              <Text style={styles.musicMood}>查看全部</Text>
             </Pressable>
           </ScrollView>
         </View>
@@ -1129,11 +1143,26 @@ const styles = StyleSheet.create({
   musicThumbWrap: { position: "relative" },
   musicThumb: { width: 100, height: 100, borderRadius: 14, borderWidth: 2.5, borderColor: "transparent" },
   musicNoThumb: {
-    backgroundColor: "#F4F4F4", alignItems: "center", justifyContent: "center",
+    backgroundColor: "#F7F5F2", alignItems: "center", justifyContent: "center",
+    borderColor: "#E8E4DF",
+  },
+  musicNoThumbLine: {
+    position: "absolute", width: 46, height: 2.5,
+    backgroundColor: "#BDB8B3", borderRadius: 2,
+    transform: [{ rotate: "45deg" }],
   },
   musicMoreThumb: {
-    backgroundColor: "#EAF7F0", alignItems: "center", justifyContent: "center",
+    backgroundColor: "#EDF9F3", alignItems: "center", justifyContent: "center",
+    borderColor: "#C6EDD9",
   },
+  musicMoreBadge: {
+    position: "absolute", top: -8, right: -14,
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: Colors.light.primary,
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 1.5, borderColor: "#fff",
+  },
+  musicMoreBadgeText: { color: "#fff", fontSize: 11, fontWeight: "800" as const, lineHeight: 14 },
   musicPlayOverlay: {
     position: "absolute", top: 6, right: 6, width: 26, height: 26,
     borderRadius: 13, backgroundColor: Colors.light.primary, alignItems: "center", justifyContent: "center",
