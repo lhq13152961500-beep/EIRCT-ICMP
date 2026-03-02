@@ -753,7 +753,8 @@ function MyPublishedCard({ rec, onViewImage, isHighlighted }: { rec: PublishedRe
   const secs = (rec.durationSeconds % 60).toString().padStart(2, "0");
   const dur = `${mins}:${secs}`;
   return (
-    <View style={[styles.diaryGroup, isHighlighted && styles.myPublishedCardHighlight]}>
+    <View style={isHighlighted ? styles.myPublishedCardHighlightWrapper : undefined}>
+    <View style={[styles.diaryGroup, isHighlighted && { marginBottom: 0 }]}>
       {/* Header row — identical layout to DiaryGroup */}
       <View style={styles.diaryMainCard}>
         {rec.imageUri ? (
@@ -807,6 +808,7 @@ function MyPublishedCard({ rec, onViewImage, isHighlighted }: { rec: PublishedRe
           </Text>
         </View>
       )}
+    </View>
     </View>
   );
 }
@@ -872,13 +874,12 @@ function MyDiaryTab() {
             </View>
             <View>
               {myRecordings.map((rec) => (
-                <React.Fragment key={rec.id}>
-                  <MyPublishedCard
-                    rec={rec}
-                    onViewImage={setViewerImage}
-                    isHighlighted={highlightedIds.includes(rec.id)}
-                  />
-                </React.Fragment>
+                <MyPublishedCard
+                  key={rec.id}
+                  rec={rec}
+                  onViewImage={setViewerImage}
+                  isHighlighted={highlightedIds.includes(rec.id)}
+                />
               ))}
             </View>
           </View>
@@ -2160,8 +2161,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6, paddingVertical: 1, marginLeft: 2,
   },
   myPublishedNewBadgeText: { fontSize: 10, color: "#fff", fontWeight: "700" },
-  myPublishedCardHighlight: {
-    borderWidth: 2, borderColor: Colors.light.primary,
+  myPublishedCardHighlightWrapper: {
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: Colors.light.primary,
+    marginBottom: 14,
   },
   myPublishedSectionTitle: {
     fontSize: 13, fontWeight: "700", color: Colors.light.text,
