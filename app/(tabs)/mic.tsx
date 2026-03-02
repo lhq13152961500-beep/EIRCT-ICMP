@@ -231,57 +231,77 @@ export default function MicScreen() {
   // ── Location Tracking ──────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (Platform.OS === "web") return; // web: already initialized via lazy state
     let mounted = true;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let webWatchId: number | null = null;
 
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+    const update = ({ latitude, longitude }: { latitude: number; longitude: number }) => {
       if (!mounted) return;
-      if (status !== "granted") { setIsLocating(false); setLocationStatus({ state: "denied" }); return; }
-
-      const update = ({ latitude, longitude }: { latitude: number; longitude: number }) => {
-        if (!mounted) return;
-        if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
-        setIsLocating(false);
-        let nearest = LANDMARKS[0]; let minDist = Infinity;
-        for (const lm of LANDMARKS) {
-          const d = haversineMeters(latitude, longitude, lm.lat, lm.lng);
-          if (d < minDist) { minDist = d; nearest = lm; }
-        }
-        setLocationStatus(
-          minDist <= RANGE_METERS
-            ? { state: "in_range", landmark: nearest, distance: minDist }
-            : { state: "out_of_range", nearest, distance: minDist }
-        );
-      };
-
-      // Step 1: last known position — returns instantly from cache, no GPS wait
-      try {
-        const last = await Location.getLastKnownPositionAsync({});
-        if (last && mounted) update(last.coords);
-      } catch { /* no cached position — that's fine */ }
-
-      // Step 2: if still locating after 8 s, stop the spinner (GPS may still update later)
-      if (mounted) {
-        timeoutId = setTimeout(() => {
-          if (mounted) setIsLocating(false);
-        }, 8000);
+      if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+      setIsLocating(false);
+      let nearest = LANDMARKS[0]; let minDist = Infinity;
+      for (const lm of LANDMARKS) {
+        const d = haversineMeters(latitude, longitude, lm.lat, lm.lng);
+        if (d < minDist) { minDist = d; nearest = lm; }
       }
+      setLocationStatus(
+        minDist <= RANGE_METERS
+          ? { state: "in_range", landmark: nearest, distance: minDist }
+          : { state: "out_of_range", nearest, distance: minDist }
+      );
+    };
 
-      // Step 3: continuous high-accuracy watch refines the result over time
-      try {
-        const sub = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, distanceInterval: 5 },
-          (l) => update(l.coords)
+    // ── 8-second timeout: stop spinner even if GPS never resolves
+    timeoutId = setTimeout(() => {
+      if (mounted) setIsLocating(false);
+    }, 8000);
+
+    if (Platform.OS === "web") {
+      // Web: use the browser's native geolocation API
+      if (typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => { if (mounted) update(pos.coords); },
+          () => { if (mounted) { setIsLocating(false); } },
+          { enableHighAccuracy: false, timeout: 7000, maximumAge: 60000 }
         );
-        if (mounted) locationSubRef.current = sub;
-      } catch { /* watch failed */ }
-    })();
+        webWatchId = navigator.geolocation.watchPosition(
+          (pos) => { if (mounted) update(pos.coords); },
+          () => {},
+          { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
+        );
+      } else {
+        setIsLocating(false);
+      }
+    } else {
+      // Native: use expo-location
+      (async () => {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (!mounted) return;
+        if (status !== "granted") {
+          setIsLocating(false);
+          setLocationStatus({ state: "denied" });
+          return;
+        }
+        // Last known position — instant from cache
+        try {
+          const last = await Location.getLastKnownPositionAsync({});
+          if (last && mounted) update(last.coords);
+        } catch { /* no cache */ }
+        // Continuous high-accuracy watch
+        try {
+          const sub = await Location.watchPositionAsync(
+            { accuracy: Location.Accuracy.High, distanceInterval: 5 },
+            (l) => update(l.coords)
+          );
+          if (mounted) locationSubRef.current = sub;
+        } catch { /* watch failed */ }
+      })();
+    }
 
     return () => {
       mounted = false;
       if (timeoutId) clearTimeout(timeoutId);
+      if (webWatchId !== null) navigator.geolocation.clearWatch(webWatchId);
       locationSubRef.current?.remove();
       locationSubRef.current = null;
     };
@@ -599,6 +619,21 @@ export default function MicScreen() {
 
         {renderLocationCard()}
 
+        {/* Dev-only: simulate being at the landmark */}
+        {__DEV__ && (
+          <Pressable
+            onPress={() => {
+              setIsLocating(false);
+              setLocationStatus({ state: "in_range", landmark: LANDMARKS[0], distance: 12 });
+              haptic();
+            }}
+            style={({ pressed }) => [styles.simBtn, { opacity: pressed ? 0.7 : 1 }]}
+          >
+            <Ionicons name="location" size={12} color={Colors.light.primary} />
+            <Text style={styles.simBtnText}>模拟到达地标（仅开发调试）</Text>
+          </Pressable>
+        )}
+
         {/* Timer */}
         <Text
           style={[
@@ -733,6 +768,15 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#F5F5F0" },
   content: { paddingHorizontal: 20, alignItems: "center", gap: 18 },
   pageTitle: { fontSize: 18, fontWeight: "600", color: Colors.light.text, marginTop: 8, alignSelf: "center" },
+
+  // Dev simulation button
+  simBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    alignSelf: "center", paddingHorizontal: 12, paddingVertical: 5,
+    borderRadius: 10, borderWidth: 1, borderColor: Colors.light.primary,
+    borderStyle: "dashed",
+  },
+  simBtnText: { fontSize: 11, color: Colors.light.primary },
 
   // Location
   locationCard: {
