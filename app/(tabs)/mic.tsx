@@ -93,13 +93,15 @@ async function getIpGeolocation(): Promise<IpGeoResult | null> {
       };
     }
   } catch { /* ignore */ }
-  // Mirror fallback: ip-api.com
+  // Mirror fallback: ipinfo.io (HTTPS, no key required)
   try {
-    const res = await fetch("http://ip-api.com/json/?fields=lat,lon,city,regionName&lang=zh-CN");
-    if (!res.ok) throw new Error("ip-api status " + res.status);
+    const res = await fetch("https://ipinfo.io/json", { headers: { "Accept": "application/json" } });
+    if (!res.ok) throw new Error("ipinfo status " + res.status);
     const data = await res.json();
-    if (data.lat && data.lon) {
-      return { lat: data.lat, lng: data.lon, city: data.city ?? "", region: data.regionName ?? "" };
+    // ipinfo returns "lat,lng" as a string in "loc" field
+    const [lat, lng] = (data.loc ?? "").split(",").map(Number);
+    if (lat && lng) {
+      return { lat, lng, city: data.city ?? "", region: data.region ?? "" };
     }
   } catch { /* ignore */ }
   return null;
@@ -286,6 +288,7 @@ export default function MicScreen() {
     let mounted = true;
     let gotFix = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let ipTimerId: ReturnType<typeof setTimeout> | null = null;
     let webWatchId: number | null = null;
 
     setIsLocating(true);
@@ -327,10 +330,25 @@ export default function MicScreen() {
         setIsLocating(false);
       }
     } else {
+      // ── IP geolocation: fires after 3 s if GPS hasn't responded ──────────
+      ipTimerId = setTimeout(async () => {
+        if (!mounted || gotFix) return;
+        console.log("[loc] GPS silent after 3s, trying IP geolocation…");
+        const ip = await getIpGeolocation();
+        if (!mounted || gotFix) return; // GPS may have arrived while we waited
+        if (ip) {
+          const locName = [ip.city, ip.region].filter(Boolean).join(" · ") || "当前城市";
+          console.log("[loc] IP geolocation:", locName);
+          setIsLocating(false);
+          setLocationStatus({ state: "ip_located", lat: ip.lat, lng: ip.lng, locationName: locName });
+        }
+      }, 3000);
+
       (async () => {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (!mounted) return;
         if (status !== "granted") {
+          if (ipTimerId) clearTimeout(ipTimerId);
           setIsLocating(false);
           setLocationStatus({ state: "denied" });
           return;
@@ -345,16 +363,18 @@ export default function MicScreen() {
           if (last && mounted) { console.log("[loc] got lastKnown"); update(last.coords); }
         } catch (e) { console.warn("[loc] lastKnown failed:", e); }
 
-        // 2) Start watchPositionAsync — this is the primary driver.
-        //    Android: tries all available providers (network + GPS) and fires as soon as one works.
-        //    Much more reliable than getCurrentPositionAsync for first-time fixes.
+        // 2) watchPositionAsync — registers with OS location provider, fires when a fix arrives
         if (mounted) {
           try {
             locationSubRef.current?.remove();
             const sub = await withTimeout(
               Location.watchPositionAsync(
                 { accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: true, distanceInterval: 5 },
-                (l) => { console.log("[loc] watch fired", l.coords.latitude, l.coords.longitude); update(l.coords); }
+                (l) => {
+                  if (ipTimerId) clearTimeout(ipTimerId);
+                  console.log("[loc] watch fired", l.coords.latitude, l.coords.longitude);
+                  update(l.coords);
+                }
               ),
               6000, "watchSetup"
             );
@@ -362,14 +382,18 @@ export default function MicScreen() {
           } catch (e) { console.warn("[loc] watch failed:", e); }
         }
 
-        // 3) One-shot getCurrentPositionAsync in parallel (resolves quicker in some scenarios)
+        // 3) One-shot getCurrentPositionAsync as extra attempt
         if (mounted && !gotFix) {
           try {
             const pos = await withTimeout(
               Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: true }),
               12000, "getCurrent"
             );
-            if (mounted) { console.log("[loc] getCurrent succeeded"); update(pos.coords); }
+            if (mounted) {
+              if (ipTimerId) clearTimeout(ipTimerId);
+              console.log("[loc] getCurrent succeeded");
+              update(pos.coords);
+            }
           } catch (e) { console.warn("[loc] getCurrent failed:", e); }
         }
 
@@ -380,6 +404,7 @@ export default function MicScreen() {
     return () => {
       mounted = false;
       if (timeoutId) clearTimeout(timeoutId);
+      if (ipTimerId) clearTimeout(ipTimerId);
       if (webWatchId !== null && typeof navigator !== "undefined" && navigator.geolocation) {
         navigator.geolocation.clearWatch(webWatchId);
       }
@@ -533,14 +558,17 @@ export default function MicScreen() {
   // ── Publish ────────────────────────────────────────────────────────────────
 
   const handlePublish = useCallback(() => {
-    if (locationStatus.state !== "located") {
-      Alert.alert("无法发布", "请先开启定位权限并等待 GPS 定位成功后再发布。");
+    if (locationStatus.state !== "located" && locationStatus.state !== "ip_located") {
+      Alert.alert("无法发布", "请先等待定位完成后再发布。");
       return;
     }
     const { lat, lng, locationName } = locationStatus;
+    const isIpOnly = locationStatus.state === "ip_located";
     Alert.alert(
       "发布声音随记",
-      `将在「${locationName}」发布这段录音 (${formatTime(elapsed)})，50 米内的旅人可以听见，是否确认？`,
+      isIpOnly
+        ? `将在「${locationName}」附近发布这段录音 (${formatTime(elapsed)})。\n\n注意：当前使用 IP 粗略定位，精度约数公里，GPS 定位精度更高。是否继续？`
+        : `将在「${locationName}」发布这段录音 (${formatTime(elapsed)})，50 米内的旅人可以听见，是否确认？`,
       [
         { text: "取消", style: "cancel" },
         {
@@ -587,7 +615,7 @@ export default function MicScreen() {
     ]);
   }, []);
 
-  const gpsReady = locationStatus.state === "located";
+  const gpsReady = locationStatus.state === "located" || locationStatus.state === "ip_located";
 
   // ── Location Card ──────────────────────────────────────────────────────────
 
@@ -620,6 +648,25 @@ export default function MicScreen() {
             {resolving ? "正在解析地址…" : locationStatus.locationName}
           </Text>
           <Text style={styles.locationDistText}>发布后 50 米内的旅人可听见</Text>
+        </View>
+      );
+    }
+
+    if (locationStatus.state === "ip_located") {
+      return (
+        <View style={[styles.locationCard, { borderColor: "#F5C842", borderWidth: 1 }]}>
+          <View style={styles.locationDotRow}>
+            <View style={[styles.locationDot, { backgroundColor: "#F5C842" }]} />
+            <Text style={styles.locationLabel}>大致位置（IP 定位）</Text>
+            <View style={[styles.locationBadge, { backgroundColor: "#F5C842" }]}>
+              <Ionicons name="wifi" size={10} color="#fff" />
+              <Text style={styles.locationBadgeText}>粗略</Text>
+            </View>
+          </View>
+          <Text style={styles.locationName}>{locationStatus.locationName}</Text>
+          <Text style={[styles.locationDistText, { color: "#B8860B" }]}>
+            精度约数公里，GPS 信号好时会自动升级
+          </Text>
         </View>
       );
     }
