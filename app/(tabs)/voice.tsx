@@ -705,7 +705,7 @@ function DiaryGroup({
           </Text>
         </Pressable>
 
-        <View style={styles.diaryStatItem}>
+        <View style={[styles.diaryStatItem, { marginLeft: "auto" }]}>
           <Ionicons name="heart" size={16} color="#FF4D6A" />
           <Text style={[styles.diaryStatCount, { color: "#FF4D6A" }]}>{group.likeCount}</Text>
         </View>
@@ -794,7 +794,7 @@ function MyPublishedCard({ rec, onViewImage }: { rec: PublishedRecording; onView
           />
           <Text style={[styles.diaryStatCount, { color: isExpanded ? Colors.light.primary : "#888" }]}>0</Text>
         </Pressable>
-        <View style={styles.diaryStatItem}>
+        <View style={[styles.diaryStatItem, { marginLeft: "auto" }]}>
           <Ionicons name="heart" size={16} color="#FF4D6A" />
           <Text style={[styles.diaryStatCount, { color: "#FF4D6A" }]}>0</Text>
         </View>
