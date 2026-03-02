@@ -12,6 +12,7 @@ import {
   Animated,
   ActivityIndicator,
 } from "react-native";
+import MapLocationPicker from "@/components/MapLocationPicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
@@ -212,6 +213,7 @@ export default function MicScreen() {
   const [isLocating, setIsLocating] = useState(true);
   const [watchActive, setWatchActive] = useState(false);
   const [locationTrigger, setLocationTrigger] = useState(0);
+  const [showMapPicker, setShowMapPicker] = useState(false);
   const [recState, setRecState]     = useState<RecordingState>("idle");
   const [elapsed, setElapsed]       = useState(0);
   const [envSound, setEnvSound]     = useState(true);
@@ -558,6 +560,12 @@ export default function MicScreen() {
     ]);
   }, []);
 
+  const confirmMapLocation = useCallback(async (lat: number, lng: number) => {
+    const name = await reverseGeocode(lat, lng);
+    setLocationStatus({ state: "located", lat, lng, locationName: name });
+    setShowMapPicker(false);
+  }, []);
+
   const gpsReady = locationStatus.state === "located";
 
   // ── Location Card ──────────────────────────────────────────────────────────
@@ -568,9 +576,18 @@ export default function MicScreen() {
         <View style={[styles.locationCard, styles.locationCardWarn]}>
           <View style={styles.locationDotRow}>
             <View style={[styles.locationDot, { backgroundColor: "#E8524A" }]} />
-            <Text style={styles.locationLabel}>无法获取位置信息</Text>
+            <Text style={styles.locationLabel}>位置权限已拒绝</Text>
           </View>
-          <Text style={styles.locationNameSmall}>请在设置中允许位置权限</Text>
+          <Text style={styles.locationNameSmall}>请在设置中允许位置权限，或手动在地图上选点</Text>
+          {Platform.OS !== "web" && (
+            <Pressable
+              onPress={() => { haptic(); setShowMapPicker(true); }}
+              style={styles.mapPickBtn}
+            >
+              <Ionicons name="map-outline" size={14} color="#fff" />
+              <Text style={styles.mapPickBtnText}>手动选点</Text>
+            </Pressable>
+          )}
         </View>
       );
     }
@@ -622,8 +639,17 @@ export default function MicScreen() {
             ? "正在联系定位服务…"
             : watchActive
               ? "GPS 正在搜索卫星，请稍候或走到户外开阔处"
-              : "请确认已授予位置权限，并走到户外开阔处以获取 GPS 信号"}
+              : "GPS 信号不可用，可在地图上手动标注你的位置"}
         </Text>
+        {!stillTrying && Platform.OS !== "web" && (
+          <Pressable
+            onPress={() => { haptic(); setShowMapPicker(true); }}
+            style={styles.mapPickBtn}
+          >
+            <Ionicons name="map-outline" size={14} color="#fff" />
+            <Text style={styles.mapPickBtnText}>手动选点</Text>
+          </Pressable>
+        )}
       </View>
     );
   };
@@ -681,6 +707,14 @@ export default function MicScreen() {
 
   return (
     <View style={[styles.root, { paddingTop: topPad }]}>
+
+      {/* ── Map Location Picker Modal ──────────────────────────────────────── */}
+      <MapLocationPicker
+        visible={showMapPicker}
+        onClose={() => setShowMapPicker(false)}
+        onConfirm={confirmMapLocation}
+      />
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 100 }]}
@@ -928,4 +962,13 @@ const styles = StyleSheet.create({
   },
   musicName: { fontSize: 13, fontWeight: "600", color: Colors.light.text, textAlign: "center" },
   musicMood: { fontSize: 11, color: Colors.light.textSecondary, textAlign: "center" },
+
+  // Map picker button (on location card)
+  mapPickBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    marginTop: 8, backgroundColor: Colors.light.primary,
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 7,
+    alignSelf: "center",
+  },
+  mapPickBtnText: { fontSize: 13, color: "#fff", fontWeight: "600" as const },
 });
