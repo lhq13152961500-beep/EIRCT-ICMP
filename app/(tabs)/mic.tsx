@@ -302,39 +302,48 @@ export default function MicScreen() {
     }
   }, [startTimer]);
 
+  const stopPreviewSound = useCallback(async () => {
+    if (previewSoundRef.current) {
+      await previewSoundRef.current.stopAsync().catch(() => {});
+      await previewSoundRef.current.unloadAsync().catch(() => {});
+      previewSoundRef.current = null;
+      setIsPreviewing(false);
+    }
+  }, []);
+
+  // Pause = finalize the file so playback works; resume starts a fresh segment
   const pauseRecording = useCallback(async () => {
     const rec = recordingRef.current;
     if (!rec) return;
     try {
-      await rec.pauseAsync();
       stopTimer();
+      await rec.stopAndUnloadAsync();
+      const uri = rec.getURI();
+      recordingRef.current = null;
+      setFinishedUri(uri ?? null);
       setRecState("paused");
       haptic(Haptics.ImpactFeedbackStyle.Medium);
     } catch {
       Alert.alert("暂停失败", "无法暂停录音");
+      startTimer(); // roll back timer if failed
     }
-  }, [stopTimer]);
+  }, [stopTimer, startTimer]);
 
   const resumeRecording = useCallback(async () => {
-    const rec = recordingRef.current;
-    if (!rec) return;
     try {
-      // Stop any preview playback first
-      if (previewSoundRef.current) {
-        await previewSoundRef.current.stopAsync().catch(() => {});
-        await previewSoundRef.current.unloadAsync().catch(() => {});
-        previewSoundRef.current = null;
-        setIsPreviewing(false);
-      }
+      await stopPreviewSound();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      await rec.startAsync();
+      const preset = envSoundRef.current ? ENV_PRESET : VOICE_ONLY_PRESET;
+      const { recording } = await Audio.Recording.createAsync(preset);
+      recordingRef.current = recording;
+      setFinishedUri(null); // clear the paused segment's URI
       setRecState("recording");
       startTimer();
       haptic(Haptics.ImpactFeedbackStyle.Medium);
     } catch {
       Alert.alert("继续失败", "无法继续录音");
     }
-  }, [startTimer]);
+  }, [startTimer, stopPreviewSound]);
 
   const deleteRecording = useCallback(async () => {
     Alert.alert("删除录音", "确定要删除这段录音吗？", [
@@ -344,14 +353,9 @@ export default function MicScreen() {
         style: "destructive",
         onPress: async () => {
           stopTimer();
-          if (previewSoundRef.current) {
-            await previewSoundRef.current.stopAsync().catch(() => {});
-            await previewSoundRef.current.unloadAsync().catch(() => {});
-            previewSoundRef.current = null;
-          }
+          await stopPreviewSound();
           await recordingRef.current?.stopAndUnloadAsync().catch(() => {});
           recordingRef.current = null;
-          setIsPreviewing(false);
           setElapsed(0);
           setFinishedUri(null);
           setRecState("idle");
@@ -359,42 +363,42 @@ export default function MicScreen() {
         },
       },
     ]);
-  }, [stopTimer]);
+  }, [stopTimer, stopPreviewSound]);
 
   const finishRecording = useCallback(async () => {
+    // From paused state: file is already finalized, just switch to finished
+    if (recState === "paused") {
+      setRecState("finished");
+      haptic(Haptics.ImpactFeedbackStyle.Medium);
+      return;
+    }
+    // From recording state: finalize the file first
     const rec = recordingRef.current;
     if (!rec) return;
     stopTimer();
-    if (previewSoundRef.current) {
-      await previewSoundRef.current.stopAsync().catch(() => {});
-      await previewSoundRef.current.unloadAsync().catch(() => {});
-      previewSoundRef.current = null;
-      setIsPreviewing(false);
-    }
+    await stopPreviewSound();
     try {
       await rec.stopAndUnloadAsync();
       const uri = rec.getURI();
       recordingRef.current = null;
-      setFinishedUri(uri);
+      setFinishedUri(uri ?? null);
       setRecState("finished");
       haptic(Haptics.ImpactFeedbackStyle.Medium);
     } catch {
       Alert.alert("完成失败", "无法保存录音");
     }
-  }, [stopTimer]);
+  }, [recState, stopTimer, stopPreviewSound]);
 
   // ── Preview Playback ───────────────────────────────────────────────────────
 
   const togglePreview = useCallback(async () => {
     if (isPreviewing) {
-      await previewSoundRef.current?.stopAsync().catch(() => {});
-      await previewSoundRef.current?.unloadAsync().catch(() => {});
-      previewSoundRef.current = null;
-      setIsPreviewing(false);
+      await stopPreviewSound();
       return;
     }
 
-    const uri = recordingRef.current?.getURI() ?? finishedUri;
+    // Only use finishedUri — never read from an open recorder (OS file lock)
+    const uri = finishedUri;
     if (!uri) { Alert.alert("暂无录音", "还没有可以试听的内容"); return; }
 
     try {
@@ -409,7 +413,7 @@ export default function MicScreen() {
         }
       });
     } catch {
-      Alert.alert("试听失败", "暂时无法播放，录音仍在处理中");
+      Alert.alert("试听失败", "录音文件无法读取，请重试");
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
     }
   }, [isPreviewing, finishedUri]);
