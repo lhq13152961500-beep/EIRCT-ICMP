@@ -773,7 +773,7 @@ function MyDiaryTab() {
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const totalCount = MY_DIARY_GROUPS.length + myRecordings.length + 10;
+  const totalCount = MY_DIARY_GROUPS.length + myRecordings.length;
 
   return (
     <ScrollView
