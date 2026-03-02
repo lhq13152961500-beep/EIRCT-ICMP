@@ -970,8 +970,18 @@ export default function MicScreen() {
                 style={[styles.musicRow, selectedMusic === null && styles.musicRowSelected]}
                 onPress={() => { setSelectedMusic(null); haptic(); setShowMusicModal(false); }}
               >
-                <View style={[styles.musicRowThumb, { backgroundColor: "#F0F0F0" }]}>
-                  <Ionicons name="ban-outline" size={26} color="#999" />
+                <View style={[styles.musicRowThumb, styles.musicRowNoThumb, selectedMusic === null && { borderColor: Colors.light.primary }]}>
+                  <View style={{ alignItems: "center", justifyContent: "center" }}>
+                    <Ionicons
+                      name="musical-note-outline"
+                      size={22}
+                      color={selectedMusic === null ? Colors.light.primary : "#BDB8B3"}
+                    />
+                    <View style={[
+                      styles.musicRowNoThumbLine,
+                      selectedMusic === null && { backgroundColor: Colors.light.primary },
+                    ]} />
+                  </View>
                 </View>
                 <View style={styles.musicRowInfo}>
                   <Text style={[styles.musicRowName, selectedMusic === null && { color: Colors.light.primary }]}>不添加背景音乐</Text>
@@ -1201,6 +1211,15 @@ const styles = StyleSheet.create({
   musicRowSelected: { backgroundColor: "#EAF7F0", borderWidth: 1.5, borderColor: Colors.light.primary },
   musicRowThumbWrap: { position: "relative" },
   musicRowThumb: { width: 60, height: 60, borderRadius: 12 },
+  musicRowNoThumb: {
+    backgroundColor: "#F7F5F2", alignItems: "center", justifyContent: "center",
+    borderWidth: 1.5, borderColor: "#E8E4DF",
+  },
+  musicRowNoThumbLine: {
+    position: "absolute", width: 34, height: 2,
+    backgroundColor: "#BDB8B3", borderRadius: 1.5,
+    transform: [{ rotate: "45deg" }],
+  },
   musicRowMoodBadge: {
     position: "absolute", bottom: -4, right: -4,
     borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2,
