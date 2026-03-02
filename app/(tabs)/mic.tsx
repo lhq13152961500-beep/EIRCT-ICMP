@@ -36,12 +36,13 @@ function formatTime(seconds: number) {
 // ─── Timeout wrapper ──────────────────────────────────────────────────────────
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-    ),
-  ]);
+  return new Promise<T>((resolve, reject) => {
+    const timerId = setTimeout(() => reject(new Error(`${ms}ms timeout exceeded`)), ms);
+    promise.then(
+      (v) => { clearTimeout(timerId); resolve(v); },
+      (e) => { clearTimeout(timerId); reject(e); }
+    );
+  });
 }
 
 // ─── Reverse Geocoding ────────────────────────────────────────────────────────
