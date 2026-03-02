@@ -73,6 +73,38 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
   return "当前位置";
 }
 
+// ─── IP Geolocation fallback ─────────────────────────────────────────────────
+
+interface IpGeoResult { lat: number; lng: number; city: string; region: string }
+
+async function getIpGeolocation(): Promise<IpGeoResult | null> {
+  try {
+    const res = await fetch("https://ipapi.co/json/", {
+      headers: { "Accept": "application/json" },
+    });
+    if (!res.ok) throw new Error("ipapi status " + res.status);
+    const data = await res.json();
+    if (data.latitude && data.longitude) {
+      return {
+        lat: data.latitude,
+        lng: data.longitude,
+        city: data.city ?? "",
+        region: data.region ?? "",
+      };
+    }
+  } catch { /* ignore */ }
+  // Mirror fallback: ip-api.com
+  try {
+    const res = await fetch("http://ip-api.com/json/?fields=lat,lon,city,regionName&lang=zh-CN");
+    if (!res.ok) throw new Error("ip-api status " + res.status);
+    const data = await res.json();
+    if (data.lat && data.lon) {
+      return { lat: data.lat, lng: data.lon, city: data.city ?? "", region: data.regionName ?? "" };
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
 // ─── Audio Presets ────────────────────────────────────────────────────────────
 
 const ENV_PRESET = Audio.RecordingOptionsPresets.HIGH_QUALITY;
@@ -116,7 +148,8 @@ type RecordingState = "idle" | "recording" | "paused" | "finished";
 type LocationStatus =
   | { state: "none" }
   | { state: "denied" }
-  | { state: "located"; lat: number; lng: number; locationName: string };
+  | { state: "located"; lat: number; lng: number; locationName: string }
+  | { state: "ip_located"; lat: number; lng: number; locationName: string };
 
 // ─── Waveform ────────────────────────────────────────────────────────────────
 
