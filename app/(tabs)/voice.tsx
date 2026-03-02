@@ -153,6 +153,7 @@ const MY_DIARY_GROUPS = [
     title: "听见·黄岭村的清晨",
     date: "2026-02-15 16:05",
     duration: "02:14",
+    location: "黄岭村 · 皖南山区",
     thumb: require("@/assets/images/diary-thumb-1.png"),
     listenCount: 66,
     likeCount: 999,
@@ -167,6 +168,7 @@ const MY_DIARY_GROUPS = [
     title: "云边书屋的午后蝉鸣",
     date: "2026-02-14",
     duration: "01:45",
+    location: "云边书屋 · 莫干山",
     thumb: require("@/assets/images/diary-thumb-2.png"),
     listenCount: 44,
     likeCount: 96,
@@ -678,6 +680,12 @@ function DiaryGroup({
             <Ionicons name="time-outline" size={11} color={Colors.light.textSecondary} />
             <Text style={styles.diaryMainMetaText}>{group.duration}</Text>
           </View>
+          {group.location && (
+            <View style={styles.diaryMainMeta}>
+              <Ionicons name="location-outline" size={11} color={Colors.light.textSecondary} />
+              <Text style={styles.diaryMainMetaText} numberOfLines={1}>{group.location}</Text>
+            </View>
+          )}
         </View>
         <PlayButton size={32} audioUrl={getDemoAudio(group.id)} />
       </View>
