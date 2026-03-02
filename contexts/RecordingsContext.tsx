@@ -2,11 +2,13 @@ import React, { createContext, useContext, useState, useCallback } from "react";
 
 export interface PublishedRecording {
   id: string;
+  title: string;
   locationName: string;
   lat: number;
   lng: number;
   durationSeconds: number;
   publishedAt: string;
+  imageUri?: string;
 }
 
 interface RecordingsContextValue {

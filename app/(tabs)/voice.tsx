@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Pressable,
   Image,
+  Modal,
   Platform,
   Dimensions,
   TextInput,
@@ -737,6 +738,7 @@ function DiaryGroup({
 }
 
 function MyPublishedCard({ rec }: { rec: PublishedRecording }) {
+  const [viewerVisible, setViewerVisible] = useState(false);
   const d = new Date(rec.publishedAt);
   const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   const mins = Math.floor(rec.durationSeconds / 60).toString().padStart(2, "0");
@@ -744,9 +746,20 @@ function MyPublishedCard({ rec }: { rec: PublishedRecording }) {
   const dur = `${mins}:${secs}`;
   return (
     <View style={styles.myPublishedCard}>
-      <View style={styles.myPublishedIcon}>
-        <Ionicons name="mic" size={20} color={Colors.light.primary} />
-      </View>
+      {/* Left: image or icon */}
+      {rec.imageUri ? (
+        <Pressable onPress={() => setViewerVisible(true)} style={styles.myPublishedImgWrap}>
+          <Image source={{ uri: rec.imageUri }} style={styles.myPublishedImg} resizeMode="cover" />
+          <View style={styles.myPublishedImgOverlay}>
+            <Ionicons name="expand-outline" size={12} color="#fff" />
+          </View>
+        </Pressable>
+      ) : (
+        <View style={styles.myPublishedIcon}>
+          <Ionicons name="mic" size={20} color={Colors.light.primary} />
+        </View>
+      )}
+
       <View style={styles.myPublishedInfo}>
         <Text style={styles.myPublishedTitle} numberOfLines={1}>{rec.title}</Text>
         <View style={styles.myPublishedMeta}>
@@ -761,6 +774,24 @@ function MyPublishedCard({ rec }: { rec: PublishedRecording }) {
         <Ionicons name="people-outline" size={12} color={Colors.light.primary} />
         <Text style={styles.myPublishedBadgeText}>100m</Text>
       </View>
+
+      {/* Full-screen image viewer */}
+      {rec.imageUri && (
+        <Modal
+          visible={viewerVisible}
+          animationType="fade"
+          transparent
+          statusBarTranslucent
+          onRequestClose={() => setViewerVisible(false)}
+        >
+          <Pressable style={styles.myPublishedViewer} onPress={() => setViewerVisible(false)}>
+            <Image source={{ uri: rec.imageUri }} style={styles.myPublishedViewerImg} resizeMode="contain" />
+            <Pressable style={styles.myPublishedViewerClose} onPress={() => setViewerVisible(false)}>
+              <Ionicons name="close" size={22} color="#fff" />
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -2066,8 +2097,28 @@ const styles = StyleSheet.create({
     shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
   },
   myPublishedIcon: {
-    width: 44, height: 44, borderRadius: 22,
+    width: 64, height: 64, borderRadius: 12,
     backgroundColor: "#EAF7F0", alignItems: "center", justifyContent: "center",
+  },
+  myPublishedImgWrap: {
+    width: 64, height: 64, borderRadius: 12, overflow: "hidden",
+    position: "relative",
+  },
+  myPublishedImg: { width: 64, height: 64 },
+  myPublishedImgOverlay: {
+    position: "absolute", bottom: 3, right: 3,
+    backgroundColor: "rgba(0,0,0,0.4)", borderRadius: 6,
+    width: 20, height: 20, alignItems: "center", justifyContent: "center",
+  },
+  myPublishedViewer: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.92)",
+    alignItems: "center", justifyContent: "center",
+  },
+  myPublishedViewerImg: { width: "100%", height: "100%" },
+  myPublishedViewerClose: {
+    position: "absolute", top: 54, right: 20,
+    backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 20,
+    width: 40, height: 40, alignItems: "center", justifyContent: "center",
   },
   myPublishedInfo: { flex: 1, gap: 3 },
   myPublishedTitle: { fontSize: 14, fontWeight: "600", color: Colors.light.text },

@@ -19,6 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import Colors from "@/constants/colors";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { useRecordings, type PublishedRecording } from "@/contexts/RecordingsContext";
@@ -239,6 +240,8 @@ export default function MicScreen() {
   const [envSound, setEnvSound]     = useState(true);
   const [selectedMusic, setSelectedMusic] = useState<number | null>(null);
   const [showMusicModal, setShowMusicModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [showImageViewer, setShowImageViewer] = useState(false);
   const [previewingMusic, setPreviewingMusic] = useState<number | null>(null);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewSoundMusicRef = useRef<Audio.Sound | null>(null);
@@ -537,6 +540,26 @@ export default function MicScreen() {
     }
   }, [isPreviewing, finishedUri]);
 
+  // ── Image Picker ──────────────────────────────────────────────────────────
+
+  const pickImage = useCallback(async () => {
+    haptic();
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("需要相册权限", "请在系统设置中允许访问相册");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.85,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      setSelectedImage(result.assets[0].uri);
+    }
+  }, []);
+
   // ── Publish ────────────────────────────────────────────────────────────────
 
   const handlePublish = useCallback(() => {
@@ -564,7 +587,7 @@ export default function MicScreen() {
                 lng,
                 durationSeconds: elapsed,
               }) as PublishedRecording;
-              addMyRecording({ ...rec, title, locationName, lat, lng, durationSeconds: elapsed, publishedAt: rec.publishedAt ?? new Date().toISOString() });
+              addMyRecording({ ...rec, title, locationName, lat, lng, durationSeconds: elapsed, publishedAt: rec.publishedAt ?? new Date().toISOString(), imageUri: selectedImage ?? undefined });
             } catch {
               addMyRecording({
                 id: Date.now().toString() + Math.random().toString(36).slice(2),
@@ -574,6 +597,7 @@ export default function MicScreen() {
                 lng,
                 durationSeconds: elapsed,
                 publishedAt: new Date().toISOString(),
+                imageUri: selectedImage ?? undefined,
               });
             } finally {
               setIsPublishing(false);
@@ -970,6 +994,52 @@ export default function MicScreen() {
           </ScrollView>
         </View>
 
+        {/* Image Picker Section */}
+        <View style={styles.imageSection}>
+          <View style={styles.imageSectionHeader}>
+            <Ionicons name="image-outline" size={16} color={Colors.light.text} />
+            <Text style={styles.imageSectionTitle}>添加风景图片</Text>
+            {selectedImage && (
+              <Pressable onPress={() => { setSelectedImage(null); haptic(); }} style={styles.imageRemoveBtn}>
+                <Ionicons name="close-circle" size={16} color="#BDB8B3" />
+                <Text style={styles.imageRemoveText}>移除</Text>
+              </Pressable>
+            )}
+          </View>
+          {selectedImage ? (
+            <Pressable onPress={() => { haptic(); setShowImageViewer(true); }} style={styles.imagePreviewWrap}>
+              <Image source={{ uri: selectedImage }} style={styles.imagePreview} resizeMode="cover" />
+              <View style={styles.imagePreviewBadge}>
+                <Ionicons name="expand-outline" size={13} color="#fff" />
+                <Text style={styles.imagePreviewBadgeText}>点击查看</Text>
+              </View>
+            </Pressable>
+          ) : (
+            <Pressable style={styles.imageAddBtn} onPress={pickImage}>
+              <Ionicons name="add" size={26} color={Colors.light.primary} />
+              <Text style={styles.imageAddText}>从相册选择</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {/* Full-screen Image Viewer */}
+        <Modal
+          visible={showImageViewer}
+          animationType="fade"
+          transparent
+          statusBarTranslucent
+          onRequestClose={() => setShowImageViewer(false)}
+        >
+          <Pressable style={styles.imageViewerOverlay} onPress={() => setShowImageViewer(false)}>
+            {selectedImage && (
+              <Image source={{ uri: selectedImage }} style={styles.imageViewerImg} resizeMode="contain" />
+            )}
+            <Pressable style={styles.imageViewerClose} onPress={() => setShowImageViewer(false)}>
+              <Ionicons name="close" size={24} color="#fff" />
+            </Pressable>
+          </Pressable>
+        </Modal>
+
         {/* Music Modal */}
         <Modal
           visible={showMusicModal}
@@ -1321,4 +1391,43 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   mapPickBtnText: { fontSize: 13, color: "#fff", fontWeight: "600" as const },
+
+  imageSection: {
+    marginHorizontal: 16, marginTop: 8, marginBottom: 4,
+    backgroundColor: "#fff", borderRadius: 20,
+    padding: 16,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+  },
+  imageSectionHeader: {
+    flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12,
+  },
+  imageSectionTitle: { fontSize: 14, fontWeight: "600", color: Colors.light.text, flex: 1 },
+  imageRemoveBtn: { flexDirection: "row", alignItems: "center", gap: 3 },
+  imageRemoveText: { fontSize: 12, color: "#BDB8B3" },
+  imageAddBtn: {
+    borderWidth: 1.5, borderColor: "#E2DED8", borderStyle: "dashed",
+    borderRadius: 14, height: 90,
+    alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: "#FAFAF8",
+  },
+  imageAddText: { fontSize: 13, color: Colors.light.primary, fontWeight: "600" },
+  imagePreviewWrap: { position: "relative", borderRadius: 14, overflow: "hidden" },
+  imagePreview: { width: "100%", height: 160, borderRadius: 14 },
+  imagePreviewBadge: {
+    position: "absolute", bottom: 8, right: 8,
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "rgba(0,0,0,0.45)", borderRadius: 10,
+    paddingHorizontal: 8, paddingVertical: 4,
+  },
+  imagePreviewBadgeText: { fontSize: 11, color: "#fff", fontWeight: "600" },
+  imageViewerOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.92)",
+    alignItems: "center", justifyContent: "center",
+  },
+  imageViewerImg: { width: "100%", height: "100%" },
+  imageViewerClose: {
+    position: "absolute", top: 54, right: 20,
+    backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 20,
+    width: 40, height: 40, alignItems: "center", justifyContent: "center",
+  },
 });
