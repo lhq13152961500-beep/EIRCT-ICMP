@@ -95,7 +95,6 @@ const MUSIC_LIST = [
 type RecordingState = "idle" | "recording" | "paused" | "finished";
 
 type LocationStatus =
-  | { state: "loading" }
   | { state: "denied" }
   | { state: "in_range"; landmark: typeof LANDMARKS[0]; distance: number }
   | { state: "out_of_range"; nearest: typeof LANDMARKS[0]; distance: number };
@@ -190,11 +189,10 @@ export default function MicScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const [locationStatus, setLocationStatus] = useState<LocationStatus>(() =>
-    Platform.OS === "web"
-      ? { state: "out_of_range", nearest: LANDMARKS[0], distance: 999999 }
-      : { state: "loading" }
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>(
+    { state: "out_of_range", nearest: LANDMARKS[0], distance: 999999 }
   );
+  const [isLocating, setIsLocating] = useState(Platform.OS !== "web");
   const [recState, setRecState]     = useState<RecordingState>("idle");
   const [elapsed, setElapsed]       = useState(0);
   const [envSound, setEnvSound]     = useState(true);
@@ -240,11 +238,12 @@ export default function MicScreen() {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (!mounted) return;
-      if (status !== "granted") { setLocationStatus({ state: "denied" }); return; }
+      if (status !== "granted") { setIsLocating(false); setLocationStatus({ state: "denied" }); return; }
 
       const update = ({ latitude, longitude }: { latitude: number; longitude: number }) => {
         if (!mounted) return;
         if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+        setIsLocating(false);
         let nearest = LANDMARKS[0]; let minDist = Infinity;
         for (const lm of LANDMARKS) {
           const d = haversineMeters(latitude, longitude, lm.lat, lm.lng);
@@ -263,16 +262,10 @@ export default function MicScreen() {
         if (last && mounted) update(last.coords);
       } catch { /* no cached position — that's fine */ }
 
-      // Step 2: if still loading after 8 s, give up and show out-of-range
+      // Step 2: if still locating after 8 s, stop the spinner (GPS may still update later)
       if (mounted) {
         timeoutId = setTimeout(() => {
-          if (mounted) {
-            setLocationStatus((prev) =>
-              prev.state === "loading"
-                ? { state: "out_of_range", nearest: LANDMARKS[0], distance: 999999 }
-                : prev
-            );
-          }
+          if (mounted) setIsLocating(false);
         }, 8000);
       }
 
@@ -494,13 +487,6 @@ export default function MicScreen() {
 
   const renderLocationCard = () => {
     switch (locationStatus.state) {
-      case "loading":
-        return (
-          <View style={styles.locationCard}>
-            <ActivityIndicator size="small" color={Colors.light.primary} />
-            <Text style={styles.locationLabel}>正在获取位置...</Text>
-          </View>
-        );
       case "denied":
         return (
           <View style={[styles.locationCard, styles.locationCardWarn]}>
@@ -530,16 +516,23 @@ export default function MicScreen() {
         return (
           <View style={[styles.locationCard, styles.locationCardWarn]}>
             <View style={styles.locationDotRow}>
-              <View style={[styles.locationDot, { backgroundColor: "#F5974E" }]} />
-              <Text style={styles.locationLabel}>未进入地标范围</Text>
+              <View style={[styles.locationDot, { backgroundColor: isLocating ? "#B0B0B0" : "#F5974E" }]} />
+              <Text style={styles.locationLabel}>
+                {isLocating ? "正在获取精确位置…" : "未进入地标范围"}
+              </Text>
+              {isLocating && (
+                <ActivityIndicator size="small" color={Colors.light.primary} style={{ marginLeft: 6 }} />
+              )}
             </View>
             <Text style={styles.locationName}>{locationStatus.nearest.name}</Text>
-            <View style={styles.locationDistRow}>
-              <Ionicons name="navigate-outline" size={12} color="#F5974E" />
-              <Text style={styles.locationDistWarn}>
-                距地标 {formatDistance(locationStatus.distance)}，需进入 {RANGE_METERS} 米内关联
-              </Text>
-            </View>
+            {!isLocating && (
+              <View style={styles.locationDistRow}>
+                <Ionicons name="navigate-outline" size={12} color="#F5974E" />
+                <Text style={styles.locationDistWarn}>
+                  距地标 {formatDistance(locationStatus.distance)}，需进入 {RANGE_METERS} 米内关联
+                </Text>
+              </View>
+            )}
           </View>
         );
     }
