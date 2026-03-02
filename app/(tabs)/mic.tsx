@@ -199,6 +199,7 @@ export default function MicScreen() {
 
   const [locationStatus, setLocationStatus] = useState<LocationStatus>({ state: "none" });
   const [isLocating, setIsLocating] = useState(true);
+  const [locationTrigger, setLocationTrigger] = useState(0);
   const [recState, setRecState]     = useState<RecordingState>("idle");
   const [elapsed, setElapsed]       = useState(0);
   const [envSound, setEnvSound]     = useState(true);
@@ -241,11 +242,13 @@ export default function MicScreen() {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let webWatchId: number | null = null;
 
+    setIsLocating(true);
+    setLocationStatus({ state: "none" });
+
     const update = ({ latitude, longitude }: { latitude: number; longitude: number }) => {
       if (!mounted) return;
       if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
       setIsLocating(false);
-      // Set coordinates immediately with placeholder name, then resolve address
       setLocationStatus({ state: "located", lat: latitude, lng: longitude, locationName: "正在解析地址…" });
       reverseGeocode(latitude, longitude).then((name) => {
         if (mounted) {
@@ -254,29 +257,27 @@ export default function MicScreen() {
       });
     };
 
-    // ── 8-second timeout: stop spinner even if GPS never resolves
+    // Stop spinner after 15 seconds if nothing resolves
     timeoutId = setTimeout(() => {
       if (mounted) setIsLocating(false);
-    }, 8000);
+    }, 15000);
 
     if (Platform.OS === "web") {
-      // Web: use the browser's native geolocation API
       if (typeof navigator !== "undefined" && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => { if (mounted) update(pos.coords); },
-          () => { if (mounted) { setIsLocating(false); } },
-          { enableHighAccuracy: false, timeout: 7000, maximumAge: 60000 }
+          () => { if (mounted) setIsLocating(false); },
+          { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
         );
         webWatchId = navigator.geolocation.watchPosition(
           (pos) => { if (mounted) update(pos.coords); },
           () => {},
-          { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
         );
       } else {
         setIsLocating(false);
       }
     } else {
-      // Native: use expo-location
       (async () => {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (!mounted) return;
@@ -286,30 +287,48 @@ export default function MicScreen() {
           return;
         }
 
-        // Last known position — instant from cache
+        // 1) Try last known position instantly (may be null on first run)
         try {
           const last = await Location.getLastKnownPositionAsync({});
           if (last && mounted) update(last.coords);
         } catch { /* no cache */ }
-        // Continuous high-accuracy watch
-        try {
-          const sub = await Location.watchPositionAsync(
-            { accuracy: Location.Accuracy.High, distanceInterval: 5 },
-            (l) => update(l.coords)
-          );
-          if (mounted) locationSubRef.current = sub;
-        } catch { /* watch failed */ }
+
+        // 2) getCurrentPositionAsync with Balanced accuracy — works indoors too
+        if (mounted) {
+          try {
+            const pos = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+            });
+            if (mounted) update(pos.coords);
+          } catch { /* fall through to watch */ }
+        }
+
+        // 3) Continuous high-accuracy watch for refinement
+        if (mounted) {
+          try {
+            locationSubRef.current?.remove();
+            const sub = await Location.watchPositionAsync(
+              { accuracy: Location.Accuracy.High, distanceInterval: 10 },
+              (l) => update(l.coords)
+            );
+            if (mounted) locationSubRef.current = sub;
+          } catch { /* watch failed */ }
+        }
+
+        if (mounted) setIsLocating(false);
       })();
     }
 
     return () => {
       mounted = false;
       if (timeoutId) clearTimeout(timeoutId);
-      if (webWatchId !== null) navigator.geolocation.clearWatch(webWatchId);
+      if (webWatchId !== null && typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.clearWatch(webWatchId);
+      }
       locationSubRef.current?.remove();
       locationSubRef.current = null;
     };
-  }, []);
+  }, [locationTrigger]);
 
   // ── Recording actions ──────────────────────────────────────────────────────
 
@@ -555,12 +574,23 @@ export default function MicScreen() {
           <Text style={styles.locationLabel}>
             {isLocating ? "正在获取位置…" : "无法获取位置"}
           </Text>
-          {isLocating && (
-            <ActivityIndicator size="small" color={Colors.light.primary} style={{ marginLeft: 6 }} />
-          )}
+          {isLocating
+            ? <ActivityIndicator size="small" color={Colors.light.primary} style={{ marginLeft: 6 }} />
+            : (
+              <Pressable
+                onPress={() => { haptic(); setLocationTrigger((n) => n + 1); }}
+                style={styles.retryBtn}
+              >
+                <Ionicons name="refresh" size={13} color={Colors.light.primary} />
+                <Text style={styles.retryBtnText}>重试</Text>
+              </Pressable>
+            )
+          }
         </View>
         {!isLocating && (
-          <Text style={styles.locationNameSmall}>请确认已开启定位权限并处于有信号区域</Text>
+          <Text style={styles.locationNameSmall}>
+            请确认已授予位置权限，并走到户外开阔处以获取 GPS 信号
+          </Text>
         )}
       </View>
     );
@@ -779,6 +809,17 @@ const styles = StyleSheet.create({
   locationBadgeText: { fontSize: 10, color: "#fff", fontWeight: "600" },
   locationName: { fontSize: 19, fontWeight: "700", color: Colors.light.text, letterSpacing: 0.3, textAlign: "center" },
   locationNameSmall: { fontSize: 13, color: Colors.light.textSecondary, textAlign: "center" },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginLeft: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: "rgba(61,170,111,0.10)",
+  },
+  retryBtnText: { fontSize: 12, color: Colors.light.primary, fontWeight: "600" as const },
   locationDistText: { fontSize: 11, color: Colors.light.primary, fontWeight: "500" },
   locationDistRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
   locationDistWarn: { fontSize: 11, color: "#F5974E", flexShrink: 1, textAlign: "center" },
