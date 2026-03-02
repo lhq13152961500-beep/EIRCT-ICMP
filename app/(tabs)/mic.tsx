@@ -11,6 +11,7 @@ import {
   Alert,
   Animated,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import MapLocationPicker from "@/components/MapLocationPicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -105,10 +106,24 @@ const VOICE_ONLY_PRESET: Audio.RecordingOptions = {
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
-const MUSIC_LIST = [
-  { id: 1, name: "空山新雨", mood: "宁静", thumb: require("@/assets/images/diary-thumb-1.png") },
-  { id: 2, name: "晨曦微露", mood: "欢快", thumb: require("@/assets/images/diary-thumb-2.png") },
-  { id: 3, name: "古村斜阳", mood: "怀旧", thumb: require("@/assets/images/sound-thumb-1.png") },
+type MusicItem = {
+  id: number;
+  name: string;
+  mood: string;
+  desc: string;
+  color: string;
+  thumb: ReturnType<typeof require>;
+};
+
+const MUSIC_LIST: MusicItem[] = [
+  { id: 1, name: "空山新雨", mood: "宁静", desc: "山间雨后，万籁俱寂，轻柔钢琴与自然水声交融", color: "#4A9B7F", thumb: require("@/assets/images/diary-thumb-1.png") },
+  { id: 2, name: "晨曦微露", mood: "欢快", desc: "清晨第一缕阳光，轻快吉他与鸟鸣相伴，元气满满", color: "#E8A24A", thumb: require("@/assets/images/diary-thumb-2.png") },
+  { id: 3, name: "古村斜阳", mood: "怀旧", desc: "夕阳西下，老村炊烟，悠扬二胡诉说岁月故事", color: "#C4783A", thumb: require("@/assets/images/sound-thumb-1.png") },
+  { id: 4, name: "溪涧流声", mood: "自然", desc: "山涧潺潺，清风拂叶，纯粹自然声景，不加修饰", color: "#3D8BAA", thumb: require("@/assets/images/sound-thumb-2.png") },
+  { id: 5, name: "夜雨敲窗", mood: "沉静", desc: "夜雨淅沥，屋檐滴水，适合深夜记录内心独白", color: "#5C6B8A", thumb: require("@/assets/images/route-thumb-1.png") },
+  { id: 6, name: "炉火烟雨", mood: "温暖", desc: "柴火噼啪，烟雨蒙蒙，围炉而坐的温馨时光", color: "#B05A3A", thumb: require("@/assets/images/route-thumb-2.png") },
+  { id: 7, name: "远山钟声", mood: "禅意", desc: "晨钟暮鼓，远山空谷，引人沉思，心归平静", color: "#6B7B5A", thumb: require("@/assets/images/hero-landscape.png") },
+  { id: 8, name: "竹林幽径", mood: "悠然", desc: "竹叶沙沙，林间小道，慢步其中，忘却烦忧", color: "#3DAA6F", thumb: require("@/assets/images/landscape-hero.png") },
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -218,7 +233,8 @@ export default function MicScreen() {
   const [recState, setRecState]     = useState<RecordingState>("idle");
   const [elapsed, setElapsed]       = useState(0);
   const [envSound, setEnvSound]     = useState(true);
-  const [selectedMusic, setSelectedMusic] = useState<number | null>(1);
+  const [selectedMusic, setSelectedMusic] = useState<number | null>(null);
+  const [showMusicModal, setShowMusicModal] = useState(false);
   const [isPreviewing, setIsPreviewing]   = useState(false);
   const [finishedUri, setFinishedUri]     = useState<string | null>(null);
 
@@ -821,32 +837,127 @@ export default function MicScreen() {
         <View style={styles.musicSection}>
           <View style={styles.musicHeader}>
             <Text style={styles.musicTitle}>推荐背景配乐</Text>
-            <Pressable onPress={() => haptic()}>
+            <Pressable onPress={() => { haptic(); setShowMusicModal(true); }}>
               <Text style={styles.musicSeeAll}>查看全部</Text>
             </Pressable>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.musicScroll}>
-            {MUSIC_LIST.map((m) => {
+            {/* 不添加 card */}
+            <Pressable
+              style={styles.musicCard}
+              onPress={() => { setSelectedMusic(null); haptic(); }}
+            >
+              <View style={[
+                styles.musicThumb,
+                styles.musicNoThumb,
+                selectedMusic === null && { borderColor: Colors.light.primary },
+              ]}>
+                {selectedMusic === null
+                  ? <Ionicons name="close-circle" size={28} color={Colors.light.primary} />
+                  : <Ionicons name="close-circle-outline" size={28} color="#C0C0C0" />
+                }
+              </View>
+              <Text style={[styles.musicName, selectedMusic === null && { color: Colors.light.primary }]}>不添加</Text>
+              <Text style={styles.musicMood}>纯净</Text>
+            </Pressable>
+
+            {/* Recommended: first 4 tracks */}
+            {MUSIC_LIST.slice(0, 4).map((m) => {
               const selected = selectedMusic === m.id;
               return (
                 <Pressable key={m.id} style={styles.musicCard} onPress={() => { setSelectedMusic(m.id); haptic(); }}>
-                  <Image
-                    source={m.thumb}
-                    style={[styles.musicThumb, selected && { borderColor: Colors.light.primary }]}
-                    resizeMode="cover"
-                  />
-                  {selected && (
-                    <View style={styles.musicPlayOverlay}>
-                      <Ionicons name="musical-note" size={14} color="#fff" />
-                    </View>
-                  )}
-                  <Text style={styles.musicName} numberOfLines={1}>{m.name}</Text>
+                  <View style={styles.musicThumbWrap}>
+                    <Image
+                      source={m.thumb}
+                      style={[styles.musicThumb, selected && { borderColor: Colors.light.primary }]}
+                      resizeMode="cover"
+                    />
+                    {selected && (
+                      <View style={styles.musicPlayOverlay}>
+                        <Ionicons name="musical-note" size={14} color="#fff" />
+                      </View>
+                    )}
+                  </View>
+                  <Text style={[styles.musicName, selected && { color: Colors.light.primary }]} numberOfLines={1}>{m.name}</Text>
                   <Text style={styles.musicMood}>{m.mood}</Text>
                 </Pressable>
               );
             })}
+
+            {/* "更多" card to open modal */}
+            <Pressable style={styles.musicCard} onPress={() => { haptic(); setShowMusicModal(true); }}>
+              <View style={[styles.musicThumb, styles.musicMoreThumb]}>
+                <Ionicons name="ellipsis-horizontal" size={24} color={Colors.light.primary} />
+              </View>
+              <Text style={[styles.musicName, { color: Colors.light.primary }]}>更多</Text>
+              <Text style={styles.musicMood}>全部</Text>
+            </Pressable>
           </ScrollView>
         </View>
+
+        {/* Music Modal */}
+        <Modal
+          visible={showMusicModal}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setShowMusicModal(false)}
+        >
+          <View style={styles.musicModal}>
+            <View style={styles.musicModalHeader}>
+              <Text style={styles.musicModalTitle}>选择背景配乐</Text>
+              <Pressable onPress={() => setShowMusicModal(false)} style={styles.musicModalClose}>
+                <Ionicons name="close" size={22} color={Colors.light.text} />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.musicModalList}>
+              {/* 不添加 row */}
+              <Pressable
+                style={[styles.musicRow, selectedMusic === null && styles.musicRowSelected]}
+                onPress={() => { setSelectedMusic(null); haptic(); setShowMusicModal(false); }}
+              >
+                <View style={[styles.musicRowThumb, { backgroundColor: "#F0F0F0" }]}>
+                  <Ionicons name="ban-outline" size={26} color="#999" />
+                </View>
+                <View style={styles.musicRowInfo}>
+                  <Text style={[styles.musicRowName, selectedMusic === null && { color: Colors.light.primary }]}>不添加背景音乐</Text>
+                  <Text style={styles.musicRowDesc}>保留录音原声，不叠加任何配乐</Text>
+                </View>
+                {selectedMusic === null && (
+                  <Ionicons name="checkmark-circle" size={22} color={Colors.light.primary} />
+                )}
+              </Pressable>
+
+              <Text style={styles.musicModalSectionLabel}>全部配乐</Text>
+
+              {MUSIC_LIST.map((m) => {
+                const selected = selectedMusic === m.id;
+                return (
+                  <Pressable
+                    key={m.id}
+                    style={[styles.musicRow, selected && styles.musicRowSelected]}
+                    onPress={() => { setSelectedMusic(m.id); haptic(); setShowMusicModal(false); }}
+                  >
+                    <View style={styles.musicRowThumbWrap}>
+                      <Image source={m.thumb} style={styles.musicRowThumb} resizeMode="cover" />
+                      <View style={[styles.musicRowMoodBadge, { backgroundColor: m.color }]}>
+                        <Text style={styles.musicRowMoodText}>{m.mood}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.musicRowInfo}>
+                      <Text style={[styles.musicRowName, selected && { color: Colors.light.primary }]}>{m.name}</Text>
+                      <Text style={styles.musicRowDesc} numberOfLines={2}>{m.desc}</Text>
+                    </View>
+                    {selected
+                      ? <Ionicons name="checkmark-circle" size={22} color={Colors.light.primary} />
+                      : <Ionicons name="play-circle-outline" size={22} color="#CCC" />
+                    }
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Modal>
       </ScrollView>
     </View>
   );
@@ -949,20 +1060,63 @@ const styles = StyleSheet.create({
   modeTip: { flexDirection: "row", alignItems: "flex-start", gap: 6, width: "100%", paddingHorizontal: 4 },
   modeTipText: { flex: 1, fontSize: 11, color: Colors.light.textSecondary, lineHeight: 16 },
 
-  // Music
+  // Music section
   musicSection: { width: "100%", gap: 14 },
   musicHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   musicTitle: { fontSize: 16, fontWeight: "700", color: Colors.light.text },
   musicSeeAll: { fontSize: 13, color: Colors.light.primary, fontWeight: "500" },
   musicScroll: { gap: 12, paddingRight: 4 },
-  musicCard: { width: 110, gap: 6, alignItems: "center" },
-  musicThumb: { width: 110, height: 110, borderRadius: 14, borderWidth: 2.5, borderColor: "transparent" },
+  musicCard: { width: 100, gap: 6, alignItems: "center" },
+  musicThumbWrap: { position: "relative" },
+  musicThumb: { width: 100, height: 100, borderRadius: 14, borderWidth: 2.5, borderColor: "transparent" },
+  musicNoThumb: {
+    backgroundColor: "#F4F4F4", alignItems: "center", justifyContent: "center",
+  },
+  musicMoreThumb: {
+    backgroundColor: "#EAF7F0", alignItems: "center", justifyContent: "center",
+  },
   musicPlayOverlay: {
-    position: "absolute", top: 8, right: 8, width: 24, height: 24,
+    position: "absolute", top: 6, right: 6, width: 24, height: 24,
     borderRadius: 12, backgroundColor: Colors.light.primary, alignItems: "center", justifyContent: "center",
   },
   musicName: { fontSize: 13, fontWeight: "600", color: Colors.light.text, textAlign: "center" },
   musicMood: { fontSize: 11, color: Colors.light.textSecondary, textAlign: "center" },
+
+  // Music modal
+  musicModal: { flex: 1, backgroundColor: "#F5F5F0" },
+  musicModalHeader: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1, borderBottomColor: "#F0F0EC",
+  },
+  musicModalTitle: { fontSize: 18, fontWeight: "700", color: Colors.light.text },
+  musicModalClose: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: "#F0F0EC", alignItems: "center", justifyContent: "center",
+  },
+  musicModalList: { padding: 16, gap: 10, paddingBottom: 40 },
+  musicModalSectionLabel: {
+    fontSize: 12, fontWeight: "600", color: Colors.light.textSecondary,
+    textTransform: "uppercase", letterSpacing: 0.8, marginTop: 8, marginBottom: 2, marginLeft: 4,
+  },
+  musicRow: {
+    flexDirection: "row", alignItems: "center", gap: 14,
+    backgroundColor: "#fff", borderRadius: 16,
+    paddingHorizontal: 14, paddingVertical: 12,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+  },
+  musicRowSelected: { backgroundColor: "#EAF7F0", borderWidth: 1.5, borderColor: Colors.light.primary },
+  musicRowThumbWrap: { position: "relative" },
+  musicRowThumb: { width: 60, height: 60, borderRadius: 12 },
+  musicRowMoodBadge: {
+    position: "absolute", bottom: -4, right: -4,
+    borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2,
+  },
+  musicRowMoodText: { fontSize: 9, color: "#fff", fontWeight: "700" as const },
+  musicRowInfo: { flex: 1, gap: 4 },
+  musicRowName: { fontSize: 15, fontWeight: "600", color: Colors.light.text },
+  musicRowDesc: { fontSize: 12, color: Colors.light.textSecondary, lineHeight: 17 },
 
   // Map picker button (on location card)
   mapPickBtn: {
