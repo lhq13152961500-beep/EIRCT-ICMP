@@ -32,6 +32,17 @@ function formatTime(seconds: number) {
   return `${m}:${s}`;
 }
 
+// ─── Timeout wrapper ──────────────────────────────────────────────────────────
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 // ─── Reverse Geocoding ────────────────────────────────────────────────────────
 
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
@@ -199,6 +210,7 @@ export default function MicScreen() {
 
   const [locationStatus, setLocationStatus] = useState<LocationStatus>({ state: "none" });
   const [isLocating, setIsLocating] = useState(true);
+  const [watchActive, setWatchActive] = useState(false);
   const [locationTrigger, setLocationTrigger] = useState(0);
   const [recState, setRecState]     = useState<RecordingState>("idle");
   const [elapsed, setElapsed]       = useState(0);
@@ -239,16 +251,20 @@ export default function MicScreen() {
 
   useEffect(() => {
     let mounted = true;
+    let gotFix = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let webWatchId: number | null = null;
 
     setIsLocating(true);
+    setWatchActive(false);
     setLocationStatus({ state: "none" });
 
     const update = ({ latitude, longitude }: { latitude: number; longitude: number }) => {
       if (!mounted) return;
+      gotFix = true;
       if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
       setIsLocating(false);
+      setWatchActive(false);
       setLocationStatus({ state: "located", lat: latitude, lng: longitude, locationName: "正在解析地址…" });
       reverseGeocode(latitude, longitude).then((name) => {
         if (mounted) {
@@ -287,32 +303,41 @@ export default function MicScreen() {
           return;
         }
 
-        // 1) Try last known position instantly (may be null on first run)
+        // 1) Last known position — instant from device cache
         try {
-          const last = await Location.getLastKnownPositionAsync({});
-          if (last && mounted) update(last.coords);
-        } catch { /* no cache */ }
+          const last = await withTimeout(
+            Location.getLastKnownPositionAsync({ maxAge: 10 * 60 * 1000, requiredAccuracy: 5000 }),
+            3000, "lastKnown"
+          );
+          if (last && mounted) { console.log("[loc] got lastKnown"); update(last.coords); }
+        } catch (e) { console.warn("[loc] lastKnown failed:", e); }
 
-        // 2) getCurrentPositionAsync with Balanced accuracy — works indoors too
-        if (mounted) {
-          try {
-            const pos = await Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.Balanced,
-            });
-            if (mounted) update(pos.coords);
-          } catch { /* fall through to watch */ }
-        }
-
-        // 3) Continuous high-accuracy watch for refinement
+        // 2) Start watchPositionAsync — this is the primary driver.
+        //    Android: tries all available providers (network + GPS) and fires as soon as one works.
+        //    Much more reliable than getCurrentPositionAsync for first-time fixes.
         if (mounted) {
           try {
             locationSubRef.current?.remove();
-            const sub = await Location.watchPositionAsync(
-              { accuracy: Location.Accuracy.High, distanceInterval: 10 },
-              (l) => update(l.coords)
+            const sub = await withTimeout(
+              Location.watchPositionAsync(
+                { accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: true, distanceInterval: 5 },
+                (l) => { console.log("[loc] watch fired", l.coords.latitude, l.coords.longitude); update(l.coords); }
+              ),
+              6000, "watchSetup"
             );
-            if (mounted) locationSubRef.current = sub;
-          } catch { /* watch failed */ }
+            if (mounted) { locationSubRef.current = sub; setWatchActive(true); console.log("[loc] watch subscribed"); }
+          } catch (e) { console.warn("[loc] watch failed:", e); }
+        }
+
+        // 3) One-shot getCurrentPositionAsync in parallel (resolves quicker in some scenarios)
+        if (mounted && !gotFix) {
+          try {
+            const pos = await withTimeout(
+              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: true }),
+              12000, "getCurrent"
+            );
+            if (mounted) { console.log("[loc] getCurrent succeeded"); update(pos.coords); }
+          } catch (e) { console.warn("[loc] getCurrent failed:", e); }
         }
 
         if (mounted) setIsLocating(false);
@@ -567,14 +592,15 @@ export default function MicScreen() {
     }
 
     // state === "none"
+    const stillTrying = isLocating || watchActive;
     return (
-      <View style={[styles.locationCard, styles.locationCardWarn]}>
+      <View style={[styles.locationCard, stillTrying ? {} : styles.locationCardWarn]}>
         <View style={styles.locationDotRow}>
-          <View style={[styles.locationDot, { backgroundColor: isLocating ? "#B0B0B0" : "#F5974E" }]} />
+          <View style={[styles.locationDot, { backgroundColor: stillTrying ? "#B0B0B0" : "#F5974E" }]} />
           <Text style={styles.locationLabel}>
-            {isLocating ? "正在获取位置…" : "无法获取位置"}
+            {isLocating ? "正在获取位置…" : watchActive ? "等待 GPS 信号…" : "无法获取位置"}
           </Text>
-          {isLocating
+          {stillTrying
             ? <ActivityIndicator size="small" color={Colors.light.primary} style={{ marginLeft: 6 }} />
             : (
               <Pressable
@@ -587,11 +613,13 @@ export default function MicScreen() {
             )
           }
         </View>
-        {!isLocating && (
-          <Text style={styles.locationNameSmall}>
-            请确认已授予位置权限，并走到户外开阔处以获取 GPS 信号
-          </Text>
-        )}
+        <Text style={styles.locationNameSmall}>
+          {isLocating
+            ? "正在联系定位服务…"
+            : watchActive
+              ? "GPS 正在搜索卫星，请稍候或走到户外开阔处"
+              : "请确认已授予位置权限，并走到户外开阔处以获取 GPS 信号"}
+        </Text>
       </View>
     );
   };
