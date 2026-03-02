@@ -744,34 +744,53 @@ function MyPublishedCard({ rec, onViewImage }: { rec: PublishedRecording; onView
   const secs = (rec.durationSeconds % 60).toString().padStart(2, "0");
   const dur = `${mins}:${secs}`;
   return (
-    <View style={styles.myPublishedCard}>
-      {/* Left: image or icon */}
-      {rec.imageUri ? (
-        <Pressable onPress={() => onViewImage(rec.imageUri!)} style={styles.myPublishedImgWrap}>
-          <Image source={{ uri: rec.imageUri }} style={styles.myPublishedImg} resizeMode="cover" />
-          <View style={styles.myPublishedImgOverlay}>
-            <Ionicons name="expand-outline" size={12} color="#fff" />
+    <View style={styles.postcardCard}>
+      {/* Top row: image/icon + title + play button */}
+      <View style={styles.postcardTop}>
+        {rec.imageUri ? (
+          <Pressable onPress={() => onViewImage(rec.imageUri!)} style={styles.myPubImgBtn}>
+            <Image source={{ uri: rec.imageUri }} style={styles.myPubImg} resizeMode="cover" />
+          </Pressable>
+        ) : (
+          <View style={[styles.postcardTypeIcon, { backgroundColor: "#EAF7F0" }]}>
+            <Ionicons name="mic" size={22} color={Colors.light.primary} />
           </View>
-        </Pressable>
-      ) : (
-        <View style={styles.myPublishedIcon}>
-          <Ionicons name="mic" size={20} color={Colors.light.primary} />
+        )}
+        <View style={styles.postcardTitleWrap}>
+          <Text style={styles.postcardTitle} numberOfLines={1}>{rec.title}</Text>
+          <Text style={styles.postcardDatetime}>
+            {dateStr}
+          </Text>
         </View>
-      )}
-
-      <View style={styles.myPublishedInfo}>
-        <Text style={styles.myPublishedTitle} numberOfLines={1}>{rec.title}</Text>
-        <View style={styles.myPublishedMeta}>
-          <Ionicons name="location-outline" size={11} color={Colors.light.textSecondary} />
-          <Text style={styles.myPublishedMetaText} numberOfLines={1}>{rec.locationName}</Text>
-          <Ionicons name="time-outline" size={11} color={Colors.light.textSecondary} />
-          <Text style={styles.myPublishedMetaText}>{dur}</Text>
+        <View style={styles.postcardPlayWrap}>
+          <Pressable style={[styles.postcardPlayBtn, { backgroundColor: Colors.light.primary }]} onPress={() => haptic(Haptics.ImpactFeedbackStyle.Medium)}>
+            <Ionicons name="play" size={18} color="#fff" />
+          </Pressable>
+          <Text style={styles.postcardDuration}>{dur}</Text>
         </View>
-        <Text style={styles.myPublishedDate}>{dateStr}</Text>
       </View>
-      <View style={styles.myPublishedBadge}>
-        <Ionicons name="people-outline" size={12} color={Colors.light.primary} />
-        <Text style={styles.myPublishedBadgeText}>100m</Text>
+
+      {/* Location line */}
+      <Text style={styles.postcardSender}>
+        <Ionicons name="location-outline" size={12} color={Colors.light.textSecondary} /> {rec.locationName}
+      </Text>
+
+      {/* Stats row */}
+      <View style={styles.postcardTagRow}>
+        <View style={[styles.postcardTagPill, { backgroundColor: "#EAF7F0" }]}>
+          <Ionicons name="people-outline" size={11} color={Colors.light.primary} />
+          <Text style={[styles.postcardTagText, { color: Colors.light.primary }]}>100m 可见</Text>
+        </View>
+        <View style={styles.postcardStats}>
+          <View style={styles.postcardExpandBtn}>
+            <Ionicons name="chatbubble-outline" size={16} color="#aaa" />
+            <Text style={styles.postcardStatNum}>0</Text>
+          </View>
+          <View style={styles.postcardLikeBtn}>
+            <Ionicons name="heart-outline" size={17} color="#FF4D6A" />
+            <Text style={[styles.postcardStatNum, { color: "#FF4D6A" }]}>0</Text>
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -2099,19 +2118,23 @@ const styles = StyleSheet.create({
     shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
   },
   myPublishedIcon: {
-    width: 64, height: 64, borderRadius: 12,
+    width: 46, height: 46, borderRadius: 12,
     backgroundColor: "#EAF7F0", alignItems: "center", justifyContent: "center",
   },
   myPublishedImgWrap: {
-    width: 64, height: 64, borderRadius: 12, overflow: "hidden",
+    width: 46, height: 46, borderRadius: 12, overflow: "hidden",
     position: "relative",
   },
-  myPublishedImg: { width: 64, height: 64 },
+  myPublishedImg: { width: 46, height: 46 },
   myPublishedImgOverlay: {
-    position: "absolute", bottom: 3, right: 3,
-    backgroundColor: "rgba(0,0,0,0.4)", borderRadius: 6,
-    width: 20, height: 20, alignItems: "center", justifyContent: "center",
+    position: "absolute", bottom: 2, right: 2,
+    backgroundColor: "rgba(0,0,0,0.4)", borderRadius: 5,
+    width: 16, height: 16, alignItems: "center", justifyContent: "center",
   },
+  myPubImgBtn: {
+    width: 46, height: 46, borderRadius: 12, overflow: "hidden",
+  },
+  myPubImg: { width: 46, height: 46 },
   myPublishedViewer: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.92)",
     alignItems: "center", justifyContent: "center",

@@ -621,6 +621,7 @@ export default function MicScreen() {
             setFinishedUri(null);
             setElapsed(0);
             setRecState("idle");
+            setSelectedImage(null);
             Alert.alert("发布成功 🌿", `已发布到「${locationName}」，100 米内的旅人可以聆听，作品已保存在「我的日记」`);
           },
         },
