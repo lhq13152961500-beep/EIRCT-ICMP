@@ -783,7 +783,7 @@ function MyPublishedCard({ rec, onViewImage }: { rec: PublishedRecording; onView
       {/* Stats row — identical to DiaryGroup */}
       <View style={styles.diaryStatsRow}>
         <View style={styles.diaryStatItem}>
-          <Ionicons name="ear-outline" size={18} color="#888" />
+          <Image source={require("@/assets/images/audio-comment-icon.png")} style={{ width: 26, height: 26 }} tintColor="#555" />
           <Text style={[styles.diaryStatCount, { color: "#888" }]}>0</Text>
         </View>
         <View style={styles.diaryStatItem}>
