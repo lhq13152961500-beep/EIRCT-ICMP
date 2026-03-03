@@ -21,7 +21,7 @@ import * as Location from "expo-location";
 import { Audio } from "expo-av";
 import Colors from "@/constants/colors";
 import { getApiUrl } from "@/lib/query-client";
-import { useRecordings, type PublishedRecording } from "@/contexts/RecordingsContext";
+import { useRecordings, type PublishedRecording, type RecordingComment } from "@/contexts/RecordingsContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TAB_BAR_HEIGHT = 80;
@@ -747,7 +747,7 @@ function DiaryGroup({
 }
 
 function MyPublishedCard({
-  rec, onViewImage, isHighlighted, highlightHeart, highlightComment, likeCount, commentCount,
+  rec, onViewImage, isHighlighted, highlightHeart, highlightComment, likeCount, comments,
 }: {
   rec: PublishedRecording;
   onViewImage: (uri: string) => void;
@@ -755,7 +755,7 @@ function MyPublishedCard({
   highlightHeart?: boolean;
   highlightComment?: boolean;
   likeCount?: number;
-  commentCount?: number;
+  comments?: RecordingComment[];
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const d = new Date(rec.publishedAt);
@@ -809,7 +809,7 @@ function MyPublishedCard({
             tintColor={isExpanded || highlightComment ? Colors.light.primary : "#555"}
           />
           <Text style={[styles.diaryStatCount, { color: isExpanded || highlightComment ? Colors.light.primary : "#888" }]}>
-            {commentCount ?? 0}
+            {(comments ?? []).length}
           </Text>
         </Pressable>
         <View style={[styles.diaryStatItem, highlightHeart && styles.statHighlightHeart]}>
@@ -820,9 +820,28 @@ function MyPublishedCard({
 
       {isExpanded && (
         <View style={styles.replyList}>
-          <Text style={{ color: Colors.light.textSecondary, fontSize: 13, textAlign: "center", paddingVertical: 8 }}>
-            暂无留言
-          </Text>
+          {(comments ?? []).length === 0 ? (
+            <Text style={{ color: Colors.light.textSecondary, fontSize: 13, textAlign: "center", paddingVertical: 8 }}>
+              暂无留言
+            </Text>
+          ) : (
+            (comments ?? []).map((c) => (
+              <View key={c.id} style={styles.uniComment}>
+                <View style={styles.uniCommentPressable}>
+                  <View style={styles.uniCommentAvatar}>
+                    <Ionicons name="person" size={12} color="#fff" />
+                  </View>
+                  <View style={styles.uniCommentBody}>
+                    <View style={styles.uniCommentHeader}>
+                      <Text style={styles.uniCommentName}>{c.username}</Text>
+                      <Text style={styles.uniCommentTime}>{c.time}</Text>
+                    </View>
+                    <Text style={styles.uniCommentText}>{c.text}</Text>
+                  </View>
+                </View>
+              </View>
+            ))
+          )}
         </View>
       )}
     </View>
@@ -838,7 +857,7 @@ function MyDiaryTab() {
   const [highlightedHearts, setHighlightedHearts] = useState<string[]>([]);
   const [highlightedComments, setHighlightedComments] = useState<string[]>([]);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { myRecordings, newIds, acknowledgeNew, notifications, acknowledgeNotifications, likeCounts, commentCounts } = useRecordings();
+  const { myRecordings, newIds, acknowledgeNew, notifications, acknowledgeNotifications, likeCounts, commentsByRecording } = useRecordings();
 
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -897,7 +916,7 @@ function MyDiaryTab() {
                   highlightHeart={highlightedHearts.includes(rec.id)}
                   highlightComment={highlightedComments.includes(rec.id)}
                   likeCount={likeCounts[rec.id] ?? 0}
-                  commentCount={commentCounts[rec.id] ?? 0}
+                  comments={commentsByRecording[rec.id] ?? []}
                 />
               ))}
             </View>
