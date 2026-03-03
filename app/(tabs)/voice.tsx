@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -1399,61 +1400,61 @@ interface NearbyRec {
 }
 
 function DiscoverOthersTab() {
+  "use no memo";
   const [nearbyRecs, setNearbyRecs] = useState<NearbyRec[]>([]);
-  const [nearbyLoading, setNearbyLoading] = useState(true);
   const [nearbyError, setNearbyError] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async (lat: number, lng: number) => {
+  const fetchNearby = useCallback(async () => {
+    const doFetch = async (lat: number, lng: number) => {
       try {
         const url = new URL("/api/recordings/nearby", getApiUrl());
         url.searchParams.set("lat", String(lat));
         url.searchParams.set("lng", String(lng));
         url.searchParams.set("radius", "100");
         const res = await fetch(url.toString());
-        if (!cancelled && res.ok) {
+        if (res.ok) {
           const data: NearbyRec[] = await res.json();
           setNearbyRecs(data);
+          setNearbyError(false);
         }
       } catch {
-        if (!cancelled) setNearbyError(true);
-      } finally {
-        if (!cancelled) setNearbyLoading(false);
+        setNearbyError(true);
       }
     };
 
     if (Platform.OS === "web") {
       if (typeof navigator !== "undefined" && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
-          (pos) => { if (!cancelled) load(pos.coords.latitude, pos.coords.longitude); },
-          () => { if (!cancelled) { setNearbyLoading(false); setNearbyError(true); } }
+          (pos) => doFetch(pos.coords.latitude, pos.coords.longitude),
+          () => setNearbyError(true)
         );
-      } else {
-        setNearbyLoading(false);
       }
     } else {
-      (async () => {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (!cancelled && status === "granted") {
-          try {
-            const last = await Location.getLastKnownPositionAsync({});
-            if (last && !cancelled) {
-              load(last.coords.latitude, last.coords.longitude);
-            } else {
-              const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-              if (!cancelled) load(pos.coords.latitude, pos.coords.longitude);
-            }
-          } catch {
-            if (!cancelled) { setNearbyLoading(false); setNearbyError(true); }
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === "granted") {
+        try {
+          const last = await Location.getLastKnownPositionAsync({});
+          if (last) {
+            await doFetch(last.coords.latitude, last.coords.longitude);
+          } else {
+            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            await doFetch(pos.coords.latitude, pos.coords.longitude);
           }
-        } else if (!cancelled) {
-          setNearbyLoading(false);
+        } catch {
+          setNearbyError(true);
         }
-      })();
+      }
     }
-    return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => { fetchNearby(); }, [fetchNearby]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchNearby();
+    setRefreshing(false);
+  }, [fetchNearby]);
 
   const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>(
@@ -1698,39 +1699,37 @@ function DiscoverOthersTab() {
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
+  const totalFound = SOUND_POSTCARDS.length + nearbyRecs.length;
+
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
       contentContainerStyle={styles.tabContent}
       keyboardShouldPersistTaps="handled"
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={Colors.light.primary}
+          colors={[Colors.light.primary]}
+        />
+      }
     >
       <View style={styles.discoverHeader}>
-        <Text style={styles.discoverHeaderText}>共收到 8 封声音明信片</Text>
+        <Text style={styles.discoverHeaderText}>共搜到 {totalFound} 封声音明信片</Text>
         <Pressable style={styles.filterBtn} onPress={() => haptic()}>
           <Ionicons name="options-outline" size={20} color={Colors.light.text} />
         </Pressable>
       </View>
 
       {/* ── 附近声音随记 ──────────────────────────────────── */}
-      <View style={styles.nearbySection}>
-        <View style={styles.nearbySectionHeader}>
-          <Ionicons name="radio-outline" size={14} color={Colors.light.primary} />
-          <Text style={styles.nearbySectionTitle}>附近 100 米的声音随记</Text>
-        </View>
-        {nearbyLoading ? (
-          <View style={styles.nearbyEmpty}>
-            <ActivityIndicator size="small" color={Colors.light.primary} />
-            <Text style={styles.nearbyEmptyText}>正在探测附近声音…</Text>
+      {nearbyRecs.length > 0 && (
+        <View style={styles.nearbySection}>
+          <View style={styles.nearbySectionHeader}>
+            <Ionicons name="radio-outline" size={14} color={Colors.light.primary} />
+            <Text style={styles.nearbySectionTitle}>附近 100 米的声音随记</Text>
           </View>
-        ) : nearbyRecs.length === 0 ? (
-          <View style={styles.nearbyEmpty}>
-            <Ionicons name="ear-outline" size={20} color="#ccc" />
-            <Text style={styles.nearbyEmptyText}>
-              {nearbyError ? "无法获取位置，请开启定位权限" : "此处暂无声音随记，先录一段？"}
-            </Text>
-          </View>
-        ) : (
-          nearbyRecs.map((rec) => {
+          {nearbyRecs.map((rec) => {
             const mins = Math.floor(rec.durationSeconds / 60).toString().padStart(2, "0");
             const secs = (rec.durationSeconds % 60).toString().padStart(2, "0");
             const dateStr = new Date(rec.createdAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
@@ -1751,9 +1750,9 @@ function DiscoverOthersTab() {
                 </View>
               </View>
             );
-          })
-        )}
-      </View>
+          })}
+        </View>
+      )}
 
       {SOUND_POSTCARDS.map((p) => (
         <SoundPostcard
