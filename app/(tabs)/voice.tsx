@@ -759,10 +759,39 @@ function MyPublishedCard({
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [likedCommentIds, setLikedCommentIds] = useState<string[]>([]);
+  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
+  const [replyTextByComment, setReplyTextByComment] = useState<Record<string, string>>({});
+  const [subRepliesByComment, setSubRepliesByComment] = useState<Record<string, SubReply[]>>({});
+
   const toggleCommentLike = (id: string) => {
     setLikedCommentIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const toggleCommentReply = (commentId: string) => {
+    setReplyingToCommentId((prev) => (prev === commentId ? null : commentId));
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const submitCommentReply = (comment: RecordingComment) => {
+    const text = (replyTextByComment[comment.id] ?? "").trim();
+    if (!text) return;
+    const now = new Date();
+    const newReply: SubReply = {
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      username: "我",
+      time: `${now.getMonth() + 1}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`,
+      text,
+      replyTo: comment.username,
+    };
+    setSubRepliesByComment((prev) => ({
+      ...prev,
+      [comment.id]: [...(prev[comment.id] ?? []), newReply],
+    }));
+    setReplyTextByComment((prev) => ({ ...prev, [comment.id]: "" }));
+    setReplyingToCommentId(null);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
   const d = new Date(rec.publishedAt);
@@ -832,39 +861,92 @@ function MyPublishedCard({
               暂无留言
             </Text>
           ) : (
-            (comments ?? []).map((c) => (
-              <View key={c.id} style={styles.replyItem}>
-                <View style={styles.replyLeft}>
-                  <Text style={styles.replyTitle} numberOfLines={1}>{c.text}</Text>
-                  <View style={styles.replyMeta}>
-                    <Ionicons name="calendar-outline" size={10} color={Colors.light.textSecondary} />
-                    <Text style={styles.replyMetaText}>{c.time}</Text>
+            (comments ?? []).map((c) => {
+              const isReplying = replyingToCommentId === c.id;
+              const isLiked = likedCommentIds.includes(c.id);
+              const subs = subRepliesByComment[c.id] ?? [];
+              const replyText = replyTextByComment[c.id] ?? "";
+              return (
+                <View key={c.id}>
+                  <View style={styles.replyItem}>
+                    <View style={styles.replyLeft}>
+                      <Text style={styles.replyTitle} numberOfLines={1}>{c.text}</Text>
+                      <View style={styles.replyMeta}>
+                        <Ionicons name="calendar-outline" size={10} color={Colors.light.textSecondary} />
+                        <Text style={styles.replyMetaText}>{c.time}</Text>
+                      </View>
+                      <View style={styles.replyPhoneRow}>
+                        <Ionicons name="person-circle-outline" size={12} color="#6B9FFF" />
+                        <Text style={styles.replyPhoneText} numberOfLines={1}>{c.username}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.replyBtnRow}>
+                      <Pressable
+                        style={[styles.replyCommentBtn, isReplying && styles.replyCommentBtnActive]}
+                        onPress={() => toggleCommentReply(c.id)}
+                      >
+                        <Ionicons
+                          name={isReplying ? "chatbubble-ellipses" : "chatbubble-ellipses-outline"}
+                          size={16}
+                          color={isReplying ? "#fff" : Colors.light.primary}
+                        />
+                      </Pressable>
+                      <Pressable
+                        style={styles.replyLikeBtn}
+                        onPress={() => toggleCommentLike(c.id)}
+                      >
+                        <Ionicons
+                          name={isLiked ? "heart" : "heart-outline"}
+                          size={16}
+                          color={isLiked ? "#FF4D6A" : Colors.light.textSecondary}
+                        />
+                      </Pressable>
+                    </View>
                   </View>
-                  <View style={styles.replyPhoneRow}>
-                    <Ionicons name="person-circle-outline" size={12} color="#6B9FFF" />
-                    <Text style={styles.replyPhoneText} numberOfLines={1}>{c.username}</Text>
-                  </View>
+
+                  {subs.length > 0 && (
+                    <View style={styles.diarySubReplies}>
+                      {subs.map((sr) => (
+                        <View key={sr.id} style={styles.diarySubReplyBubble}>
+                          <View style={{ flexDirection: "row", alignItems: "baseline", flexWrap: "wrap", gap: 4 }}>
+                            <Text style={styles.diarySubReplyAt}>@{sr.replyTo}</Text>
+                            <Text style={styles.diarySubReplyText}>{sr.text}</Text>
+                          </View>
+                          <Text style={styles.diarySubReplyTime}>{sr.time}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {isReplying && (
+                    <View style={[styles.commentReplyCard, { marginHorizontal: 14 }]}>
+                      <View style={styles.commentReplyInputArea}>
+                        <TextInput
+                          style={styles.commentReplyTextInput}
+                          placeholder={`回复 @${c.username}...`}
+                          placeholderTextColor={Colors.light.textSecondary}
+                          value={replyText}
+                          onChangeText={(t) =>
+                            setReplyTextByComment((prev) => ({ ...prev, [c.id]: t }))
+                          }
+                          autoFocus
+                          multiline
+                        />
+                        <View style={styles.commentReplyActions}>
+                          <Pressable
+                            style={[styles.commentReplySendBtn, !replyText.trim() && { opacity: 0.38 }]}
+                            onPress={() => submitCommentReply(c)}
+                            disabled={!replyText.trim()}
+                          >
+                            <Ionicons name="arrow-up" size={15} color="#fff" />
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+                  )}
                 </View>
-                <View style={styles.replyBtnRow}>
-                  <Pressable
-                    style={styles.replyCommentBtn}
-                    onPress={() => haptic()}
-                  >
-                    <Ionicons name="chatbubble-ellipses-outline" size={16} color={Colors.light.primary} />
-                  </Pressable>
-                  <Pressable
-                    style={styles.replyLikeBtn}
-                    onPress={() => toggleCommentLike(c.id)}
-                  >
-                    <Ionicons
-                      name={likedCommentIds.includes(c.id) ? "heart" : "heart-outline"}
-                      size={16}
-                      color={likedCommentIds.includes(c.id) ? "#FF4D6A" : Colors.light.textSecondary}
-                    />
-                  </Pressable>
-                </View>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
       )}
