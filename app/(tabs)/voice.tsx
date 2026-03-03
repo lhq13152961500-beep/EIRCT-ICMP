@@ -1392,20 +1392,28 @@ function SoundPostcard({
 
 interface NearbyRec {
   id: string;
+  title: string;
   locationName: string;
   lat: number;
   lng: number;
   durationSeconds: number;
-  createdAt: string;
+  publishedAt: string;
 }
+
+const DISCOVER_FALLBACK_LAT = 43.8223;
+const DISCOVER_FALLBACK_LNG = 87.5987;
 
 function DiscoverOthersTab() {
   "use no memo";
+  const { deviceLocation } = useRecordings();
   const [nearbyRecs, setNearbyRecs] = useState<NearbyRec[]>([]);
   const [nearbyError, setNearbyError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchNearby = useCallback(async () => {
+    const fallbackLat = deviceLocation?.lat ?? DISCOVER_FALLBACK_LAT;
+    const fallbackLng = deviceLocation?.lng ?? DISCOVER_FALLBACK_LNG;
+
     const doFetch = async (lat: number, lng: number) => {
       try {
         const url = new URL("/api/recordings/nearby", getApiUrl());
@@ -1427,8 +1435,10 @@ function DiscoverOthersTab() {
       if (typeof navigator !== "undefined" && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => doFetch(pos.coords.latitude, pos.coords.longitude),
-          () => setNearbyError(true)
+          () => doFetch(fallbackLat, fallbackLng)
         );
+      } else {
+        await doFetch(fallbackLat, fallbackLng);
       }
     } else {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -1437,16 +1447,21 @@ function DiscoverOthersTab() {
           const last = await Location.getLastKnownPositionAsync({});
           if (last) {
             await doFetch(last.coords.latitude, last.coords.longitude);
-          } else {
-            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-            await doFetch(pos.coords.latitude, pos.coords.longitude);
+            return;
           }
-        } catch {
-          setNearbyError(true);
-        }
+        } catch { /* fall through */ }
+        try {
+          const pos = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 10000,
+          } as Location.LocationOptions);
+          await doFetch(pos.coords.latitude, pos.coords.longitude);
+          return;
+        } catch { /* fall through to shared fallback */ }
       }
+      await doFetch(fallbackLat, fallbackLng);
     }
-  }, []);
+  }, [deviceLocation]);
 
   useEffect(() => { fetchNearby(); }, [fetchNearby]);
 
@@ -1732,7 +1747,7 @@ function DiscoverOthersTab() {
           {nearbyRecs.map((rec) => {
             const mins = Math.floor(rec.durationSeconds / 60).toString().padStart(2, "0");
             const secs = (rec.durationSeconds % 60).toString().padStart(2, "0");
-            const dateStr = new Date(rec.createdAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
+            const dateStr = new Date(rec.publishedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
             return (
               <View key={rec.id} style={styles.nearbyCard}>
                 <View style={styles.nearbyCardLeft}>

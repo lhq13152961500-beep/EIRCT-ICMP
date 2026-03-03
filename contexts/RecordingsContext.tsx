@@ -18,6 +18,11 @@ export interface RecordingNotification {
   type: "like" | "comment";
 }
 
+export interface DeviceLocation {
+  lat: number;
+  lng: number;
+}
+
 interface RecordingsContextValue {
   myRecordings: PublishedRecording[];
   addMyRecording: (rec: PublishedRecording) => void;
@@ -27,6 +32,8 @@ interface RecordingsContextValue {
   acknowledgeNotifications: () => void;
   likeCounts: Record<string, number>;
   commentCounts: Record<string, number>;
+  deviceLocation: DeviceLocation | null;
+  setDeviceLocation: (loc: DeviceLocation) => void;
 }
 
 const RecordingsContext = createContext<RecordingsContextValue>({
@@ -38,6 +45,8 @@ const RecordingsContext = createContext<RecordingsContextValue>({
   acknowledgeNotifications: () => {},
   likeCounts: {},
   commentCounts: {},
+  deviceLocation: null,
+  setDeviceLocation: () => {},
 });
 
 export function RecordingsProvider({ children }: { children: React.ReactNode }) {
@@ -46,6 +55,11 @@ export function RecordingsProvider({ children }: { children: React.ReactNode }) 
   const [notifications, setNotifications] = useState<RecordingNotification[]>([]);
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
+  const [deviceLocation, setDeviceLocationState] = useState<DeviceLocation | null>(null);
+
+  const setDeviceLocation = useCallback((loc: DeviceLocation) => {
+    setDeviceLocationState(loc);
+  }, []);
 
   const addMyRecording = useCallback((rec: PublishedRecording) => {
     setMyRecordings((prev) => [rec, ...prev]);
@@ -86,6 +100,8 @@ export function RecordingsProvider({ children }: { children: React.ReactNode }) 
       acknowledgeNotifications,
       likeCounts,
       commentCounts,
+      deviceLocation,
+      setDeviceLocation,
     }}>
       {children}
     </RecordingsContext.Provider>

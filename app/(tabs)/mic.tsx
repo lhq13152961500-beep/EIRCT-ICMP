@@ -227,7 +227,7 @@ export default function MicScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const { addMyRecording } = useRecordings();
+  const { addMyRecording, setDeviceLocation } = useRecordings();
   const [isPublishing, setIsPublishing] = useState(false);
 
   const [locationStatus, setLocationStatus] = useState<LocationStatus>({ state: "none" });
@@ -296,6 +296,7 @@ export default function MicScreen() {
       if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
       setIsLocating(false);
       setWatchActive(false);
+      setDeviceLocation({ lat: latitude, lng: longitude });
       setLocationStatus({ state: "located", lat: latitude, lng: longitude, locationName: "正在解析地址…" });
       reverseGeocode(latitude, longitude).then((name) => {
         if (mounted) {
