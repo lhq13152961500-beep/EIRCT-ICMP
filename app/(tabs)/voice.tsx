@@ -834,16 +834,15 @@ function MyPublishedCard({
           ) : (
             (comments ?? []).map((c) => (
               <View key={c.id} style={styles.replyItem}>
-                <View style={[styles.replyLeft, { flexDirection: "row", alignItems: "flex-start", gap: 8 }]}>
-                  <View style={styles.uniCommentAvatar}>
-                    <Ionicons name="person" size={12} color="#fff" />
+                <View style={styles.replyLeft}>
+                  <Text style={styles.replyTitle} numberOfLines={1}>{c.text}</Text>
+                  <View style={styles.replyMeta}>
+                    <Ionicons name="calendar-outline" size={10} color={Colors.light.textSecondary} />
+                    <Text style={styles.replyMetaText}>{c.time}</Text>
                   </View>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <View style={styles.uniCommentHeader}>
-                      <Text style={styles.uniCommentName}>{c.username}</Text>
-                      <Text style={styles.uniCommentTime}>{c.time}</Text>
-                    </View>
-                    <Text style={styles.uniCommentText}>{c.text}</Text>
+                  <View style={styles.replyPhoneRow}>
+                    <Ionicons name="person-circle-outline" size={12} color="#6B9FFF" />
+                    <Text style={styles.replyPhoneText} numberOfLines={1}>{c.username}</Text>
                   </View>
                 </View>
                 <View style={styles.replyBtnRow}>
@@ -851,7 +850,7 @@ function MyPublishedCard({
                     style={styles.replyCommentBtn}
                     onPress={() => haptic()}
                   >
-                    <Ionicons name="chatbubble-ellipses-outline" size={14} color={Colors.light.primary} />
+                    <Ionicons name="chatbubble-ellipses-outline" size={16} color={Colors.light.primary} />
                   </Pressable>
                   <Pressable
                     style={styles.replyLikeBtn}
@@ -859,7 +858,7 @@ function MyPublishedCard({
                   >
                     <Ionicons
                       name={likedCommentIds.includes(c.id) ? "heart" : "heart-outline"}
-                      size={14}
+                      size={16}
                       color={likedCommentIds.includes(c.id) ? "#FF4D6A" : Colors.light.textSecondary}
                     />
                   </Pressable>
