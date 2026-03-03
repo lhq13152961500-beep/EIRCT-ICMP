@@ -1095,6 +1095,31 @@ function MyPublishedCard({
   );
 }
 
+type SortOrder = "time" | "comments" | "likes";
+
+function SortPicker({ sortBy, onChange }: { sortBy: SortOrder; onChange: (v: SortOrder) => void }) {
+  const options: { key: SortOrder; label: string }[] = [
+    { key: "time", label: "时间" },
+    { key: "comments", label: "评论数" },
+    { key: "likes", label: "点赞数" },
+  ];
+  return (
+    <View style={styles.sortPicker}>
+      {options.map((opt) => (
+        <Pressable
+          key={opt.key}
+          style={[styles.sortChip, sortBy === opt.key && styles.sortChipActive]}
+          onPress={() => { onChange(opt.key); haptic(); }}
+        >
+          <Text style={[styles.sortChipText, sortBy === opt.key && styles.sortChipTextActive]}>
+            {opt.label}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 function MyDiaryTab() {
   "use no memo";
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
@@ -1103,6 +1128,8 @@ function MyDiaryTab() {
   const [highlightedHearts, setHighlightedHearts] = useState<string[]>([]);
   const [highlightedComments, setHighlightedComments] = useState<string[]>([]);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sortBy, setSortBy] = useState<SortOrder>("time");
+  const [sortOpen, setSortOpen] = useState(false);
   const { myRecordings, newIds, acknowledgeNew, notifications, acknowledgeNotifications, likeCounts, commentsByRecording } = useRecordings();
 
   const toggleExpand = (id: string) => {
@@ -1131,6 +1158,12 @@ function MyDiaryTab() {
   const pendingCount = newIds.length + notifications.length;
   const hasNew = pendingCount > 0;
 
+  const sortedRecordings = [...myRecordings].sort((a, b) => {
+    if (sortBy === "time") return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+    if (sortBy === "comments") return (commentsByRecording[b.id]?.length ?? 0) - (commentsByRecording[a.id]?.length ?? 0);
+    return (likeCounts[b.id] ?? 0) - (likeCounts[a.id] ?? 0);
+  });
+
   return (
     <View style={{ flex: 1 }}>
       <ScrollView
@@ -1139,13 +1172,14 @@ function MyDiaryTab() {
       >
         <View style={styles.diaryHeader}>
           <Text style={styles.diaryHeaderText}>共 {totalCount} 份记忆</Text>
-          <Pressable onPress={() => haptic()} style={styles.filterBtn}>
-            <Ionicons name="options-outline" size={20} color={Colors.light.text} />
+          <Pressable onPress={() => { setSortOpen((v) => !v); haptic(); }} style={[styles.filterBtn, sortOpen && styles.filterBtnActive]}>
+            <Ionicons name="options-outline" size={20} color={sortOpen ? Colors.light.primary : Colors.light.text} />
           </Pressable>
         </View>
+        {sortOpen && <SortPicker sortBy={sortBy} onChange={setSortBy} />}
 
         {/* My published recordings from mic tab */}
-        {myRecordings.length > 0 && (
+        {sortedRecordings.length > 0 && (
           <View style={styles.myPublishedSection}>
             {hasNew && (
               <Pressable onPress={handleNewDotPress} style={styles.myPublishedNewCountDot} hitSlop={12}>
@@ -1153,7 +1187,7 @@ function MyDiaryTab() {
               </Pressable>
             )}
             <View>
-              {myRecordings.map((rec) => (
+              {sortedRecordings.map((rec) => (
                 <MyPublishedCard
                   key={rec.id}
                   rec={rec}
@@ -1954,6 +1988,8 @@ function DiscoverOthersTab() {
   }, [fetchNearby]);
 
   const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
+  const [sortBy, setSortBy] = useState<SortOrder>("time");
+  const [sortOpen, setSortOpen] = useState(false);
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>(
     Object.fromEntries(SOUND_POSTCARDS.map((p) => [p.id, p.likeCount]))
   );
@@ -2198,6 +2234,17 @@ function DiscoverOthersTab() {
 
   const totalFound = SOUND_POSTCARDS.length + nearbyRecs.length;
 
+  const sortedNearby = [...nearbyRecs].sort((a, b) => {
+    if (sortBy === "time") return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+    return 0;
+  });
+
+  const sortedPostcards = [...SOUND_POSTCARDS].sort((a, b) => {
+    if (sortBy === "time") return new Date(b.datetime.replace(" ", "T")).getTime() - new Date(a.datetime.replace(" ", "T")).getTime();
+    if (sortBy === "comments") return (commentsByPostcard[b.id]?.length ?? 0) - (commentsByPostcard[a.id]?.length ?? 0);
+    return (likeCounts[b.id] ?? 0) - (likeCounts[a.id] ?? 0);
+  });
+
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
@@ -2214,17 +2261,18 @@ function DiscoverOthersTab() {
     >
       <View style={styles.discoverHeader}>
         <Text style={styles.discoverHeaderText}>共搜到 {totalFound} 封声音明信片</Text>
-        <Pressable style={styles.filterBtn} onPress={() => haptic()}>
-          <Ionicons name="options-outline" size={20} color={Colors.light.text} />
+        <Pressable style={[styles.filterBtn, sortOpen && styles.filterBtnActive]} onPress={() => { setSortOpen((v) => !v); haptic(); }}>
+          <Ionicons name="options-outline" size={20} color={sortOpen ? Colors.light.primary : Colors.light.text} />
         </Pressable>
       </View>
+      {sortOpen && <SortPicker sortBy={sortBy} onChange={setSortBy} />}
 
       {/* ── 附近用户发布的声音随记（全卡片样式） ─────────── */}
-      {nearbyRecs.map((rec) => (
+      {sortedNearby.map((rec) => (
         <NearbyPostcard key={rec.id} rec={rec} />
       ))}
 
-      {SOUND_POSTCARDS.map((p) => (
+      {sortedPostcards.map((p) => (
         <SoundPostcard
           key={p.id}
           item={p}
@@ -2624,6 +2672,36 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0F0F5",
     alignItems: "center",
     justifyContent: "center",
+  },
+  filterBtnActive: {
+    backgroundColor: "#EAF7F0",
+  },
+  sortPicker: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+    paddingHorizontal: 2,
+  },
+  sortChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: "#F0F0F5",
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  sortChipActive: {
+    backgroundColor: "#EAF7F0",
+    borderColor: Colors.light.primary,
+  },
+  sortChipText: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    fontWeight: "500" as const,
+  },
+  sortChipTextActive: {
+    color: Colors.light.primary,
+    fontWeight: "600" as const,
   },
   viewToggle: {
     flexDirection: "row",
