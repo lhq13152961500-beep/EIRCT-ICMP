@@ -1097,7 +1097,11 @@ function MyPublishedCard({
 
 type SortOrder = "time" | "comments" | "likes";
 
-function SortPicker({ sortBy, onChange }: { sortBy: SortOrder; onChange: (v: SortOrder) => void }) {
+type DiaryListItem =
+  | { kind: "recording"; rec: PublishedRecording }
+  | { kind: "group"; group: typeof MY_DIARY_GROUPS[0] };
+
+function SortPicker({ sortBy, onChange }: { sortBy: SortOrder | null; onChange: (v: SortOrder | null) => void }) {
   const options: { key: SortOrder; label: string }[] = [
     { key: "time", label: "时间" },
     { key: "comments", label: "评论数" },
@@ -1116,6 +1120,12 @@ function SortPicker({ sortBy, onChange }: { sortBy: SortOrder; onChange: (v: Sor
           </Text>
         </Pressable>
       ))}
+      <Pressable
+        style={[styles.sortChip, !sortBy && styles.sortChipActive]}
+        onPress={() => { onChange(null); haptic(); }}
+      >
+        <Text style={[styles.sortChipText, !sortBy && styles.sortChipTextActive]}>重置</Text>
+      </Pressable>
     </View>
   );
 }
@@ -1128,7 +1138,7 @@ function MyDiaryTab() {
   const [highlightedHearts, setHighlightedHearts] = useState<string[]>([]);
   const [highlightedComments, setHighlightedComments] = useState<string[]>([]);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [sortBy, setSortBy] = useState<SortOrder>("time");
+  const [sortBy, setSortBy] = useState<SortOrder | null>(null);
   const [sortOpen, setSortOpen] = useState(false);
   const { myRecordings, newIds, acknowledgeNew, notifications, acknowledgeNotifications, likeCounts, commentsByRecording } = useRecordings();
 
@@ -1158,11 +1168,36 @@ function MyDiaryTab() {
   const pendingCount = newIds.length + notifications.length;
   const hasNew = pendingCount > 0;
 
-  const sortedRecordings = [...myRecordings].sort((a, b) => {
-    if (sortBy === "time") return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
-    if (sortBy === "comments") return (commentsByRecording[b.id]?.length ?? 0) - (commentsByRecording[a.id]?.length ?? 0);
-    return (likeCounts[b.id] ?? 0) - (likeCounts[a.id] ?? 0);
-  });
+  const allDiaryItems: DiaryListItem[] = [
+    ...myRecordings.map((rec) => ({ kind: "recording" as const, rec })),
+    ...MY_DIARY_GROUPS.map((group) => ({ kind: "group" as const, group })),
+  ];
+
+  const sortedItems: DiaryListItem[] = sortBy
+    ? [...allDiaryItems].sort((a, b) => {
+        if (sortBy === "time") {
+          const aT = a.kind === "recording"
+            ? new Date(a.rec.publishedAt).getTime()
+            : new Date(a.group.date.replace(" ", "T")).getTime();
+          const bT = b.kind === "recording"
+            ? new Date(b.rec.publishedAt).getTime()
+            : new Date(b.group.date.replace(" ", "T")).getTime();
+          return bT - aT;
+        }
+        if (sortBy === "comments") {
+          const aC = a.kind === "recording"
+            ? (commentsByRecording[a.rec.id]?.length ?? 0)
+            : a.group.replies.length;
+          const bC = b.kind === "recording"
+            ? (commentsByRecording[b.rec.id]?.length ?? 0)
+            : b.group.replies.length;
+          return bC - aC;
+        }
+        const aL = a.kind === "recording" ? (likeCounts[a.rec.id] ?? 0) : a.group.likeCount;
+        const bL = b.kind === "recording" ? (likeCounts[b.rec.id] ?? 0) : b.group.likeCount;
+        return bL - aL;
+      })
+    : allDiaryItems;
 
   return (
     <View style={{ flex: 1 }}>
@@ -1178,39 +1213,38 @@ function MyDiaryTab() {
         </View>
         {sortOpen && <SortPicker sortBy={sortBy} onChange={setSortBy} />}
 
-        {/* My published recordings from mic tab */}
-        {sortedRecordings.length > 0 && (
-          <View style={styles.myPublishedSection}>
-            {hasNew && (
-              <Pressable onPress={handleNewDotPress} style={styles.myPublishedNewCountDot} hitSlop={12}>
-                <Text style={styles.myPublishedNewCountText}>{pendingCount}</Text>
-              </Pressable>
-            )}
-            <View>
-              {sortedRecordings.map((rec) => (
-                <MyPublishedCard
-                  key={rec.id}
-                  rec={rec}
-                  onViewImage={setViewerImage}
-                  isHighlighted={highlightedIds.includes(rec.id)}
-                  highlightHeart={highlightedHearts.includes(rec.id)}
-                  highlightComment={highlightedComments.includes(rec.id)}
-                  likeCount={likeCounts[rec.id] ?? 0}
-                  comments={commentsByRecording[rec.id] ?? []}
-                />
-              ))}
-            </View>
-          </View>
+        {hasNew && (
+          <Pressable onPress={handleNewDotPress} style={styles.myPublishedNewCountDot} hitSlop={12}>
+            <Text style={styles.myPublishedNewCountText}>{pendingCount}</Text>
+          </Pressable>
         )}
 
-        {MY_DIARY_GROUPS.map((g) => (
-          <DiaryGroup
-            key={g.id}
-            group={g}
-            isExpanded={!!expandedIds[g.id]}
-            onToggleExpand={() => toggleExpand(g.id)}
-          />
-        ))}
+        {sortedItems.map((item) => {
+          if (item.kind === "recording") {
+            const rec = item.rec;
+            return (
+              <MyPublishedCard
+                key={rec.id}
+                rec={rec}
+                onViewImage={setViewerImage}
+                isHighlighted={highlightedIds.includes(rec.id)}
+                highlightHeart={highlightedHearts.includes(rec.id)}
+                highlightComment={highlightedComments.includes(rec.id)}
+                likeCount={likeCounts[rec.id] ?? 0}
+                comments={commentsByRecording[rec.id] ?? []}
+              />
+            );
+          }
+          const g = item.group;
+          return (
+            <DiaryGroup
+              key={g.id}
+              group={g}
+              isExpanded={!!expandedIds[g.id]}
+              onToggleExpand={() => toggleExpand(g.id)}
+            />
+          );
+        })}
       </ScrollView>
 
       {/* Full-screen image viewer — rendered at tab level so it always appears above everything */}
@@ -1988,7 +2022,7 @@ function DiscoverOthersTab() {
   }, [fetchNearby]);
 
   const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
-  const [sortBy, setSortBy] = useState<SortOrder>("time");
+  const [sortBy, setSortBy] = useState<SortOrder | null>(null);
   const [sortOpen, setSortOpen] = useState(false);
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>(
     Object.fromEntries(SOUND_POSTCARDS.map((p) => [p.id, p.likeCount]))
@@ -2234,16 +2268,20 @@ function DiscoverOthersTab() {
 
   const totalFound = SOUND_POSTCARDS.length + nearbyRecs.length;
 
-  const sortedNearby = [...nearbyRecs].sort((a, b) => {
-    if (sortBy === "time") return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
-    return 0;
-  });
+  const sortedNearby = sortBy
+    ? [...nearbyRecs].sort((a, b) => {
+        if (sortBy === "time") return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+        return 0;
+      })
+    : nearbyRecs;
 
-  const sortedPostcards = [...SOUND_POSTCARDS].sort((a, b) => {
-    if (sortBy === "time") return new Date(b.datetime.replace(" ", "T")).getTime() - new Date(a.datetime.replace(" ", "T")).getTime();
-    if (sortBy === "comments") return (commentsByPostcard[b.id]?.length ?? 0) - (commentsByPostcard[a.id]?.length ?? 0);
-    return (likeCounts[b.id] ?? 0) - (likeCounts[a.id] ?? 0);
-  });
+  const sortedPostcards = sortBy
+    ? [...SOUND_POSTCARDS].sort((a, b) => {
+        if (sortBy === "time") return new Date(b.datetime.replace(" ", "T")).getTime() - new Date(a.datetime.replace(" ", "T")).getTime();
+        if (sortBy === "comments") return (commentsByPostcard[b.id]?.length ?? 0) - (commentsByPostcard[a.id]?.length ?? 0);
+        return (likeCounts[b.id] ?? 0) - (likeCounts[a.id] ?? 0);
+      })
+    : SOUND_POSTCARDS;
 
   return (
     <ScrollView
