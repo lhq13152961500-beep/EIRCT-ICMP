@@ -993,7 +993,7 @@ function MyPublishedCard({
                         <View key={sr.id} style={styles.diarySubReplyBubble}>
                           <View style={{ flexDirection: "row", alignItems: "baseline", flexWrap: "wrap", gap: 4 }}>
                             <Text style={styles.diarySubReplyAt}>@{sr.replyTo}</Text>
-                            <Text style={styles.diarySubReplyText}>{sr.text}</Text>
+                            <SubReplyContent text={sr.text} style={styles.diarySubReplyText} uri={sr.uri} />
                           </View>
                           <Text style={styles.diarySubReplyTime}>{sr.time}</Text>
                         </View>
