@@ -297,7 +297,11 @@ function PlayButton({ size = 36, color = Colors.light.primary, audioUrl }: { siz
     haptic();
     if (!audioUrl) return;
     if (isPlaying) {
-      try { await soundRef.current?.pauseAsync(); } catch {}
+      try {
+        await soundRef.current?.stopAsync();
+        await soundRef.current?.unloadAsync();
+        soundRef.current = null;
+      } catch {}
       setIsPlaying(false);
       return;
     }
@@ -351,8 +355,13 @@ function ProgressBar({ progress: initProgress, total, color = Colors.light.prima
     haptic();
     if (!audioUrl) return;
     if (isPlaying) {
-      try { await soundRef.current?.pauseAsync(); } catch {}
+      try {
+        await soundRef.current?.stopAsync();
+        await soundRef.current?.unloadAsync();
+        soundRef.current = null;
+      } catch {}
       setIsPlaying(false);
+      setLiveProgress(0);
       return;
     }
     await stopGlobalAudio();
@@ -361,7 +370,7 @@ function ProgressBar({ progress: initProgress, total, color = Colors.light.prima
       const { sound } = await Audio.Sound.createAsync({ uri: audioUrl }, { shouldPlay: true });
       soundRef.current = sound;
       _gSound = sound;
-      _gStop = () => { setIsPlaying(false); setLiveProgress(initProgress); };
+      _gStop = () => { setIsPlaying(false); setLiveProgress(0); };
       setIsPlaying(true);
       sound.setOnPlaybackStatusUpdate((s) => {
         if (!s.isLoaded) return;
@@ -1673,12 +1682,60 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
   const [isReplying, setIsReplying] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [comments, setComments] = useState<NearbyComment[]>([]);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [positionMs, setPositionMs] = useState(0);
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  useEffect(() => {
+    return () => { soundRef.current?.unloadAsync().catch(() => {}); };
+  }, []);
 
   const mins = Math.floor(rec.durationSeconds / 60).toString().padStart(2, "0");
   const secs = (rec.durationSeconds % 60).toString().padStart(2, "0");
   const duration = `${mins}:${secs}`;
+  const totalMs = rec.durationSeconds * 1000;
+  const remainMs = Math.max(0, totalMs - positionMs);
+  const remainSec = Math.ceil(remainMs / 1000);
+  const countdown = `${Math.floor(remainSec / 60).toString().padStart(2, "0")}:${(remainSec % 60).toString().padStart(2, "0")}`;
+  const elapsedSec = Math.floor(positionMs / 1000);
+  const elapsed = `${Math.floor(elapsedSec / 60).toString().padStart(2, "0")}:${(elapsedSec % 60).toString().padStart(2, "0")}`;
+  const playProgress = totalMs > 0 ? positionMs / totalMs : 0;
   const dt = new Date(rec.publishedAt);
   const datetime = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")} ${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+
+  const toggleAudio = async () => {
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+    if (isPlaying) {
+      try {
+        await soundRef.current?.stopAsync();
+        await soundRef.current?.unloadAsync();
+        soundRef.current = null;
+      } catch {}
+      setIsPlaying(false);
+      setPositionMs(0);
+      return;
+    }
+    await stopGlobalAudio();
+    await ensureAudioMode();
+    const audioUrl = rec.audioUri || getDemoAudio(rec.id);
+    try {
+      const { sound } = await Audio.Sound.createAsync({ uri: audioUrl }, { shouldPlay: true });
+      soundRef.current = sound;
+      _gSound = sound;
+      _gStop = () => { setIsPlaying(false); setPositionMs(0); };
+      setIsPlaying(true);
+      sound.setOnPlaybackStatusUpdate((s) => {
+        if (!s.isLoaded) return;
+        if (s.didJustFinish) {
+          setIsPlaying(false);
+          setPositionMs(0);
+          if (_gSound === sound) _gSound = null;
+        } else if (s.durationMillis && s.durationMillis > 0) {
+          setPositionMs(s.positionMillis);
+        }
+      });
+    } catch (e) { console.warn("NearbyPostcard audio error:", e); }
+  };
 
   const toggleLike = () => {
     setIsLiked((v) => {
@@ -1711,11 +1768,11 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
         <View style={styles.postcardPlayWrap}>
           <Pressable
             style={[styles.postcardPlayBtn, { backgroundColor: Colors.light.primary }]}
-            onPress={() => haptic(Haptics.ImpactFeedbackStyle.Medium)}
+            onPress={toggleAudio}
           >
-            <Ionicons name="play" size={18} color="#fff" />
+            <Ionicons name={isPlaying ? "pause" : "play"} size={18} color="#fff" />
           </Pressable>
-          <Text style={styles.postcardDuration}>{duration}</Text>
+          <Text style={styles.postcardDuration}>{countdown}</Text>
         </View>
       </View>
 
@@ -1727,7 +1784,20 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
         </View>
       ) : (
         <View style={styles.postcardProgress}>
-          <ProgressBar progress={0} total={duration} audioUrl={undefined} />
+          <View style={styles.progressRow}>
+            <Pressable
+              style={[styles.playBtn, { width: 28, height: 28, borderRadius: 14, borderColor: Colors.light.primary }]}
+              onPress={toggleAudio}
+            >
+              <Ionicons name={isPlaying ? "pause" : "play"} size={13} color={Colors.light.primary} />
+            </Pressable>
+            <View style={styles.progressTrackWrap}>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${Math.round(playProgress * 100)}%` as any }]} />
+              </View>
+              <Text style={styles.progressTime}>{elapsed} / {duration}</Text>
+            </View>
+          </View>
         </View>
       )}
 
