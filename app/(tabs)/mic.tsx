@@ -603,6 +603,9 @@ export default function MicScreen() {
                 lat,
                 lng,
                 durationSeconds: elapsed,
+                author: "附近的旅人",
+                quote: null,
+                tags: ["#声音随记", "#乡村行旅"],
               }) as PublishedRecording;
               addMyRecording({ ...rec, title, locationName, lat, lng, durationSeconds: elapsed, publishedAt: rec.publishedAt ?? new Date().toISOString(), imageUri: selectedImage ?? undefined, audioUri: finishedUri ?? undefined });
             } catch {

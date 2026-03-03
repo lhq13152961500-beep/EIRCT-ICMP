@@ -24,6 +24,9 @@ export interface SoundRecording {
   lng: number;
   durationSeconds: number;
   publishedAt: string; // ISO
+  author: string;
+  quote: string | null;
+  tags: string[];
 }
 
 export type InsertRecording = Omit<SoundRecording, "id" | "publishedAt">;

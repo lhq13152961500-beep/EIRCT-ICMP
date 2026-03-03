@@ -1398,6 +1398,162 @@ interface NearbyRec {
   lng: number;
   durationSeconds: number;
   publishedAt: string;
+  author: string;
+  quote: string | null;
+  tags: string[];
+}
+
+interface NearbyComment {
+  id: string;
+  username: string;
+  time: string;
+  text: string;
+}
+
+function NearbyPostcard({ rec }: { rec: NearbyRec }) {
+  const [isLiked, setIsLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isReplying, setIsReplying] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [comments, setComments] = useState<NearbyComment[]>([]);
+
+  const mins = Math.floor(rec.durationSeconds / 60).toString().padStart(2, "0");
+  const secs = (rec.durationSeconds % 60).toString().padStart(2, "0");
+  const duration = `${mins}:${secs}`;
+  const dt = new Date(rec.publishedAt);
+  const datetime = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")} ${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+
+  const toggleLike = () => {
+    setIsLiked((v) => {
+      setLikeCount((c) => c + (v ? -1 : 1));
+      return !v;
+    });
+    haptic();
+  };
+
+  const submitReply = () => {
+    if (!replyText.trim()) return;
+    const now = new Date();
+    const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    setComments((prev) => [...prev, { id: Date.now().toString(), username: "我", time, text: replyText.trim() }]);
+    setReplyText("");
+    setIsReplying(false);
+    haptic();
+  };
+
+  return (
+    <View style={styles.postcardCard}>
+      <View style={styles.postcardTop}>
+        <View style={[styles.postcardTypeIcon, { backgroundColor: "#FFF0E8" }]}>
+          <Ionicons name="mic" size={22} color="#F5974E" />
+        </View>
+        <View style={styles.postcardTitleWrap}>
+          <Text style={styles.postcardTitle} numberOfLines={1}>{rec.title}</Text>
+          <Text style={styles.postcardDatetime}>{datetime}</Text>
+        </View>
+        <View style={styles.postcardPlayWrap}>
+          <Pressable
+            style={[styles.postcardPlayBtn, { backgroundColor: Colors.light.primary }]}
+            onPress={() => haptic(Haptics.ImpactFeedbackStyle.Medium)}
+          >
+            <Ionicons name="play" size={18} color="#fff" />
+          </Pressable>
+          <Text style={styles.postcardDuration}>{duration}</Text>
+        </View>
+      </View>
+
+      <Text style={styles.postcardSender}>发送者：{rec.author}</Text>
+
+      {rec.quote ? (
+        <View style={styles.postcardQuote}>
+          <Text style={styles.postcardQuoteText}>{rec.quote}</Text>
+        </View>
+      ) : (
+        <View style={styles.postcardProgress}>
+          <ProgressBar progress={0} total={duration} audioUrl={undefined} />
+        </View>
+      )}
+
+      <View style={styles.postcardTagRow}>
+        {rec.tags.map((tag) => (
+          <View key={tag} style={styles.postcardTagPill}>
+            <Text style={styles.postcardTagText}>{tag}</Text>
+          </View>
+        ))}
+        <View style={styles.postcardStats}>
+          <Pressable
+            style={styles.postcardExpandBtn}
+            onPress={() => { setIsExpanded((v) => !v); haptic(); }}
+          >
+            <Image
+              source={require("@/assets/images/audio-comment-icon.png")}
+              style={{ width: 22, height: 22 }}
+              tintColor={isExpanded ? Colors.light.primary : "#666"}
+            />
+            <Text style={[styles.postcardStatNum, isExpanded && { color: Colors.light.primary }]}>
+              {comments.length}
+            </Text>
+          </Pressable>
+          <Pressable style={styles.postcardLikeBtn} onPress={toggleLike}>
+            <Ionicons name={isLiked ? "heart" : "heart-outline"} size={17} color="#FF4D6A" />
+            <Text style={[styles.postcardStatNum, { color: "#FF4D6A" }]}>{likeCount}</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.postcardReplyActionBtn, isReplying && styles.postcardReplyActionBtnActive]}
+            onPress={() => { setIsReplying((v) => !v); haptic(); }}
+          >
+            <Ionicons name="chatbubble-outline" size={16} color={isReplying ? Colors.light.primary : "#666"} />
+          </Pressable>
+        </View>
+      </View>
+
+      {isExpanded && comments.length > 0 && (
+        <View style={styles.postcardCommentList}>
+          <Text style={styles.postcardCommentTitle}>留言 · {comments.length} 条</Text>
+          {comments.map((c) => (
+            <View key={c.id} style={styles.uniComment}>
+              <View style={styles.uniCommentPressable}>
+                <View style={styles.uniCommentAvatar}>
+                  <Ionicons name="person" size={12} color="#fff" />
+                </View>
+                <View style={styles.uniCommentBody}>
+                  <View style={styles.uniCommentHeader}>
+                    <Text style={styles.uniCommentName}>{c.username}</Text>
+                    <Text style={styles.uniCommentTime}>{c.time}</Text>
+                  </View>
+                  <Text style={styles.uniCommentText}>{c.text}</Text>
+                </View>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {isReplying && (
+        <View style={styles.postcardReplyBox}>
+          <View style={styles.replyInputRow}>
+            <TextInput
+              style={styles.postcardReplyInput}
+              placeholder="写下你的文字留言..."
+              placeholderTextColor={Colors.light.textSecondary}
+              value={replyText}
+              onChangeText={setReplyText}
+              multiline
+              autoFocus
+            />
+            <Pressable
+              style={[styles.postcardReplySend, !replyText.trim() && { opacity: 0.4 }]}
+              onPress={submitReply}
+              disabled={!replyText.trim()}
+            >
+              <Text style={styles.postcardReplySendText}>发送</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+    </View>
+  );
 }
 
 const DISCOVER_FALLBACK_LAT = 43.8223;
@@ -1737,37 +1893,10 @@ function DiscoverOthersTab() {
         </Pressable>
       </View>
 
-      {/* ── 附近声音随记 ──────────────────────────────────── */}
-      {nearbyRecs.length > 0 && (
-        <View style={styles.nearbySection}>
-          <View style={styles.nearbySectionHeader}>
-            <Ionicons name="radio-outline" size={14} color={Colors.light.primary} />
-            <Text style={styles.nearbySectionTitle}>附近 100 米的声音随记</Text>
-          </View>
-          {nearbyRecs.map((rec) => {
-            const mins = Math.floor(rec.durationSeconds / 60).toString().padStart(2, "0");
-            const secs = (rec.durationSeconds % 60).toString().padStart(2, "0");
-            const dateStr = new Date(rec.publishedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
-            return (
-              <View key={rec.id} style={styles.nearbyCard}>
-                <View style={styles.nearbyCardLeft}>
-                  <View style={styles.nearbyPlayBtn}>
-                    <Ionicons name="play" size={12} color="#fff" />
-                  </View>
-                  <View>
-                    <Text style={styles.nearbyCardName} numberOfLines={1}>{rec.locationName}</Text>
-                    <Text style={styles.nearbyCardMeta}>{dateStr} · {mins}:{secs}</Text>
-                  </View>
-                </View>
-                <View style={styles.nearbyCardRight}>
-                  <Ionicons name="location" size={12} color={Colors.light.primary} />
-                  <Text style={styles.nearbyCardDist}>100 米内</Text>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      )}
+      {/* ── 附近用户发布的声音随记（全卡片样式） ─────────── */}
+      {nearbyRecs.map((rec) => (
+        <NearbyPostcard key={rec.id} rec={rec} />
+      ))}
 
       {SOUND_POSTCARDS.map((p) => (
         <SoundPostcard

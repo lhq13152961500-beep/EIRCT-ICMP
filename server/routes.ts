@@ -6,7 +6,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // POST /api/recordings — publish a sound recording with GPS location
   app.post("/api/recordings", async (req, res) => {
     try {
-      const { title, locationName, lat, lng, durationSeconds } = req.body as InsertRecording;
+      const { title, locationName, lat, lng, durationSeconds, author, quote, tags } = req.body as InsertRecording;
       if (typeof lat !== "number" || typeof lng !== "number") {
         return res.status(400).json({ error: "lat and lng are required numbers" });
       }
@@ -16,6 +16,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lat,
         lng,
         durationSeconds: durationSeconds ?? 0,
+        author: author || "附近的旅人",
+        quote: quote ?? null,
+        tags: Array.isArray(tags) ? tags : ["#声音随记"],
       });
       return res.json(rec);
     } catch (err) {
@@ -24,12 +27,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // GET /api/recordings/nearby?lat=X&lng=Y&radius=50 — fetch recordings near a location
+  // GET /api/recordings/nearby?lat=X&lng=Y&radius=100 — fetch recordings near a location
   app.get("/api/recordings/nearby", async (req, res) => {
     try {
       const lat = parseFloat(req.query.lat as string);
       const lng = parseFloat(req.query.lng as string);
-      const radius = parseFloat(req.query.radius as string) || 50;
+      const radius = parseFloat(req.query.radius as string) || 100;
       if (isNaN(lat) || isNaN(lng)) {
         return res.status(400).json({ error: "lat and lng are required" });
       }
