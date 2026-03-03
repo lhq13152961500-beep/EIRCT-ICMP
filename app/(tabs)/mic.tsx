@@ -677,8 +677,9 @@ export default function MicScreen() {
   const confirmMapLocation = useCallback(async (lat: number, lng: number) => {
     const name = await reverseGeocode(lat, lng);
     setLocationStatus({ state: "located", lat, lng, locationName: name });
+    setDeviceLocation({ lat, lng });
     setShowMapPicker(false);
-  }, []);
+  }, [setDeviceLocation]);
 
   const gpsReady = locationStatus.state === "located";
 
