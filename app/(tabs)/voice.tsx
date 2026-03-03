@@ -828,11 +828,11 @@ function MyDiaryTab() {
     if (newIds.length === 0) return;
     haptic(Haptics.ImpactFeedbackStyle.Light);
     const ids = [...newIds];
-    acknowledgeNew();
     setHighlightedIds(ids);
     if (highlightTimer.current) clearTimeout(highlightTimer.current);
     highlightTimer.current = setTimeout(() => {
       setHighlightedIds([]);
+      acknowledgeNew();
       highlightTimer.current = null;
     }, 2000);
   };
@@ -856,19 +856,11 @@ function MyDiaryTab() {
         {/* My published recordings from mic tab */}
         {myRecordings.length > 0 && (
           <View style={styles.myPublishedSection}>
-            <View style={styles.myPublishedSectionHeader}>
-              <View style={styles.myPublishedDot} />
-              <Text style={styles.myPublishedSectionTitle}>我的声音随记</Text>
-              {hasNew ? (
-                <Pressable onPress={handleNewDotPress} style={styles.myPublishedNewCountDot} hitSlop={10}>
-                  <Text style={styles.myPublishedNewCountText}>{newIds.length}</Text>
-                </Pressable>
-              ) : (
-                <View style={styles.myPublishedCountBadge}>
-                  <Text style={styles.myPublishedCountText}>{myRecordings.length}</Text>
-                </View>
-              )}
-            </View>
+            {hasNew && (
+              <Pressable onPress={handleNewDotPress} style={styles.myPublishedNewCountDot} hitSlop={12}>
+                <Text style={styles.myPublishedNewCountText}>{newIds.length}</Text>
+              </Pressable>
+            )}
             <View>
               {myRecordings.map((rec) => (
                 <MyPublishedCard
@@ -2152,9 +2144,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.primary,
     borderRadius: 9,
     paddingHorizontal: 7,
-    paddingVertical: 1,
+    paddingVertical: 2,
     borderWidth: 2,
     borderColor: Colors.light.primary + "55",
+    alignSelf: "flex-start",
+    marginBottom: 8,
   },
   myPublishedNewCountText: { fontSize: 11, color: "#fff", fontWeight: "700" },
   myPublishedCardHighlightWrapper: {
