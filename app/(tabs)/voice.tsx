@@ -857,19 +857,16 @@ function MyDiaryTab() {
         {myRecordings.length > 0 && (
           <View style={styles.myPublishedSection}>
             <View style={styles.myPublishedSectionHeader}>
-              {hasNew ? (
-                <Pressable onPress={handleNewDotPress} style={styles.myPublishedNewDot} hitSlop={10} />
-              ) : (
-                <View style={styles.myPublishedDot} />
-              )}
+              <View style={styles.myPublishedDot} />
               <Text style={styles.myPublishedSectionTitle}>我的声音随记</Text>
-              <View style={styles.myPublishedCountBadge}>
-                <Text style={styles.myPublishedCountText}>{myRecordings.length}</Text>
-              </View>
-              {hasNew && (
-                <Pressable onPress={handleNewDotPress} style={styles.myPublishedNewBadge}>
-                  <Text style={styles.myPublishedNewBadgeText}>新</Text>
+              {hasNew ? (
+                <Pressable onPress={handleNewDotPress} style={styles.myPublishedNewCountDot} hitSlop={10}>
+                  <Text style={styles.myPublishedNewCountText}>{newIds.length}</Text>
                 </Pressable>
+              ) : (
+                <View style={styles.myPublishedCountBadge}>
+                  <Text style={styles.myPublishedCountText}>{myRecordings.length}</Text>
+                </View>
               )}
             </View>
             <View>
@@ -2151,16 +2148,15 @@ const styles = StyleSheet.create({
   myPublishedDot: {
     width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.light.primary,
   },
-  myPublishedNewDot: {
-    width: 11, height: 11, borderRadius: 6,
+  myPublishedNewCountDot: {
     backgroundColor: Colors.light.primary,
-    borderWidth: 2, borderColor: Colors.light.primary + "50",
+    borderRadius: 9,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    borderWidth: 2,
+    borderColor: Colors.light.primary + "55",
   },
-  myPublishedNewBadge: {
-    backgroundColor: "#FF4D6A", borderRadius: 8,
-    paddingHorizontal: 6, paddingVertical: 1, marginLeft: 2,
-  },
-  myPublishedNewBadgeText: { fontSize: 10, color: "#fff", fontWeight: "700" },
+  myPublishedNewCountText: { fontSize: 11, color: "#fff", fontWeight: "700" },
   myPublishedCardHighlightWrapper: {
     borderRadius: 18,
     borderWidth: 2,
