@@ -758,6 +758,13 @@ function MyPublishedCard({
   comments?: RecordingComment[];
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [likedCommentIds, setLikedCommentIds] = useState<string[]>([]);
+  const toggleCommentLike = (id: string) => {
+    setLikedCommentIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+    haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
   const d = new Date(rec.publishedAt);
   const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   const mins = Math.floor(rec.durationSeconds / 60).toString().padStart(2, "0");
@@ -826,18 +833,36 @@ function MyPublishedCard({
             </Text>
           ) : (
             (comments ?? []).map((c) => (
-              <View key={c.id} style={styles.uniComment}>
-                <View style={styles.uniCommentPressable}>
+              <View key={c.id} style={styles.replyItem}>
+                <View style={[styles.replyLeft, { flexDirection: "row", alignItems: "flex-start", gap: 8 }]}>
                   <View style={styles.uniCommentAvatar}>
                     <Ionicons name="person" size={12} color="#fff" />
                   </View>
-                  <View style={styles.uniCommentBody}>
+                  <View style={{ flex: 1, gap: 2 }}>
                     <View style={styles.uniCommentHeader}>
                       <Text style={styles.uniCommentName}>{c.username}</Text>
                       <Text style={styles.uniCommentTime}>{c.time}</Text>
                     </View>
                     <Text style={styles.uniCommentText}>{c.text}</Text>
                   </View>
+                </View>
+                <View style={styles.replyBtnRow}>
+                  <Pressable
+                    style={styles.replyCommentBtn}
+                    onPress={() => haptic()}
+                  >
+                    <Ionicons name="chatbubble-ellipses-outline" size={14} color={Colors.light.primary} />
+                  </Pressable>
+                  <Pressable
+                    style={styles.replyLikeBtn}
+                    onPress={() => toggleCommentLike(c.id)}
+                  >
+                    <Ionicons
+                      name={likedCommentIds.includes(c.id) ? "heart" : "heart-outline"}
+                      size={14}
+                      color={likedCommentIds.includes(c.id) ? "#FF4D6A" : Colors.light.textSecondary}
+                    />
+                  </Pressable>
                 </View>
               </View>
             ))
