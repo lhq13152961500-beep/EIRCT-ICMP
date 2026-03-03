@@ -745,7 +745,17 @@ function DiaryGroup({
   );
 }
 
-function MyPublishedCard({ rec, onViewImage, isHighlighted }: { rec: PublishedRecording; onViewImage: (uri: string) => void; isHighlighted?: boolean }) {
+function MyPublishedCard({
+  rec, onViewImage, isHighlighted, highlightHeart, highlightComment, likeCount, commentCount,
+}: {
+  rec: PublishedRecording;
+  onViewImage: (uri: string) => void;
+  isHighlighted?: boolean;
+  highlightHeart?: boolean;
+  highlightComment?: boolean;
+  likeCount?: number;
+  commentCount?: number;
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
   const d = new Date(rec.publishedAt);
   const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -785,19 +795,25 @@ function MyPublishedCard({ rec, onViewImage, isHighlighted }: { rec: PublishedRe
       {/* Stats row — identical to DiaryGroup */}
       <View style={styles.diaryStatsRow}>
         <Pressable
-          style={[styles.diaryStatItem, styles.diaryStatBtn, isExpanded && styles.diaryStatBtnActive]}
+          style={[
+            styles.diaryStatItem, styles.diaryStatBtn,
+            isExpanded && styles.diaryStatBtnActive,
+            highlightComment && styles.statHighlightGreen,
+          ]}
           onPress={() => { setIsExpanded((v) => !v); haptic(); }}
         >
           <Image
             source={require("@/assets/images/audio-comment-icon.png")}
             style={{ width: 26, height: 26 }}
-            tintColor={isExpanded ? Colors.light.primary : "#555"}
+            tintColor={isExpanded || highlightComment ? Colors.light.primary : "#555"}
           />
-          <Text style={[styles.diaryStatCount, { color: isExpanded ? Colors.light.primary : "#888" }]}>0</Text>
+          <Text style={[styles.diaryStatCount, { color: isExpanded || highlightComment ? Colors.light.primary : "#888" }]}>
+            {commentCount ?? 0}
+          </Text>
         </Pressable>
-        <View style={styles.diaryStatItem}>
+        <View style={[styles.diaryStatItem, highlightHeart && styles.statHighlightHeart]}>
           <Ionicons name="heart" size={16} color="#FF4D6A" />
-          <Text style={[styles.diaryStatCount, { color: "#FF4D6A" }]}>0</Text>
+          <Text style={[styles.diaryStatCount, { color: "#FF4D6A" }]}>{likeCount ?? 0}</Text>
         </View>
       </View>
 
@@ -814,31 +830,40 @@ function MyPublishedCard({ rec, onViewImage, isHighlighted }: { rec: PublishedRe
 }
 
 function MyDiaryTab() {
+  "use no memo";
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
   const [viewerImage, setViewerImage] = useState<string | null>(null);
   const [highlightedIds, setHighlightedIds] = useState<string[]>([]);
+  const [highlightedHearts, setHighlightedHearts] = useState<string[]>([]);
+  const [highlightedComments, setHighlightedComments] = useState<string[]>([]);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { myRecordings, newIds, acknowledgeNew } = useRecordings();
+  const { myRecordings, newIds, acknowledgeNew, notifications, acknowledgeNotifications, likeCounts, commentCounts } = useRecordings();
 
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const handleNewDotPress = () => {
-    if (newIds.length === 0) return;
+    const total = newIds.length + notifications.length;
+    if (total === 0) return;
     haptic(Haptics.ImpactFeedbackStyle.Light);
-    const ids = [...newIds];
-    setHighlightedIds(ids);
+    setHighlightedIds([...newIds]);
+    setHighlightedHearts(notifications.filter((n) => n.type === "like").map((n) => n.recordingId));
+    setHighlightedComments(notifications.filter((n) => n.type === "comment").map((n) => n.recordingId));
     if (highlightTimer.current) clearTimeout(highlightTimer.current);
     highlightTimer.current = setTimeout(() => {
       setHighlightedIds([]);
+      setHighlightedHearts([]);
+      setHighlightedComments([]);
       acknowledgeNew();
+      acknowledgeNotifications();
       highlightTimer.current = null;
     }, 2000);
   };
 
   const totalCount = MY_DIARY_GROUPS.length + myRecordings.length;
-  const hasNew = newIds.length > 0;
+  const pendingCount = newIds.length + notifications.length;
+  const hasNew = pendingCount > 0;
 
   return (
     <View style={{ flex: 1 }}>
@@ -858,7 +883,7 @@ function MyDiaryTab() {
           <View style={styles.myPublishedSection}>
             {hasNew && (
               <Pressable onPress={handleNewDotPress} style={styles.myPublishedNewCountDot} hitSlop={12}>
-                <Text style={styles.myPublishedNewCountText}>{newIds.length}</Text>
+                <Text style={styles.myPublishedNewCountText}>{pendingCount}</Text>
               </Pressable>
             )}
             <View>
@@ -868,6 +893,10 @@ function MyDiaryTab() {
                   rec={rec}
                   onViewImage={setViewerImage}
                   isHighlighted={highlightedIds.includes(rec.id)}
+                  highlightHeart={highlightedHearts.includes(rec.id)}
+                  highlightComment={highlightedComments.includes(rec.id)}
+                  likeCount={likeCounts[rec.id] ?? 0}
+                  commentCount={commentCounts[rec.id] ?? 0}
                 />
               ))}
             </View>
@@ -2156,6 +2185,20 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.light.primary,
     marginBottom: 14,
+  },
+  statHighlightGreen: {
+    borderColor: Colors.light.primary,
+    borderWidth: 1.5,
+    borderRadius: 16,
+    backgroundColor: Colors.light.greenLight,
+  },
+  statHighlightHeart: {
+    borderColor: "#FF4D6A",
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    backgroundColor: "#FFF0F3",
   },
   myPublishedSectionTitle: {
     fontSize: 13, fontWeight: "700", color: Colors.light.text,
