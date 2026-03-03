@@ -761,7 +761,16 @@ function MyPublishedCard({
   const [likedCommentIds, setLikedCommentIds] = useState<string[]>([]);
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
   const [replyTextByComment, setReplyTextByComment] = useState<Record<string, string>>({});
+  const [replyModeByComment, setReplyModeByComment] = useState<Record<string, "text" | "mixed" | "voice">>({});
   const [subRepliesByComment, setSubRepliesByComment] = useState<Record<string, SubReply[]>>({});
+  const [isRecording, setIsRecording] = useState(false);
+  const [mixedVoiceDurByComment, setMixedVoiceDurByComment] = useState<Record<string, string | null>>({});
+  const [mixedVoiceUriByComment, setMixedVoiceUriByComment] = useState<Record<string, string | null>>({});
+
+  const nowStr = () => {
+    const now = new Date();
+    return `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  };
 
   const toggleCommentLike = (id: string) => {
     setLikedCommentIds((prev) =>
@@ -771,26 +780,90 @@ function MyPublishedCard({
   };
 
   const toggleCommentReply = (commentId: string) => {
-    setReplyingToCommentId((prev) => (prev === commentId ? null : commentId));
+    if (replyingToCommentId === commentId) {
+      setReplyingToCommentId(null);
+      setReplyTextByComment((prev) => ({ ...prev, [commentId]: "" }));
+      setReplyModeByComment((prev) => ({ ...prev, [commentId]: "text" }));
+      setMixedVoiceDurByComment((prev) => ({ ...prev, [commentId]: null }));
+      setMixedVoiceUriByComment((prev) => ({ ...prev, [commentId]: null }));
+    } else {
+      setReplyingToCommentId(commentId);
+      setReplyTextByComment((prev) => ({ ...prev, [commentId]: "" }));
+      setReplyModeByComment((prev) => ({ ...prev, [commentId]: "text" }));
+      setMixedVoiceDurByComment((prev) => ({ ...prev, [commentId]: null }));
+      setMixedVoiceUriByComment((prev) => ({ ...prev, [commentId]: null }));
+    }
     haptic(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const handleRecordStart = async (commentId: string) => {
+    const ok = await startRecording();
+    if (ok) setIsRecording(true);
+  };
+
+  const handleMixedRecordEnd = async (commentId: string) => {
+    const { uri, duration, recorded } = await stopRecording();
+    setIsRecording(false);
+    if (recorded) {
+      setMixedVoiceDurByComment((prev) => ({ ...prev, [commentId]: duration }));
+      setMixedVoiceUriByComment((prev) => ({ ...prev, [commentId]: uri }));
+    }
+  };
+
+  const handleVoiceRecordEnd = async (comment: RecordingComment) => {
+    const { uri, duration, recorded } = await stopRecording();
+    setIsRecording(false);
+    if (!recorded) return;
+    const capturedNow = nowStr();
+    const capturedUri = uri;
+    Alert.alert("录制完成", `时长 ${duration}，是否发送？`, [
+      { text: "取消", style: "cancel" },
+      {
+        text: "发送",
+        onPress: () => {
+          const newReply: SubReply = {
+            id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+            username: "我",
+            time: capturedNow,
+            text: `🎤 语音 ${duration}`,
+            replyTo: comment.username,
+            uri: capturedUri,
+          };
+          setSubRepliesByComment((prev) => ({
+            ...prev,
+            [comment.id]: [...(prev[comment.id] ?? []), newReply],
+          }));
+          setReplyingToCommentId(null);
+          haptic(Haptics.ImpactFeedbackStyle.Medium);
+        },
+      },
+    ]);
   };
 
   const submitCommentReply = (comment: RecordingComment) => {
     const text = (replyTextByComment[comment.id] ?? "").trim();
-    if (!text) return;
-    const now = new Date();
+    const mixedDur = mixedVoiceDurByComment[comment.id];
+    const mixedUri = mixedVoiceUriByComment[comment.id];
+    if (!text && !mixedDur) return;
+    const voicePart = mixedDur ? `🎤 语音 ${mixedDur}` : null;
+    const combinedText = voicePart
+      ? (text ? `${text}\n${voicePart}` : voicePart)
+      : text;
     const newReply: SubReply = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
       username: "我",
-      time: `${now.getMonth() + 1}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`,
-      text,
+      time: nowStr(),
+      text: combinedText,
       replyTo: comment.username,
+      uri: mixedUri,
     };
     setSubRepliesByComment((prev) => ({
       ...prev,
       [comment.id]: [...(prev[comment.id] ?? []), newReply],
     }));
     setReplyTextByComment((prev) => ({ ...prev, [comment.id]: "" }));
+    setMixedVoiceDurByComment((prev) => ({ ...prev, [comment.id]: null }));
+    setMixedVoiceUriByComment((prev) => ({ ...prev, [comment.id]: null }));
     setReplyingToCommentId(null);
     haptic(Haptics.ImpactFeedbackStyle.Medium);
   };
@@ -866,6 +939,7 @@ function MyPublishedCard({
               const isLiked = likedCommentIds.includes(c.id);
               const subs = subRepliesByComment[c.id] ?? [];
               const replyText = replyTextByComment[c.id] ?? "";
+              const replyMode = replyModeByComment[c.id] ?? "text";
               return (
                 <View key={c.id}>
                   <View style={styles.replyItem}>
@@ -920,28 +994,85 @@ function MyPublishedCard({
 
                   {isReplying && (
                     <View style={[styles.commentReplyCard, { marginHorizontal: 14 }]}>
-                      <View style={styles.commentReplyInputArea}>
-                        <TextInput
-                          style={styles.commentReplyTextInput}
-                          placeholder={`回复 @${c.username}...`}
-                          placeholderTextColor={Colors.light.textSecondary}
-                          value={replyText}
-                          onChangeText={(t) =>
-                            setReplyTextByComment((prev) => ({ ...prev, [c.id]: t }))
-                          }
-                          autoFocus
-                          multiline
-                        />
-                        <View style={styles.commentReplyActions}>
-                          <Pressable
-                            style={[styles.commentReplySendBtn, !replyText.trim() && { opacity: 0.38 }]}
-                            onPress={() => submitCommentReply(c)}
-                            disabled={!replyText.trim()}
-                          >
-                            <Ionicons name="arrow-up" size={15} color="#fff" />
-                          </Pressable>
-                        </View>
+                      <View style={styles.commentReplySegment}>
+                        <Pressable
+                          style={[styles.commentReplySegBtn, replyMode === "text" && styles.commentReplySegBtnActive]}
+                          onPress={() => { setReplyModeByComment((p) => ({ ...p, [c.id]: "text" })); haptic(); }}
+                        >
+                          <Ionicons name="chatbubble-outline" size={16} color={replyMode === "text" ? Colors.light.primary : Colors.light.textSecondary} />
+                        </Pressable>
+                        <Pressable
+                          style={[styles.commentReplySegBtn, replyMode === "mixed" && styles.commentReplySegBtnActive]}
+                          onPress={() => { setReplyModeByComment((p) => ({ ...p, [c.id]: "mixed" })); haptic(); }}
+                        >
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                            <Ionicons name="chatbubble-outline" size={12} color={replyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary} />
+                            <Text style={{ fontSize: 9, color: replyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary, fontWeight: "700" }}>+</Text>
+                            <Ionicons name="mic-outline" size={12} color={replyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary} />
+                          </View>
+                        </Pressable>
+                        <Pressable
+                          style={[styles.commentReplySegBtn, replyMode === "voice" && styles.commentReplySegBtnActive]}
+                          onPress={() => { setReplyModeByComment((p) => ({ ...p, [c.id]: "voice" })); haptic(); }}
+                        >
+                          <Ionicons name="mic-outline" size={16} color={replyMode === "voice" ? Colors.light.primary : Colors.light.textSecondary} />
+                        </Pressable>
                       </View>
+
+                      {replyMode === "voice" ? (
+                        <Pressable
+                          style={[styles.commentReplyMicArea, isRecording && styles.commentReplyMicAreaActive]}
+                          onPressIn={() => handleRecordStart(c.id)}
+                          onPressOut={() => handleVoiceRecordEnd(c)}
+                        >
+                          <View style={[styles.commentReplyMicRing, isRecording && styles.commentReplyMicRingActive]}>
+                            <Ionicons name="mic" size={22} color={isRecording ? "#fff" : Colors.light.primary} />
+                          </View>
+                          <Text style={[styles.commentReplyMicLabel, isRecording && { color: "#fff" }]}>
+                            {isRecording ? "录音中 · 松开发送" : "按住开始录音"}
+                          </Text>
+                        </Pressable>
+                      ) : (
+                        <View style={styles.commentReplyInputArea}>
+                          <TextInput
+                            style={styles.commentReplyTextInput}
+                            placeholder={`回复 @${c.username}...`}
+                            placeholderTextColor={Colors.light.textSecondary}
+                            value={replyText}
+                            onChangeText={(t) => setReplyTextByComment((prev) => ({ ...prev, [c.id]: t }))}
+                            autoFocus={replyMode === "text"}
+                            multiline
+                          />
+                          <View style={styles.commentReplyActions}>
+                            {replyMode === "mixed" && (
+                              mixedVoiceDurByComment[c.id] ? (
+                                <View style={styles.mixedVoiceChip}>
+                                  <Ionicons name="mic" size={11} color="#fff" />
+                                  <Text style={styles.mixedVoiceChipText}>{mixedVoiceDurByComment[c.id]}</Text>
+                                  <Pressable onPress={() => setMixedVoiceDurByComment((p) => ({ ...p, [c.id]: null }))} hitSlop={6}>
+                                    <Ionicons name="close" size={11} color="#fff" />
+                                  </Pressable>
+                                </View>
+                              ) : (
+                                <Pressable
+                                  style={[styles.commentReplyMicSmall, isRecording && styles.commentReplyMicSmallActive]}
+                                  onPressIn={() => handleRecordStart(c.id)}
+                                  onPressOut={() => handleMixedRecordEnd(c.id)}
+                                >
+                                  <Ionicons name="mic" size={14} color={isRecording ? "#fff" : Colors.light.primary} />
+                                </Pressable>
+                              )
+                            )}
+                            <Pressable
+                              style={[styles.commentReplySendBtn, (!replyText.trim() && !mixedVoiceDurByComment[c.id]) && { opacity: 0.38 }]}
+                              onPress={() => submitCommentReply(c)}
+                              disabled={!replyText.trim() && !mixedVoiceDurByComment[c.id]}
+                            >
+                              <Ionicons name="arrow-up" size={15} color="#fff" />
+                            </Pressable>
+                          </View>
+                        </View>
+                      )}
                     </View>
                   )}
                 </View>
