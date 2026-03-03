@@ -1715,7 +1715,7 @@ function DiscoverOthersTab() {
       <View style={styles.nearbySection}>
         <View style={styles.nearbySectionHeader}>
           <Ionicons name="radio-outline" size={14} color={Colors.light.primary} />
-          <Text style={styles.nearbySectionTitle}>附近 50 米的声音随记</Text>
+          <Text style={styles.nearbySectionTitle}>附近 100 米的声音随记</Text>
         </View>
         {nearbyLoading ? (
           <View style={styles.nearbyEmpty}>
@@ -1747,7 +1747,7 @@ function DiscoverOthersTab() {
                 </View>
                 <View style={styles.nearbyCardRight}>
                   <Ionicons name="location" size={12} color={Colors.light.primary} />
-                  <Text style={styles.nearbyCardDist}>50 米内</Text>
+                  <Text style={styles.nearbyCardDist}>100 米内</Text>
                 </View>
               </View>
             );

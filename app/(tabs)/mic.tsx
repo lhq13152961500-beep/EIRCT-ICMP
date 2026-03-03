@@ -717,7 +717,7 @@ export default function MicScreen() {
           <Text style={styles.locationName}>
             {resolving ? "正在解析地址…" : locationStatus.locationName}
           </Text>
-          <Text style={styles.locationDistText}>发布后 50 米内的旅人可听见</Text>
+          <Text style={styles.locationDistText}>发布后 100 米内的旅人可听见</Text>
         </View>
       );
     }
