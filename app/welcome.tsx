@@ -22,44 +22,30 @@ const haptic = () => {
 };
 
 function SpringButton({
+  wrapperStyle,
   style,
   textStyle,
   label,
   onPress,
 }: {
+  wrapperStyle?: object;
   style: object | object[];
   textStyle: object;
   label: string;
   onPress: () => void;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
-
   const nativeDriver = Platform.OS !== "web";
 
   const onPressIn = () => {
-    Animated.spring(scale, {
-      toValue: 0.94,
-      useNativeDriver: nativeDriver,
-      speed: 60,
-      bounciness: 4,
-    }).start();
+    Animated.spring(scale, { toValue: 0.94, useNativeDriver: nativeDriver, speed: 60, bounciness: 4 }).start();
   };
-
   const onPressOut = () => {
-    Animated.spring(scale, {
-      toValue: 1,
-      useNativeDriver: nativeDriver,
-      speed: 20,
-      bounciness: 10,
-    }).start();
+    Animated.spring(scale, { toValue: 1, useNativeDriver: nativeDriver, speed: 20, bounciness: 10 }).start();
   };
 
   return (
-    <Pressable
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
-      onPress={onPress}
-    >
+    <Pressable style={wrapperStyle} onPressIn={onPressIn} onPressOut={onPressOut} onPress={onPress}>
       <Animated.View style={[style, { transform: [{ scale }] }]}>
         <Text style={textStyle}>{label}</Text>
       </Animated.View>
@@ -110,12 +96,14 @@ export default function WelcomeScreen() {
           {/* Secondary row: register + guest */}
           <View style={styles.secondaryRow}>
             <SpringButton
+              wrapperStyle={{ flex: 1 }}
               style={styles.secondaryBtn}
               textStyle={styles.secondaryBtnText}
               label="注册账号"
               onPress={() => { haptic(); router.push("/register"); }}
             />
             <SpringButton
+              wrapperStyle={{ flex: 1 }}
               style={styles.secondaryBtn}
               textStyle={styles.secondaryBtnText}
               label="游客访问"
@@ -188,7 +176,7 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   secondaryBtn: {
-    flex: 1,
+    width: "100%",
     backgroundColor: "rgba(255,255,255,0.18)",
     borderRadius: 50,
     paddingVertical: 14,
