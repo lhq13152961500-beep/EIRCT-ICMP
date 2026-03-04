@@ -6,12 +6,14 @@ import {
   StyleSheet,
   Pressable,
   Platform,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
+import { useAuth } from "@/contexts/AuthContext";
 
 const TAB_BAR_HEIGHT = 80;
 
@@ -45,8 +47,21 @@ function MenuItem({
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const { logout } = useAuth();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+
+  const handleLogout = () => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert("退出登录", "确定要退出当前账号吗？", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "退出",
+        style: "destructive",
+        onPress: () => logout(),
+      },
+    ]);
+  };
 
   return (
     <View style={styles.container}>
@@ -113,6 +128,14 @@ export default function ProfileScreen() {
             <MenuItem icon="information-circle-outline" label="关于逛游指南" color={Colors.light.primary} />
             <MenuItem icon="star-outline" label="为我们评分" color="#FFB800" />
           </View>
+
+          <Pressable
+            style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.75 }]}
+            onPress={handleLogout}
+          >
+            <Ionicons name="log-out-outline" size={18} color="#E53935" />
+            <Text style={styles.logoutText}>退出登录</Text>
+          </Pressable>
         </View>
       </ScrollView>
     </View>
@@ -245,5 +268,24 @@ const styles = StyleSheet.create({
   menuValue: {
     fontSize: 13,
     color: Colors.light.textSecondary,
+  },
+  logoutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#fff",
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 16,
+    paddingVertical: 15,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#FFCDD2",
+  },
+  logoutText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#E53935",
   },
 });
