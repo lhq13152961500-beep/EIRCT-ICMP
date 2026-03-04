@@ -356,54 +356,52 @@ export default function MicScreen() {
           return;
         }
 
-        // 1) Last known position — use any cached fix (no accuracy filter)
-        try {
-          const last = await withTimeout(
-            Location.getLastKnownPositionAsync({ maxAge: 10 * 60 * 1000 }),
-            3000, "lastKnown"
-          );
-          if (last && mounted) {
-            console.log("[loc] got lastKnown ±", last.coords.accuracy?.toFixed(0), "m");
-            update(last.coords);
+        // Start the continuous watch immediately — no timeout wrapper so it
+        // is never silently killed. Fires within 1-3s on real devices with
+        // WiFi/network available (Balanced accuracy = no satellite needed).
+        locationSubRef.current?.remove();
+        Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 5000,
+            distanceInterval: 10,
+            mayShowUserSettingsDialog: true,
+          },
+          (l) => {
+            console.log("[loc] watch fired ±", l.coords.accuracy?.toFixed(0), "m");
+            if (mounted) update(l.coords);
           }
-        } catch (e) { console.warn("[loc] lastKnown failed:", e); }
+        ).then((sub) => {
+          if (mounted) {
+            locationSubRef.current = sub;
+            setWatchActive(true);
+            console.log("[loc] watch subscribed");
+          } else {
+            sub.remove();
+          }
+        }).catch((e) => console.warn("[loc] watch failed:", e));
 
-        // 2) Quick Balanced fix — uses WiFi/network, gets a result in 1-2s
-        if (mounted && !gotFix) {
+        // In parallel: try a fast one-shot fix. If watch fires first, update()
+        // will have set gotFix=true and this result is effectively a no-op.
+        try {
+          const pos = await withTimeout(
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+            10000, "getCurrentBalanced"
+          );
+          if (mounted) {
+            console.log("[loc] one-shot ±", pos.coords.accuracy?.toFixed(0), "m");
+            update(pos.coords);
+          }
+        } catch (e) {
+          console.warn("[loc] one-shot failed:", e);
+          // Try cached last-known as final fallback
           try {
-            const pos = await withTimeout(
-              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-              8000, "getBalanced"
-            );
-            if (mounted) {
-              console.log("[loc] balanced fix ±", pos.coords.accuracy?.toFixed(0), "m");
-              update(pos.coords);
+            const last = await Location.getLastKnownPositionAsync({ maxAge: 30 * 60 * 1000 });
+            if (last && mounted) {
+              console.log("[loc] lastKnown fallback ±", last.coords.accuracy?.toFixed(0), "m");
+              update(last.coords);
             }
-          } catch (e) { console.warn("[loc] balanced fix failed:", e); }
-        }
-
-        // 3) Continuous watch at Balanced accuracy — keeps updating as device moves
-        //    On Android this fires quickly; accuracy improves over time as GPS warms up
-        if (mounted) {
-          try {
-            locationSubRef.current?.remove();
-            const sub = await withTimeout(
-              Location.watchPositionAsync(
-                {
-                  accuracy: Location.Accuracy.Balanced,
-                  timeInterval: 5000,
-                  distanceInterval: 10,
-                  mayShowUserSettingsDialog: true,
-                },
-                (l) => {
-                  console.log("[loc] watch fired ±", l.coords.accuracy?.toFixed(0), "m");
-                  if (mounted) update(l.coords);
-                }
-              ),
-              6000, "watchSetup"
-            );
-            if (mounted) { locationSubRef.current = sub; setWatchActive(true); console.log("[loc] watch subscribed"); }
-          } catch (e) { console.warn("[loc] watch failed:", e); }
+          } catch (_) {}
         }
 
         if (mounted) setIsLocating(false);
