@@ -135,7 +135,7 @@ type RecordingState = "idle" | "recording" | "paused" | "finished";
 type LocationStatus =
   | { state: "none" }
   | { state: "denied" }
-  | { state: "located"; lat: number; lng: number; locationName: string };
+  | { state: "located"; lat: number; lng: number; locationName: string; accuracy?: number };
 
 // ─── Waveform ────────────────────────────────────────────────────────────────
 
@@ -280,6 +280,9 @@ export default function MicScreen() {
 
   // ── Location Tracking ──────────────────────────────────────────────────────
 
+  // Throttle reverse geocode: only re-geocode when moved >50m or no name yet
+  const lastGeocodedRef = useRef<{ lat: number; lng: number } | null>(null);
+
   useEffect(() => {
     let mounted = true;
     let gotFix = false;
@@ -289,20 +292,38 @@ export default function MicScreen() {
     setIsLocating(true);
     setWatchActive(false);
     setLocationStatus({ state: "none" });
+    lastGeocodedRef.current = null;
 
-    const update = ({ latitude, longitude }: { latitude: number; longitude: number }) => {
+    const update = ({ latitude, longitude, accuracy }: { latitude: number; longitude: number; accuracy?: number | null }) => {
       if (!mounted) return;
       gotFix = true;
       if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
       setIsLocating(false);
       setWatchActive(false);
       setDeviceLocation({ lat: latitude, lng: longitude });
-      setLocationStatus({ state: "located", lat: latitude, lng: longitude, locationName: "正在解析地址…" });
-      reverseGeocode(latitude, longitude).then((name) => {
-        if (mounted) {
-          setLocationStatus({ state: "located", lat: latitude, lng: longitude, locationName: name });
-        }
+
+      // Only reverse-geocode if no name yet, or moved >50m from last geocode
+      const last = lastGeocodedRef.current;
+      const shouldGeocode = !last || (() => {
+        const R = 6371000, toR = (v: number) => (v * Math.PI) / 180;
+        const dLat = toR(latitude - last.lat), dLon = toR(longitude - last.lng);
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(toR(last.lat)) * Math.cos(toR(latitude)) * Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) > 50;
+      })();
+
+      setLocationStatus((prev) => {
+        const prevName = prev.state === "located" ? prev.locationName : "正在解析地址…";
+        return { state: "located", lat: latitude, lng: longitude, locationName: shouldGeocode ? "正在解析地址…" : prevName, accuracy: accuracy ?? undefined };
       });
+
+      if (shouldGeocode) {
+        lastGeocodedRef.current = { lat: latitude, lng: longitude };
+        reverseGeocode(latitude, longitude).then((name) => {
+          if (mounted) {
+            setLocationStatus({ state: "located", lat: latitude, lng: longitude, locationName: name, accuracy: accuracy ?? undefined });
+          }
+        });
+      }
     };
 
     // Stop spinner after 15 seconds if nothing resolves
@@ -313,12 +334,12 @@ export default function MicScreen() {
     if (Platform.OS === "web") {
       if (typeof navigator !== "undefined" && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
-          (pos) => { if (mounted) update(pos.coords); },
+          (pos) => { if (mounted) update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy }); },
           () => { if (mounted) setIsLocating(false); },
-          { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
+          { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
         );
         webWatchId = navigator.geolocation.watchPosition(
-          (pos) => { if (mounted) update(pos.coords); },
+          (pos) => { if (mounted) update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy }); },
           () => {},
           { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
         );
@@ -338,22 +359,30 @@ export default function MicScreen() {
         // 1) Last known position — instant from device cache
         try {
           const last = await withTimeout(
-            Location.getLastKnownPositionAsync({ maxAge: 10 * 60 * 1000, requiredAccuracy: 5000 }),
+            Location.getLastKnownPositionAsync({ maxAge: 5 * 60 * 1000, requiredAccuracy: 200 }),
             3000, "lastKnown"
           );
-          if (last && mounted) { console.log("[loc] got lastKnown"); update(last.coords); }
+          if (last && mounted) {
+            console.log("[loc] got lastKnown ±", last.coords.accuracy?.toFixed(0), "m");
+            update(last.coords);
+          }
         } catch (e) { console.warn("[loc] lastKnown failed:", e); }
 
-        // 2) watchPositionAsync — registers with OS location provider, fires when a fix arrives
+        // 2) High-accuracy continuous watch — fires every 3s OR when moved 5m
         if (mounted) {
           try {
             locationSubRef.current?.remove();
             const sub = await withTimeout(
               Location.watchPositionAsync(
-                { accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: true, distanceInterval: 5 },
+                {
+                  accuracy: Location.Accuracy.High,
+                  timeInterval: 3000,
+                  distanceInterval: 5,
+                  mayShowUserSettingsDialog: true,
+                },
                 (l) => {
-                  console.log("[loc] watch fired", l.coords.latitude, l.coords.longitude);
-                  update(l.coords);
+                  console.log("[loc] watch fired ±", l.coords.accuracy?.toFixed(0), "m");
+                  if (mounted) update(l.coords);
                 }
               ),
               6000, "watchSetup"
@@ -362,26 +391,18 @@ export default function MicScreen() {
           } catch (e) { console.warn("[loc] watch failed:", e); }
         }
 
-        // 3) One-shot getCurrentPositionAsync as extra attempt
+        // 3) One-shot high-accuracy fix as extra attempt
         if (mounted && !gotFix) {
           try {
             const pos = await withTimeout(
-              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: true }),
+              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High, mayShowUserSettingsDialog: true }),
               12000, "getCurrent"
             );
             if (mounted) {
-              console.log("[loc] getCurrent succeeded");
+              console.log("[loc] getCurrent ±", pos.coords.accuracy?.toFixed(0), "m");
               update(pos.coords);
             }
           } catch (e) { console.warn("[loc] getCurrent failed:", e); }
-        }
-
-        // 4) Fallback: GPS unavailable on this device — use a temporary demo location
-        if (mounted && !gotFix) {
-          console.log("[loc] using fallback demo location");
-          const FALLBACK_LAT = 43.8223;
-          const FALLBACK_LNG = 87.5987;
-          update({ latitude: FALLBACK_LAT, longitude: FALLBACK_LNG });
         }
 
         if (mounted) setIsLocating(false);
@@ -709,14 +730,18 @@ export default function MicScreen() {
 
     if (locationStatus.state === "located") {
       const resolving = locationStatus.locationName === "正在解析地址…";
+      const acc = locationStatus.accuracy;
+      const accText = acc != null ? (acc < 10 ? `±${acc.toFixed(0)}m 精准` : acc < 50 ? `±${acc.toFixed(0)}m` : `±${Math.round(acc)}m`) : null;
       return (
         <View style={styles.locationCard}>
           <View style={styles.locationDotRow}>
-            <View style={styles.locationDot} />
-            <Text style={styles.locationLabel}>当前位置</Text>
+            <View style={[styles.locationDot, { backgroundColor: Colors.light.primary }]} />
+            <Text style={styles.locationLabel}>实时位置</Text>
             <View style={styles.locationBadge}>
-              <Ionicons name="location" size={10} color="#fff" />
-              <Text style={styles.locationBadgeText}>GPS 已定位</Text>
+              <Ionicons name="navigate" size={10} color="#fff" />
+              <Text style={styles.locationBadgeText}>
+                {accText ? `GPS · ${accText}` : "GPS 实时"}
+              </Text>
             </View>
           </View>
           <Text style={styles.locationName}>
