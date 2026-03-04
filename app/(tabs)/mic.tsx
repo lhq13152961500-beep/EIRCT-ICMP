@@ -356,10 +356,10 @@ export default function MicScreen() {
           return;
         }
 
-        // 1) Last known position — instant from device cache
+        // 1) Last known position — use any cached fix (no accuracy filter)
         try {
           const last = await withTimeout(
-            Location.getLastKnownPositionAsync({ maxAge: 5 * 60 * 1000, requiredAccuracy: 200 }),
+            Location.getLastKnownPositionAsync({ maxAge: 10 * 60 * 1000 }),
             3000, "lastKnown"
           );
           if (last && mounted) {
@@ -368,16 +368,31 @@ export default function MicScreen() {
           }
         } catch (e) { console.warn("[loc] lastKnown failed:", e); }
 
-        // 2) High-accuracy continuous watch — fires every 3s OR when moved 5m
+        // 2) Quick Balanced fix — uses WiFi/network, gets a result in 1-2s
+        if (mounted && !gotFix) {
+          try {
+            const pos = await withTimeout(
+              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+              8000, "getBalanced"
+            );
+            if (mounted) {
+              console.log("[loc] balanced fix ±", pos.coords.accuracy?.toFixed(0), "m");
+              update(pos.coords);
+            }
+          } catch (e) { console.warn("[loc] balanced fix failed:", e); }
+        }
+
+        // 3) Continuous watch at Balanced accuracy — keeps updating as device moves
+        //    On Android this fires quickly; accuracy improves over time as GPS warms up
         if (mounted) {
           try {
             locationSubRef.current?.remove();
             const sub = await withTimeout(
               Location.watchPositionAsync(
                 {
-                  accuracy: Location.Accuracy.High,
-                  timeInterval: 3000,
-                  distanceInterval: 5,
+                  accuracy: Location.Accuracy.Balanced,
+                  timeInterval: 5000,
+                  distanceInterval: 10,
                   mayShowUserSettingsDialog: true,
                 },
                 (l) => {
@@ -389,20 +404,6 @@ export default function MicScreen() {
             );
             if (mounted) { locationSubRef.current = sub; setWatchActive(true); console.log("[loc] watch subscribed"); }
           } catch (e) { console.warn("[loc] watch failed:", e); }
-        }
-
-        // 3) One-shot high-accuracy fix as extra attempt
-        if (mounted && !gotFix) {
-          try {
-            const pos = await withTimeout(
-              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High, mayShowUserSettingsDialog: true }),
-              12000, "getCurrent"
-            );
-            if (mounted) {
-              console.log("[loc] getCurrent ±", pos.coords.accuracy?.toFixed(0), "m");
-              update(pos.coords);
-            }
-          } catch (e) { console.warn("[loc] getCurrent failed:", e); }
         }
 
         if (mounted) setIsLocating(false);
@@ -778,7 +779,7 @@ export default function MicScreen() {
           {isLocating
             ? "正在联系定位服务…"
             : watchActive
-              ? "GPS 正在搜索卫星，请稍候或走到户外开阔处"
+              ? "正在获取位置，请稍候…"
               : "GPS 信号不可用，可在地图上手动标注你的位置"}
         </Text>
         {!stillTrying && Platform.OS !== "web" && (
