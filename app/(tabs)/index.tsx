@@ -1,4 +1,5 @@
-import React from "react";
+"use no memo";
+import React, { useRef, useState } from "react";
 import {
   View,
   Text,
@@ -8,353 +9,418 @@ import {
   Image,
   Dimensions,
   Platform,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TAB_BAR_HEIGHT = 80;
+const CARD_GAP = 12;
+const CONTENT_PAD = 16;
+const BANNER_HEIGHT = 200;
+const BANNER_WIDTH = SCREEN_WIDTH - CONTENT_PAD * 2;
+
+const BG = "#F5EFE6";
+const CORAL_BG = "#FFE8E2";
+const CORAL_ICON = "#E05A3A";
+const GREEN_BG = "#D6F0E3";
+const BLUE_BG = "#DDE8FF";
+const BLUE_ICON = "#4271DD";
+const ORANGE_BG = "#FFE4CC";
+const ORANGE_ICON = "#E07830";
+
+const BANNERS = [
+  require("@/assets/images/home_banner1.png"),
+  require("@/assets/images/home_banner1.png"),
+  require("@/assets/images/home_banner1.png"),
+];
+
+const MINI_ICONS: { label: string; icon: keyof typeof Ionicons.glyphMap; bg: string; color: string }[] = [
+  { label: "AR实景畅游", icon: "navigate-circle-outline", bg: CORAL_BG, color: CORAL_ICON },
+  { label: "声音邮局",   icon: "mic-outline",             bg: GREEN_BG,  color: Colors.light.primary },
+  { label: "乡思AI",     icon: "partly-sunny-outline",    bg: BLUE_BG,   color: BLUE_ICON },
+  { label: "声音档案",   icon: "albums-outline",          bg: CORAL_BG,  color: CORAL_ICON },
+  { label: "村民伴游",   icon: "people-outline",          bg: CORAL_BG,  color: CORAL_ICON },
+  { label: "乡音趣采",   icon: "flower-outline",          bg: CORAL_BG,  color: CORAL_ICON },
+  { label: "特产礼品",   icon: "gift-outline",            bg: ORANGE_BG, color: ORANGE_ICON },
+];
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
+  const [bannerIndex, setBannerIndex] = useState(0);
+  const bannerRef = useRef<ScrollView>(null);
+
+  const haptic = () => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const onBannerScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / BANNER_WIDTH);
+    setBannerIndex(idx);
+  };
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.root, { backgroundColor: BG }]}>
+      {/* ── Header ── */}
+      <View style={[styles.header, { paddingTop: topPad + 10 }]}>
+        <View style={styles.headerLeft}>
+          <View style={styles.avatarCircle}>
+            <Ionicons name="person" size={20} color="#fff" />
+          </View>
+          <View style={styles.locationBlock}>
+            <Text style={styles.locationLabel}>当前位置</Text>
+            <Text style={styles.locationName}>云栖竹径 · 杭</Text>
+          </View>
+        </View>
+        <View style={styles.headerRight}>
+          <Pressable style={styles.iconBtn} onPress={haptic}>
+            <Ionicons name="search-outline" size={22} color={Colors.light.text} />
+          </Pressable>
+          <Pressable style={styles.iconBtn} onPress={haptic}>
+            <Ionicons name="notifications-outline" size={22} color={Colors.light.text} />
+            <View style={styles.notifDot} />
+          </Pressable>
+        </View>
+      </View>
+
+      {/* ── Scrollable content ── */}
       <ScrollView
-        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
           { paddingBottom: TAB_BAR_HEIGHT + bottomPad + 20 },
         ]}
-        showsVerticalScrollIndicator={false}
       >
-        <LinearGradient
-          colors={[Colors.light.primary, "#5DC88A"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.header, { paddingTop: topPad + 16 }]}
-        >
-          <View style={styles.headerRow}>
-            <View>
-              <Text style={styles.greeting}>早上好</Text>
-              <Text style={styles.headerTitle}>探索乡村之美</Text>
-            </View>
-            <Pressable style={styles.notifBtn}>
-              <Ionicons name="notifications-outline" size={22} color="#fff" />
-            </Pressable>
-          </View>
-
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={16} color={Colors.light.textSecondary} />
-            <Text style={styles.searchPlaceholder}>搜索景点、路线、攻略...</Text>
-          </View>
-        </LinearGradient>
-
-        <View style={styles.content}>
-          <View style={styles.bannerRow}>
-            {[
-              { label: "景点", count: "128+", icon: "image-outline", color: Colors.light.primary },
-              { label: "路线", count: "24条", icon: "map-outline", color: Colors.light.accent },
-              { label: "美食", count: "60+", icon: "restaurant-outline", color: "#E84B8A" },
-              { label: "住宿", count: "35+", icon: "bed-outline", color: Colors.light.lavender },
-            ].map((item) => (
-              <Pressable
-                key={item.label}
-                style={({ pressed }) => [styles.bannerItem, pressed && { opacity: 0.8 }]}
-                onPress={() => Platform.OS !== "web" && Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-              >
-                <View style={[styles.bannerIcon, { backgroundColor: item.color + "18" }]}>
-                  <Ionicons name={item.icon as any} size={22} color={item.color} />
-                </View>
-                <Text style={styles.bannerCount}>{item.count}</Text>
-                <Text style={styles.bannerLabel}>{item.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>热门景点</Text>
-            <Pressable>
-              <Text style={styles.seeAll}>查看全部</Text>
-            </Pressable>
-          </View>
-
+        {/* Banner carousel */}
+        <View style={styles.bannerWrap}>
           <ScrollView
+            ref={bannerRef}
             horizontal
+            pagingEnabled
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.spotScroll}
+            onMomentumScrollEnd={onBannerScroll}
+            scrollEventThrottle={16}
           >
-            {[
-              { name: "西塘古镇", tag: "水乡古镇", rating: "4.9", visits: "12万+" },
-              { name: "乌镇", tag: "历史古镇", rating: "4.8", visits: "9万+" },
-              { name: "南浔古镇", tag: "江南水乡", rating: "4.7", visits: "7万+" },
-            ].map((spot, i) => (
-              <Pressable
-                key={spot.name}
-                style={({ pressed }) => [styles.spotCard, pressed && { opacity: 0.88 }]}
-              >
-                <View style={[styles.spotImage, { backgroundColor: [Colors.light.greenLight, Colors.light.orangeLight, Colors.light.purpleLight][i] }]}>
-                  <Ionicons name="image" size={40} color={[Colors.light.primary, Colors.light.accent, Colors.light.lavender][i]} />
-                </View>
-                <View style={styles.spotInfo}>
-                  <Text style={styles.spotName}>{spot.name}</Text>
-                  <Text style={styles.spotTag}>{spot.tag}</Text>
-                  <View style={styles.spotMeta}>
-                    <View style={styles.ratingRow}>
-                      <Ionicons name="star" size={11} color="#FFB800" />
-                      <Text style={styles.ratingText}>{spot.rating}</Text>
-                    </View>
-                    <Text style={styles.visitsText}>{spot.visits}人游览</Text>
-                  </View>
-                </View>
-              </Pressable>
+            {BANNERS.map((src, i) => (
+              <Image
+                key={i}
+                source={src}
+                style={styles.bannerImage}
+                resizeMode="cover"
+              />
             ))}
           </ScrollView>
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>今日推荐活动</Text>
+          <View style={styles.dotsRow}>
+            {BANNERS.map((_, i) => (
+              <View
+                key={i}
+                style={[styles.dot, i === bannerIndex && styles.dotActive]}
+              />
+            ))}
           </View>
-
-          {[
-            { title: "民间手工艺体验", time: "10:00 - 12:00", slots: "剩余8个名额", color: Colors.light.primary },
-            { title: "古镇夜游摄影", time: "18:30 - 21:00", slots: "剩余3个名额", color: Colors.light.accent },
-          ].map((activity) => (
-            <Pressable
-              key={activity.title}
-              style={({ pressed }) => [styles.activityCard, pressed && { opacity: 0.88 }]}
-            >
-              <View style={[styles.activityColor, { backgroundColor: activity.color }]} />
-              <View style={styles.activityInfo}>
-                <Text style={styles.activityTitle}>{activity.title}</Text>
-                <View style={styles.activityMeta}>
-                  <Ionicons name="time-outline" size={12} color={Colors.light.textSecondary} />
-                  <Text style={styles.activityTime}>{activity.time}</Text>
-                </View>
-              </View>
-              <View style={[styles.slotsBadge, { backgroundColor: activity.color + "18" }]}>
-                <Text style={[styles.slotsText, { color: activity.color }]}>{activity.slots}</Text>
-              </View>
-            </Pressable>
-          ))}
         </View>
+
+        {/* Two large feature cards */}
+        <View style={styles.featureRow}>
+          <Pressable style={[styles.featureCard, { marginRight: CARD_GAP / 2 }]} onPress={haptic}>
+            <View style={[styles.featureIconWrap, { backgroundColor: "#FFD9BC" }]}>
+              <Ionicons name="camera-outline" size={30} color="#E07020" />
+            </View>
+            <Text style={styles.featureTitle}>语伴导游</Text>
+            <Text style={styles.featureSub}>方言导游 旅游不孤单</Text>
+          </Pressable>
+          <Pressable style={[styles.featureCard, { marginLeft: CARD_GAP / 2 }]} onPress={haptic}>
+            <View style={[styles.featureIconWrap, { backgroundColor: "#C5D8FF" }]}>
+              <Ionicons name="map-outline" size={30} color="#3A68D8" />
+            </View>
+            <Text style={styles.featureTitle}>地图导览</Text>
+            <Text style={styles.featureSub}>AI 个性化定制</Text>
+          </Pressable>
+        </View>
+
+        {/* Mini icon grid */}
+        <View style={styles.gridWrap}>
+          <View style={styles.gridRow}>
+            {MINI_ICONS.slice(0, 4).map((item) => (
+              <Pressable key={item.label} style={styles.gridItem} onPress={haptic}>
+                <View style={[styles.gridIconCircle, { backgroundColor: item.bg }]}>
+                  <Ionicons name={item.icon} size={22} color={item.color} />
+                </View>
+                <Text style={styles.gridLabel}>{item.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={[styles.gridRow, styles.gridRowBottom]}>
+            {MINI_ICONS.slice(4).map((item) => (
+              <Pressable key={item.label} style={styles.gridItem} onPress={haptic}>
+                <View style={[styles.gridIconCircle, { backgroundColor: item.bg }]}>
+                  <Ionicons name={item.icon} size={22} color={item.color} />
+                </View>
+                <Text style={styles.gridLabel}>{item.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        {/* "为你推荐" section */}
+        <View style={styles.recHeader}>
+          <Text style={styles.recTitle}>为你推荐</Text>
+          <Pressable onPress={haptic}>
+            <Text style={styles.recRefresh}>换一批</Text>
+          </Pressable>
+        </View>
+
+        {/* Recommendation card */}
+        <Pressable style={styles.recCard} onPress={haptic}>
+          <Image
+            source={require("@/assets/images/home_recommend1.png")}
+            style={styles.recThumb}
+            resizeMode="cover"
+          />
+          <View style={styles.recInfo}>
+            <Text style={styles.recCardTitle}>听见·黄岭村的清</Text>
+            <Text style={styles.recCardSub}>根据你的兴趣：自然、方</Text>
+            <View style={styles.recStatRow}>
+              <Ionicons name="time-outline" size={12} color={Colors.light.textSecondary} />
+              <Text style={styles.recStatText}>2.4k 人听过</Text>
+            </View>
+          </View>
+        </Pressable>
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: "#F8F9FA",
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-  },
-  headerRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 16,
+    paddingHorizontal: CONTENT_PAD,
+    paddingBottom: 14,
+    backgroundColor: "#fff",
   },
-  greeting: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.8)",
-    marginBottom: 2,
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  notifBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.2)",
+  avatarCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: Colors.light.primary,
     alignItems: "center",
     justifyContent: "center",
   },
-  searchBar: {
+  locationBlock: {
+    gap: 1,
+  },
+  locationLabel: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+  },
+  locationName: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: Colors.light.text,
+  },
+  headerRight: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
   },
-  searchPlaceholder: {
-    fontSize: 13,
-    color: Colors.light.textLight,
+  iconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  content: {
-    paddingHorizontal: 16,
+  notifDot: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#FF3B30",
+    borderWidth: 1.5,
+    borderColor: "#fff",
+  },
+  scrollContent: {
     paddingTop: 20,
+    paddingHorizontal: CONTENT_PAD,
+    gap: 16,
   },
-  bannerRow: {
+  bannerWrap: {
+    borderRadius: 18,
+    overflow: "hidden",
+    backgroundColor: "#ddd",
+    height: BANNER_HEIGHT,
+  },
+  bannerImage: {
+    width: BANNER_WIDTH,
+    height: BANNER_HEIGHT,
+  },
+  dotsRow: {
+    position: "absolute",
+    bottom: 12,
+    left: 0,
+    right: 0,
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "center",
+    gap: 6,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.55)",
+  },
+  dotActive: {
     backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 24,
+    width: 18,
+    borderRadius: 3,
+  },
+  featureRow: {
+    flexDirection: "row",
+  },
+  featureCard: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    alignItems: "flex-start",
+    gap: 8,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 2,
   },
-  bannerItem: {
-    alignItems: "center",
-    gap: 4,
-    flex: 1,
-  },
-  bannerIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+  featureIconWrap: {
+    width: 54,
+    height: 54,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 2,
+    marginBottom: 4,
   },
-  bannerCount: {
-    fontSize: 13,
+  featureTitle: {
+    fontSize: 16,
     fontWeight: "700",
     color: Colors.light.text,
   },
-  bannerLabel: {
+  featureSub: {
     fontSize: 11,
     color: Colors.light.textSecondary,
+    lineHeight: 16,
   },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: Colors.light.text,
-  },
-  seeAll: {
-    fontSize: 13,
-    color: Colors.light.primary,
-    fontWeight: "500",
-  },
-  spotScroll: {
-    paddingRight: 16,
-    gap: 12,
-    marginBottom: 24,
-  },
-  spotCard: {
-    width: 160,
+  gridWrap: {
     backgroundColor: "#fff",
-    borderRadius: 16,
-    overflow: "hidden",
+    borderRadius: 18,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    gap: 0,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 2,
   },
-  spotImage: {
-    width: "100%",
-    height: 110,
+  gridRow: {
+    flexDirection: "row",
+  },
+  gridRowBottom: {
+    marginTop: 16,
+  },
+  gridItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 6,
+    maxWidth: "25%",
+  },
+  gridIconCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     alignItems: "center",
     justifyContent: "center",
   },
-  spotInfo: {
-    padding: 12,
-    gap: 3,
-  },
-  spotName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.light.text,
-  },
-  spotTag: {
+  gridLabel: {
     fontSize: 11,
-    color: Colors.light.textSecondary,
+    color: Colors.light.text,
+    textAlign: "center",
+    lineHeight: 14,
   },
-  spotMeta: {
+  recHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginTop: 4,
   },
-  ratingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
+  recTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: Colors.light.text,
   },
-  ratingText: {
-    fontSize: 11,
-    color: Colors.light.textSecondary,
+  recRefresh: {
+    fontSize: 14,
+    color: "#E0522A",
     fontWeight: "500",
   },
-  visitsText: {
-    fontSize: 10,
-    color: Colors.light.textLight,
-  },
-  activityCard: {
+  recCard: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff",
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: "hidden",
-    marginBottom: 10,
+    gap: 0,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 6,
+    shadowRadius: 8,
     elevation: 2,
   },
-  activityColor: {
-    width: 4,
-    alignSelf: "stretch",
+  recThumb: {
+    width: 90,
+    height: 90,
   },
-  activityInfo: {
+  recInfo: {
     flex: 1,
-    padding: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     gap: 4,
   },
-  activityTitle: {
-    fontSize: 14,
-    fontWeight: "600",
+  recCardTitle: {
+    fontSize: 15,
+    fontWeight: "700",
     color: Colors.light.text,
   },
-  activityMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  activityTime: {
+  recCardSub: {
     fontSize: 12,
     color: Colors.light.textSecondary,
   },
-  slotsBadge: {
-    marginRight: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
+  recStatRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4,
   },
-  slotsText: {
-    fontSize: 11,
-    fontWeight: "600",
+  recStatText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
   },
 });
