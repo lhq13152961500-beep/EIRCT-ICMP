@@ -1,5 +1,6 @@
 import { type User, type InsertUser } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { supabase } from "./supabase";
 
 // ─── Haversine (server-side distance check) ───────────────────────────────────
 
@@ -23,7 +24,7 @@ export interface SoundRecording {
   lat: number;
   lng: number;
   durationSeconds: number;
-  publishedAt: string; // ISO
+  publishedAt: string;
   author: string;
   quote: string | null;
   tags: string[];
@@ -43,28 +44,58 @@ export interface IStorage {
   getNearbyRecordings(lat: number, lng: number, radiusMeters: number): Promise<SoundRecording[]>;
 }
 
-// ─── In-Memory Implementation ─────────────────────────────────────────────────
+// ─── Supabase + In-Memory Hybrid Implementation ───────────────────────────────
+// Users → Supabase (persistent)
+// Recordings → In-memory (ephemeral, by design)
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User> = new Map();
+export class HybridStorage implements IStorage {
   private recordings: Map<string, SoundRecording> = new Map();
 
-  async getUser(id: string) { return this.users.get(id); }
-  async getUserByUsername(username: string) {
-    return Array.from(this.users.values()).find((u) => u.username === username);
+  // ── Users via Supabase ──────────────────────────────────────────────────────
+
+  async getUser(id: string): Promise<User | undefined> {
+    const { data, error } = await supabase
+      .from("users")
+      .select("id, username, password")
+      .eq("id", id)
+      .single();
+    if (error || !data) return undefined;
+    return { id: data.id, username: data.username, password: data.password };
   }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const { data, error } = await supabase
+      .from("users")
+      .select("id, username, password")
+      .eq("username", username)
+      .single();
+    if (error || !data) return undefined;
+    return { id: data.id, username: data.username, password: data.password };
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+    const { data, error } = await supabase
+      .from("users")
+      .insert({ id, username: insertUser.username, password: insertUser.password })
+      .select("id, username, password")
+      .single();
+    if (error || !data) throw new Error(error?.message ?? "Failed to create user");
+    return { id: data.id, username: data.username, password: data.password };
   }
+
   async updateUserPassword(username: string, hashedPassword: string): Promise<boolean> {
-    const user = Array.from(this.users.values()).find((u) => u.username === username);
-    if (!user) return false;
-    this.users.set(user.id, { ...user, password: hashedPassword });
+    const { data, error } = await supabase
+      .from("users")
+      .update({ password: hashedPassword })
+      .eq("username", username)
+      .select("id")
+      .single();
+    if (error || !data) return false;
     return true;
   }
+
+  // ── Recordings in-memory ────────────────────────────────────────────────────
 
   async addRecording(r: InsertRecording): Promise<SoundRecording> {
     const id = randomUUID();
@@ -80,4 +111,4 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new HybridStorage();
