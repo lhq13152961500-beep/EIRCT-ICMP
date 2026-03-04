@@ -1,5 +1,5 @@
 "use no memo";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   View,
   Text,
@@ -24,6 +24,17 @@ const haptic = () => {
   if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 };
 
+function generateCaptcha() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+}
+
+function generateSmsCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+const CAPTCHA_COLORS = ["#FFD060", "#7FFFFF", "#FF9090", "#90FF90", "#C0C0FF"];
+
 export default function RegisterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -32,41 +43,69 @@ export default function RegisterScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const [username, setUsername] = useState("");
+  const [phone, setPhone] = useState("");
+  const [captchaInput, setCaptchaInput] = useState("");
+  const [captchaCode, setCaptchaCode] = useState(generateCaptcha);
+  const [smsCode, setSmsCode] = useState("");
+  const [sentSmsCode, setSentSmsCode] = useState<string | null>(null);
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleRegister = async () => {
-    if (!username.trim() || !password.trim() || !confirm.trim()) {
-      setError("请填写所有字段");
+  const refreshCaptcha = () => {
+    haptic();
+    setCaptchaCode(generateCaptcha());
+    setCaptchaInput("");
+  };
+
+  const sendSms = () => {
+    if (countdown > 0) return;
+    if (!phone.trim() || phone.trim().length < 7) {
+      setError("请输入有效的手机号码");
       return;
     }
-    if (username.trim().length < 2) {
-      setError("用户名至少需要2个字符");
-      return;
-    }
-    if (password.length < 6) {
-      setError("密码至少需要6位");
-      return;
-    }
-    if (password !== confirm) {
-      setError("两次密码输入不一致");
+    if (captchaInput.toUpperCase() !== captchaCode) {
+      setError("图片验证码不正确");
+      refreshCaptcha();
       return;
     }
     haptic();
     setError("");
+    const code = generateSmsCode();
+    setSentSmsCode(code);
+    setError(`验证码已发送（测试码：${code}）`);
+    setCountdown(60);
+    timerRef.current = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) { clearInterval(timerRef.current!); return 0; }
+        return c - 1;
+      });
+    }, 1000);
+  };
+
+  const handleRegister = async () => {
+    if (!phone.trim()) { setError("请输入手机号码"); return; }
+    if (captchaInput.toUpperCase() !== captchaCode) { setError("图片验证码不正确"); return; }
+    if (!smsCode.trim()) { setError("请输入手机验证码"); return; }
+    if (smsCode !== sentSmsCode) { setError("手机验证码错误"); return; }
+    if (!password || password.length < 6) { setError("密码至少6位"); return; }
+    haptic();
+    setError("");
     setLoading(true);
     try {
-      await register(username.trim(), password);
+      await register(phone.trim(), password);
     } catch (e: any) {
       setError(e.message || "注册失败，请重试");
     } finally {
       setLoading(false);
     }
   };
+
+  const isHint = error.startsWith("验证码已发送");
 
   return (
     <ImageBackground
@@ -90,38 +129,100 @@ export default function RegisterScreen() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* Close button */}
-            <Pressable style={styles.closeBtn} onPress={() => { haptic(); router.back(); }}>
-              <Ionicons name="close" size={22} color="rgba(255,255,255,0.9)" />
-            </Pressable>
+            {/* Top bar */}
+            <View style={styles.topBar}>
+              <Pressable style={styles.closeBtn} onPress={() => { haptic(); router.back(); }}>
+                <Ionicons name="close" size={22} color="rgba(255,255,255,0.9)" />
+              </Pressable>
+              <Pressable onPress={() => { haptic(); router.replace("/signin"); }}>
+                <Text style={styles.switchText}>已有账号，去登录</Text>
+              </Pressable>
+            </View>
 
-            {/* Title */}
             <Text style={styles.title}>注册账号</Text>
 
-            {/* Fields */}
             <View style={styles.fieldsWrap}>
+              {/* 手机号 */}
               <View style={styles.field}>
                 <TextInput
                   style={styles.input}
-                  placeholder="请输入用户名（2-20个字符）"
+                  placeholder="请输入手机号码"
                   placeholderTextColor="rgba(255,255,255,0.55)"
-                  value={username}
-                  onChangeText={(v) => { setUsername(v); setError(""); }}
-                  autoCapitalize="none"
+                  value={phone}
+                  onChangeText={(v) => { setPhone(v); setError(""); }}
+                  keyboardType="phone-pad"
                   returnKeyType="next"
-                  maxLength={20}
+                  maxLength={11}
                 />
               </View>
 
+              {/* 图片验证码 */}
               <View style={styles.field}>
                 <TextInput
                   style={[styles.input, { flex: 1 }]}
-                  placeholder="请输入密码，至少6位"
+                  placeholder="请输入图片验证码"
+                  placeholderTextColor="rgba(255,255,255,0.55)"
+                  value={captchaInput}
+                  onChangeText={(v) => { setCaptchaInput(v); setError(""); }}
+                  autoCapitalize="characters"
+                  returnKeyType="next"
+                  maxLength={4}
+                />
+                {/* Captcha display box */}
+                <Pressable style={styles.captchaBox} onPress={refreshCaptcha}>
+                  <View style={styles.captchaInner}>
+                    {captchaCode.split("").map((ch, i) => (
+                      <Text
+                        key={i}
+                        style={[
+                          styles.captchaChar,
+                          {
+                            color: CAPTCHA_COLORS[i % CAPTCHA_COLORS.length],
+                            transform: [{ rotate: `${(i % 3 - 1) * 12}deg` }],
+                          },
+                        ]}
+                      >
+                        {ch}
+                      </Text>
+                    ))}
+                  </View>
+                  <Text style={styles.captchaRefresh}>换一张</Text>
+                </Pressable>
+              </View>
+
+              {/* 手机验证码 */}
+              <View style={styles.field}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="请输入手机验证码"
+                  placeholderTextColor="rgba(255,255,255,0.55)"
+                  value={smsCode}
+                  onChangeText={(v) => { setSmsCode(v); setError(""); }}
+                  keyboardType="number-pad"
+                  returnKeyType="next"
+                  maxLength={6}
+                />
+                <Pressable
+                  style={[styles.sendCodeBtn, countdown > 0 && styles.sendCodeBtnDisabled]}
+                  onPress={sendSms}
+                >
+                  <Text style={styles.sendCodeText}>
+                    {countdown > 0 ? `${countdown}s` : "发送验证码"}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* 密码 */}
+              <View style={styles.field}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="请设置密码（至少6位）"
                   placeholderTextColor="rgba(255,255,255,0.55)"
                   value={password}
                   onChangeText={(v) => { setPassword(v); setError(""); }}
                   secureTextEntry={!showPw}
-                  returnKeyType="next"
+                  returnKeyType="done"
+                  onSubmitEditing={handleRegister}
                 />
                 <Pressable onPress={() => setShowPw(!showPw)} style={styles.eyeBtn}>
                   <Ionicons
@@ -131,24 +232,12 @@ export default function RegisterScreen() {
                   />
                 </Pressable>
               </View>
-
-              <View style={styles.field}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="请再次输入密码"
-                  placeholderTextColor="rgba(255,255,255,0.55)"
-                  value={confirm}
-                  onChangeText={(v) => { setConfirm(v); setError(""); }}
-                  secureTextEntry={!showPw}
-                  returnKeyType="done"
-                  onSubmitEditing={handleRegister}
-                />
-              </View>
             </View>
 
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {error ? (
+              <Text style={[styles.errorText, isHint && styles.hintText]}>{error}</Text>
+            ) : null}
 
-            {/* Submit */}
             <Pressable
               style={({ pressed }) => [styles.submitBtn, pressed && { opacity: 0.88 }]}
               onPress={handleRegister}
@@ -160,11 +249,14 @@ export default function RegisterScreen() {
               }
             </Pressable>
 
-            {/* Footer */}
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>已有账号？</Text>
-              <Pressable onPress={() => { haptic(); router.replace("/signin"); }}>
-                <Text style={styles.footerLink}>直接登录</Text>
+            <View style={styles.agreeRow}>
+              <Text style={styles.agreeText}>注册即表示同意</Text>
+              <Pressable onPress={haptic}>
+                <Text style={styles.agreeLink}>《用户协议》</Text>
+              </Pressable>
+              <Text style={styles.agreeText}>和</Text>
+              <Pressable onPress={haptic}>
+                <Text style={styles.agreeLink}>《隐私政策》</Text>
               </Pressable>
             </View>
           </ScrollView>
@@ -180,54 +272,100 @@ const styles = StyleSheet.create({
   inner: {
     flexGrow: 1,
     paddingHorizontal: 36,
-    alignItems: "stretch",
+  },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 36,
   },
   closeBtn: {
     width: 36,
     height: 36,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 32,
+  },
+  switchText: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.85)",
+    fontWeight: "500",
   },
   title: {
     fontSize: 26,
     fontWeight: "700",
     color: "#fff",
-    textAlign: "center",
-    marginBottom: 48,
+    marginBottom: 36,
   },
   fieldsWrap: {
-    gap: 0,
-    marginBottom: 40,
+    marginBottom: 16,
   },
   field: {
     flexDirection: "row",
     alignItems: "center",
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "rgba(255,255,255,0.45)",
-    paddingVertical: 18,
+    paddingVertical: 16,
   },
   input: {
     flex: 1,
     fontSize: 16,
     color: "#fff",
   },
-  eyeBtn: {
-    paddingLeft: 10,
+  eyeBtn: { paddingLeft: 10 },
+  captchaBox: {
+    marginLeft: 12,
+    alignItems: "center",
+    gap: 2,
+  },
+  captchaInner: {
+    flexDirection: "row",
+    backgroundColor: "rgba(0,0,0,0.35)",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 2,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)",
+  },
+  captchaChar: {
+    fontSize: 18,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+  captchaRefresh: {
+    fontSize: 10,
+    color: "rgba(255,255,255,0.5)",
+    marginTop: 2,
+  },
+  sendCodeBtn: {
+    backgroundColor: Colors.light.primary,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginLeft: 12,
+  },
+  sendCodeBtnDisabled: {
+    backgroundColor: "rgba(61,170,111,0.45)",
+  },
+  sendCodeText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#fff",
   },
   errorText: {
     fontSize: 13,
     color: "#FFD0D0",
-    textAlign: "center",
-    marginBottom: 16,
-    marginTop: -20,
+    marginBottom: 20,
+  },
+  hintText: {
+    color: "rgba(255,255,255,0.7)",
   },
   submitBtn: {
     backgroundColor: Colors.light.primary,
     borderRadius: 50,
     paddingVertical: 17,
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: 20,
   },
   submitBtnText: {
     fontSize: 17,
@@ -235,11 +373,18 @@ const styles = StyleSheet.create({
     color: "#fff",
     letterSpacing: 2,
   },
-  footer: {
+  agreeRow: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 4,
+    flexWrap: "wrap",
+    gap: 2,
   },
-  footerText: { fontSize: 14, color: "rgba(255,255,255,0.7)" },
-  footerLink: { fontSize: 14, color: Colors.light.primary, fontWeight: "600" },
+  agreeText: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.55)",
+  },
+  agreeLink: {
+    fontSize: 12,
+    color: Colors.light.primary,
+  },
 });
