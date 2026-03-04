@@ -1,5 +1,5 @@
 "use no memo";
-import React from "react";
+import React, { useRef } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Pressable,
   ImageBackground,
   Platform,
+  Animated,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,8 +18,54 @@ import { useAuth } from "@/contexts/AuthContext";
 import Colors from "@/constants/colors";
 
 const haptic = () => {
-  if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 };
+
+function SpringButton({
+  style,
+  textStyle,
+  label,
+  onPress,
+}: {
+  style: object | object[];
+  textStyle: object;
+  label: string;
+  onPress: () => void;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const nativeDriver = Platform.OS !== "web";
+
+  const onPressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.94,
+      useNativeDriver: nativeDriver,
+      speed: 60,
+      bounciness: 4,
+    }).start();
+  };
+
+  const onPressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: nativeDriver,
+      speed: 20,
+      bounciness: 10,
+    }).start();
+  };
+
+  return (
+    <Pressable
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      onPress={onPress}
+    >
+      <Animated.View style={[style, { transform: [{ scale }] }]}>
+        <Text style={textStyle}>{label}</Text>
+      </Animated.View>
+    </Pressable>
+  );
+}
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -53,27 +100,27 @@ export default function WelcomeScreen() {
         {/* Buttons — lower area */}
         <View style={[styles.bottomArea, { paddingBottom: bottomPad + 28 }]}>
           {/* Primary: login */}
-          <Pressable
-            style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.88 }]}
+          <SpringButton
+            style={styles.primaryBtn}
+            textStyle={styles.primaryBtnText}
+            label="开启旅程"
             onPress={() => { haptic(); router.push("/signin"); }}
-          >
-            <Text style={styles.primaryBtnText}>开启旅程</Text>
-          </Pressable>
+          />
 
           {/* Secondary row: register + guest */}
           <View style={styles.secondaryRow}>
-            <Pressable
-              style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.8 }]}
+            <SpringButton
+              style={styles.secondaryBtn}
+              textStyle={styles.secondaryBtnText}
+              label="注册账号"
               onPress={() => { haptic(); router.push("/register"); }}
-            >
-              <Text style={styles.secondaryBtnText}>注册账号</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.8 }]}
+            />
+            <SpringButton
+              style={styles.secondaryBtn}
+              textStyle={styles.secondaryBtnText}
+              label="游客访问"
               onPress={handleGuest}
-            >
-              <Text style={styles.secondaryBtnText}>游客访问</Text>
-            </Pressable>
+            />
           </View>
 
           {/* Social icons */}
@@ -125,10 +172,10 @@ const styles = StyleSheet.create({
     paddingVertical: 17,
     alignItems: "center",
     shadowColor: Colors.light.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.45,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 8,
   },
   primaryBtnText: {
     fontSize: 18,
