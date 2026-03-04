@@ -11,54 +11,48 @@ import {
   Platform,
   KeyboardAvoidingView,
   ScrollView,
-  Animated,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useAuth } from "@/contexts/AuthContext";
 import Colors from "@/constants/colors";
+import { apiRequest } from "@/lib/query-client";
 
 const haptic = () => {
   if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 };
 
-type Mode = "phone" | "password";
+type Step = "verify" | "setPassword";
 
-export default function SignInScreen() {
+export default function ForgotPasswordScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { login, loginAsGuest } = useAuth();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const [mode, setMode] = useState<Mode>("phone");
+  const [step, setStep] = useState<Step>("verify");
 
-  // — Password mode
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPw, setShowPw] = useState(false);
-
-  // — Phone mode
+  // Step 1
   const [phone, setPhone] = useState("");
   const [smsCode, setSmsCode] = useState("");
   const [sentCode, setSentCode] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Step 2
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const switchMode = (m: Mode) => {
-    haptic();
-    setMode(m);
-    setError("");
-  };
+  const isHint = error.startsWith("验证码已发送");
 
-  // Generate mock 6-digit SMS code
   const sendCode = () => {
     if (countdown > 0) return;
     if (!phone.trim() || phone.trim().length < 7) {
@@ -79,50 +73,36 @@ export default function SignInScreen() {
     }, 1000);
   };
 
-  const handlePhoneLogin = async () => {
+  const handleNext = () => {
     if (!phone.trim()) { setError("请输入手机号码"); return; }
     if (!smsCode.trim()) { setError("请输入验证码"); return; }
     if (smsCode !== sentCode) { setError("验证码错误，请重新输入"); return; }
     haptic();
     setError("");
-    setLoading(true);
-    try {
-      // Use phone as username for demo
-      await login(phone.trim(), sentCode!);
-    } catch {
-      // If no account exists, auto-register with phone
-      try {
-        const { apiRequest } = await import("@/lib/query-client");
-        const res = await apiRequest("POST", "/api/auth/register", {
-          username: phone.trim(),
-          password: sentCode!,
-        });
-        const data = await res.json();
-        if (!res.ok && data.error !== "该用户名已被注册") throw new Error(data.error);
-        await login(phone.trim(), sentCode!);
-      } catch (e: any) {
-        setError(e.message || "登录失败，请重试");
-      }
-    } finally {
-      setLoading(false);
-    }
+    setStep("setPassword");
   };
 
-  const handlePasswordLogin = async () => {
-    if (!username.trim() || !password.trim()) { setError("请输入用户名和密码"); return; }
+  const handleConfirm = async () => {
+    if (!newPassword || newPassword.length < 6) { setError("密码至少6位"); return; }
+    if (newPassword !== confirmPassword) { setError("两次输入的密码不一致"); return; }
     haptic();
     setError("");
     setLoading(true);
     try {
-      await login(username.trim(), password);
+      const res = await apiRequest("POST", "/api/auth/reset-password", {
+        username: phone.trim(),
+        password: newPassword,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "重置失败");
+      // Success — go back to sign in
+      router.replace("/signin");
     } catch (e: any) {
-      setError(e.message || "登录失败，请重试");
+      setError(e.message || "重置失败，请重试");
     } finally {
       setLoading(false);
     }
   };
-
-  const isErrorHint = error.startsWith("验证码已发送");
 
   return (
     <ImageBackground
@@ -146,26 +126,18 @@ export default function SignInScreen() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* Top bar */}
+            {/* Close button */}
             <View style={styles.topBar}>
               <Pressable style={styles.closeBtn} onPress={() => { haptic(); router.back(); }}>
                 <Ionicons name="close" size={22} color="rgba(255,255,255,0.9)" />
               </Pressable>
-              <Pressable onPress={() => switchMode(mode === "phone" ? "password" : "phone")}>
-                <Text style={styles.switchText}>
-                  {mode === "phone" ? "账号密码登录" : "验证码登录"}
-                </Text>
-              </Pressable>
             </View>
 
-            {/* Title */}
-            <Text style={styles.title}>
-              {mode === "phone" ? "验证码登录" : "账号密码登录"}
-            </Text>
-
-            {/* ─── Phone mode ─── */}
-            {mode === "phone" && (
+            {/* ─── Step 1: SMS Verification ─── */}
+            {step === "verify" && (
               <>
+                <Text style={styles.title}>短信验证</Text>
+
                 <View style={styles.fieldsWrap}>
                   <View style={styles.field}>
                     <TextInput
@@ -202,57 +174,56 @@ export default function SignInScreen() {
                 </View>
 
                 {error ? (
-                  <Text style={[styles.errorText, isErrorHint && styles.hintText]}>{error}</Text>
+                  <Text style={[styles.errorText, isHint && styles.hintText]}>{error}</Text>
                 ) : null}
-
-                <View style={styles.linksRow}>
-                  <Pressable onPress={() => { haptic(); router.push("/forgot-password"); }}>
-                    <Text style={styles.linkText}>忘记密码</Text>
-                  </Pressable>
-                  <Pressable onPress={() => { haptic(); router.replace("/register"); }}>
-                    <Text style={styles.linkText}>注册账户</Text>
-                  </Pressable>
-                </View>
 
                 <Pressable
                   style={({ pressed }) => [styles.submitBtn, pressed && { opacity: 0.88 }]}
-                  onPress={handlePhoneLogin}
-                  disabled={loading}
+                  onPress={handleNext}
                 >
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>登录</Text>}
+                  <Text style={styles.submitBtnText}>下一步</Text>
                 </Pressable>
               </>
             )}
 
-            {/* ─── Password mode ─── */}
-            {mode === "password" && (
+            {/* ─── Step 2: Set New Password ─── */}
+            {step === "setPassword" && (
               <>
+                <Text style={styles.title}>设置密码</Text>
+
                 <View style={styles.fieldsWrap}>
                   <View style={styles.field}>
                     <TextInput
-                      style={styles.input}
-                      placeholder="请输入用户名"
+                      style={[styles.input, { flex: 1 }]}
+                      placeholder="请输入新密码，至少6位"
                       placeholderTextColor="rgba(255,255,255,0.55)"
-                      value={username}
-                      onChangeText={(v) => { setUsername(v); setError(""); }}
-                      autoCapitalize="none"
+                      value={newPassword}
+                      onChangeText={(v) => { setNewPassword(v); setError(""); }}
+                      secureTextEntry={!showNew}
                       returnKeyType="next"
                     />
+                    <Pressable onPress={() => setShowNew(!showNew)} style={styles.eyeBtn}>
+                      <Ionicons
+                        name={showNew ? "eye-outline" : "eye-off-outline"}
+                        size={18}
+                        color="rgba(255,255,255,0.6)"
+                      />
+                    </Pressable>
                   </View>
                   <View style={styles.field}>
                     <TextInput
                       style={[styles.input, { flex: 1 }]}
-                      placeholder="请输入密码"
+                      placeholder="请再次输出新密码"
                       placeholderTextColor="rgba(255,255,255,0.55)"
-                      value={password}
-                      onChangeText={(v) => { setPassword(v); setError(""); }}
-                      secureTextEntry={!showPw}
+                      value={confirmPassword}
+                      onChangeText={(v) => { setConfirmPassword(v); setError(""); }}
+                      secureTextEntry={!showConfirm}
                       returnKeyType="done"
-                      onSubmitEditing={handlePasswordLogin}
+                      onSubmitEditing={handleConfirm}
                     />
-                    <Pressable onPress={() => setShowPw(!showPw)} style={styles.eyeBtn}>
+                    <Pressable onPress={() => setShowConfirm(!showConfirm)} style={styles.eyeBtn}>
                       <Ionicons
-                        name={showPw ? "eye-outline" : "eye-off-outline"}
+                        name={showConfirm ? "eye-outline" : "eye-off-outline"}
                         size={18}
                         color="rgba(255,255,255,0.6)"
                       />
@@ -260,39 +231,22 @@ export default function SignInScreen() {
                   </View>
                 </View>
 
-                {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-                <View style={styles.linksRow}>
-                  <Pressable onPress={() => { haptic(); router.push("/forgot-password"); }}>
-                    <Text style={styles.linkText}>忘记密码</Text>
-                  </Pressable>
-                  <Pressable onPress={() => { haptic(); router.replace("/register"); }}>
-                    <Text style={styles.linkText}>注册账户</Text>
-                  </Pressable>
-                </View>
+                {error ? (
+                  <Text style={styles.errorText}>{error}</Text>
+                ) : null}
 
                 <Pressable
                   style={({ pressed }) => [styles.submitBtn, pressed && { opacity: 0.88 }]}
-                  onPress={handlePasswordLogin}
+                  onPress={handleConfirm}
                   disabled={loading}
                 >
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>登录</Text>}
+                  {loading
+                    ? <ActivityIndicator color="#fff" />
+                    : <Text style={styles.submitBtnText}>确认</Text>
+                  }
                 </Pressable>
               </>
             )}
-
-            {/* Social icons */}
-            <View style={styles.socialRow}>
-              <Pressable style={styles.socialBtn} onPress={haptic}>
-                <Ionicons name="logo-wechat" size={28} color="rgba(255,255,255,0.7)" />
-              </Pressable>
-              <Pressable style={styles.socialBtn} onPress={haptic}>
-                <Ionicons name="notifications-outline" size={26} color="rgba(255,255,255,0.7)" />
-              </Pressable>
-              <Pressable style={styles.socialBtn} onPress={haptic}>
-                <Ionicons name="card-outline" size={26} color="rgba(255,255,255,0.7)" />
-              </Pressable>
-            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </LinearGradient>
@@ -308,9 +262,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 36,
   },
   topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
     marginBottom: 36,
   },
   closeBtn: {
@@ -319,19 +270,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  switchText: {
-    fontSize: 14,
-    color: "rgba(255,255,255,0.85)",
-    fontWeight: "500",
-  },
   title: {
     fontSize: 26,
     fontWeight: "700",
     color: "#fff",
-    marginBottom: 36,
+    textAlign: "center",
+    marginBottom: 48,
   },
   fieldsWrap: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   field: {
     flexDirection: "row",
@@ -364,18 +311,9 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 13,
     color: "#FFD0D0",
-    marginBottom: 12,
+    marginBottom: 20,
   },
   hintText: {
-    color: "rgba(255,255,255,0.7)",
-  },
-  linksRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 28,
-  },
-  linkText: {
-    fontSize: 13,
     color: "rgba(255,255,255,0.7)",
   },
   submitBtn: {
@@ -383,7 +321,7 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     paddingVertical: 17,
     alignItems: "center",
-    marginBottom: 32,
+    marginBottom: 24,
   },
   submitBtnText: {
     fontSize: 17,
@@ -391,11 +329,4 @@ const styles = StyleSheet.create({
     color: "#fff",
     letterSpacing: 2,
   },
-  socialRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 32,
-    marginTop: 8,
-  },
-  socialBtn: { padding: 6 },
 });

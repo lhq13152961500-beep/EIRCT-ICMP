@@ -56,6 +56,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const { username, password } = req.body as { username?: string; password?: string };
+      if (!username?.trim() || !password) {
+        return res.status(400).json({ error: "参数不完整" });
+      }
+      if (password.length < 6) {
+        return res.status(400).json({ error: "密码至少需要6位" });
+      }
+      const ok = await storage.updateUserPassword(username.trim(), hashPassword(password));
+      if (!ok) {
+        return res.status(404).json({ error: "该手机号未注册" });
+      }
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: "重置失败，请稍后重试" });
+    }
+  });
+
   // ── Recordings ────────────────────────────────────────────────────────────
 
   app.post("/api/recordings", async (req, res) => {

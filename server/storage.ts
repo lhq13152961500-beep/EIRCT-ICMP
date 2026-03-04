@@ -37,6 +37,7 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserPassword(username: string, hashedPassword: string): Promise<boolean>;
 
   addRecording(r: InsertRecording): Promise<SoundRecording>;
   getNearbyRecordings(lat: number, lng: number, radiusMeters: number): Promise<SoundRecording[]>;
@@ -57,6 +58,12 @@ export class MemStorage implements IStorage {
     const user: User = { ...insertUser, id };
     this.users.set(id, user);
     return user;
+  }
+  async updateUserPassword(username: string, hashedPassword: string): Promise<boolean> {
+    const user = Array.from(this.users.values()).find((u) => u.username === username);
+    if (!user) return false;
+    this.users.set(user.id, { ...user, password: hashedPassword });
+    return true;
   }
 
   async addRecording(r: InsertRecording): Promise<SoundRecording> {
