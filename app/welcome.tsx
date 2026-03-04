@@ -12,7 +12,7 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import { AntDesign, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useAuth } from "@/contexts/AuthContext";
 import Colors from "@/constants/colors";
@@ -117,10 +117,10 @@ export default function WelcomeScreen() {
               <Ionicons name="logo-wechat" size={28} color="rgba(255,255,255,0.75)" />
             </Pressable>
             <Pressable style={styles.socialBtn} onPress={haptic}>
-              <Ionicons name="notifications-outline" size={26} color="rgba(255,255,255,0.75)" />
+              <AntDesign name="qq" size={26} color="rgba(255,255,255,0.75)" />
             </Pressable>
             <Pressable style={styles.socialBtn} onPress={haptic}>
-              <Ionicons name="card-outline" size={26} color="rgba(255,255,255,0.75)" />
+              <AntDesign name="alipay-circle" size={26} color="rgba(255,255,255,0.75)" />
             </Pressable>
           </View>
         </View>
