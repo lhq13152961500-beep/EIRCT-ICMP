@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
@@ -30,6 +31,7 @@ function MenuItem({
   color = Colors.light.primary,
   badge,
   isLast = false,
+  onPress,
 }: {
   icon: string;
   label: string;
@@ -37,11 +39,12 @@ function MenuItem({
   color?: string;
   badge?: number;
   isLast?: boolean;
+  onPress?: () => void;
 }) {
   return (
     <Pressable
       style={({ pressed }) => [styles.menuItem, isLast && styles.menuItemLast, pressed && { opacity: 0.7 }]}
-      onPress={haptic}
+      onPress={() => { haptic(); onPress?.(); }}
     >
       <View style={[styles.menuIcon, { backgroundColor: color + "1A" }]}>
         <Ionicons name={icon as any} size={18} color={color} />
@@ -110,6 +113,7 @@ function SectionCard({ title, children }: { title: string; children: React.React
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { logout } = useAuth();
+  const router = useRouter();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
@@ -118,6 +122,20 @@ export default function ProfileScreen() {
     Alert.alert("退出登录", "确定要退出当前账号吗？", [
       { text: "取消", style: "cancel" },
       { text: "退出", style: "destructive", onPress: () => logout() },
+    ]);
+  };
+
+  const handleSwitchAccount = () => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert("切换账号", "切换账号将退出当前账号，是否继续？", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "切换",
+        onPress: async () => {
+          await logout();
+          router.replace("/signin");
+        },
+      },
     ]);
   };
 
@@ -196,7 +214,12 @@ export default function ProfileScreen() {
 
           {/* ── 三、工具与设置 ── */}
           <SectionCard title="工具与设置">
-            <MenuItem icon="person-circle-outline" label="个人资料" color={Colors.light.primary} />
+            <MenuItem
+              icon="person-circle-outline"
+              label="个人资料"
+              color={Colors.light.primary}
+              onPress={() => router.push("/profile-edit")}
+            />
             <MenuItem icon="shield-checkmark-outline" label="账号安全" color="#1565C0" />
             <MenuItem icon="language-outline" label="语言设置" value="简体中文" color="#00897B" />
             <MenuItem icon="notifications-outline" label="通知设置" color="#7B1FA2" isLast />
@@ -207,6 +230,15 @@ export default function ProfileScreen() {
             <MenuItem icon="information-circle-outline" label="关于逛游指南" color={Colors.light.primary} />
             <MenuItem icon="star-outline" label="为我们评分" color="#FFB300" isLast />
           </SectionCard>
+
+          {/* ── 切换账号 ── */}
+          <Pressable
+            style={({ pressed }) => [styles.switchBtn, pressed && { opacity: 0.75 }]}
+            onPress={handleSwitchAccount}
+          >
+            <Ionicons name="swap-horizontal-outline" size={18} color={Colors.light.primary} />
+            <Text style={styles.switchText}>切换账号</Text>
+          </Pressable>
 
           {/* ── 退出登录 ── */}
           <Pressable
@@ -341,6 +373,26 @@ const styles = StyleSheet.create({
   orderBadgeText: { fontSize: 9, fontWeight: "700", color: "#fff" },
   orderLabel: { fontSize: 11, color: "#555", textAlign: "center" },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: "#EBEBEB", marginBottom: 4 },
+
+  // Switch Account
+  switchBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#fff",
+    marginTop: 4,
+    paddingVertical: 15,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.light.primary + "40",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  switchText: { fontSize: 15, fontWeight: "600", color: Colors.light.primary },
 
   // Logout
   logoutBtn: {
