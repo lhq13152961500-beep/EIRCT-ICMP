@@ -126,17 +126,8 @@ export default function ProfileScreen() {
   };
 
   const handleSwitchAccount = () => {
-    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert("切换账号", "切换账号将退出当前账号，是否继续？", [
-      { text: "取消", style: "cancel" },
-      {
-        text: "切换",
-        onPress: async () => {
-          await logout();
-          router.replace("/signin");
-        },
-      },
-    ]);
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push("/account-switch");
   };
 
   return (

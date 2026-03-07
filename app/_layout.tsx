@@ -40,6 +40,7 @@ function RootLayoutNav() {
       <Stack.Screen name="register"        options={{ headerShown: false, animation: "fade_from_bottom" }} />
       <Stack.Screen name="forgot-password" options={{ headerShown: false, animation: "fade_from_bottom" }} />
       <Stack.Screen name="profile-edit"    options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="account-switch"  options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="(tabs)"   options={{ headerShown: false }} />
     </Stack>
   );
