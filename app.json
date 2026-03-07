@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "逛游指南",
-    "slug": "my-app",
+    "name": "乡音伴旅v1.0",
+    "slug": "v10",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "v10",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -15,15 +15,19 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.myapp",
+      "bundleIdentifier": "com.v10.app",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "录制声音日记和语音留言需要使用麦克风",
         "NSLocationWhenInUseUsageDescription": "关联地标和发布录音需要获取您的位置信息"
       }
     },
     "android": {
-      "package": "com.myapp",
-      "permissions": ["android.permission.RECORD_AUDIO", "android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION"],
+      "package": "com.v10.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#3DAA6F",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
