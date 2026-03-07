@@ -19,12 +19,18 @@ function RootLayoutNav() {
 
   useEffect(() => {
     if (isLoading) return;
-    const inTabs = segments[0] === "(tabs)";
-    if (!user && inTabs) {
+    const segment = segments[0] as string | undefined;
+    const inTabs = segment === "(tabs)";
+    // Screens only guests may visit
+    const isAuthScreen = ["welcome", "signin", "register", "forgot-password"].includes(segment ?? "");
+    if (!user && (inTabs || (!isAuthScreen && segment !== undefined))) {
+      // Unauthenticated user inside the app → send to welcome
       router.replace("/welcome");
-    } else if (user && !inTabs) {
+    } else if (user && isAuthScreen) {
+      // Authenticated user on a login/register screen → send to app
       router.replace("/");
     }
+    // Authenticated users on non-tab app screens (e.g. profile-edit) are allowed through
   }, [user, segments, isLoading]);
 
   return (
