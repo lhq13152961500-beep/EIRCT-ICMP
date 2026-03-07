@@ -17,6 +17,7 @@ import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
+import type { UserRole } from "@/contexts/AuthContext";
 
 const haptic = () => {
   if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -31,6 +32,7 @@ interface ProfileData {
   gender: Gender;
   birthYear: string;
   birthMonth: string;
+  bio: string;
   region: string;
   phone: string;
   address: string;
@@ -65,6 +67,28 @@ function EditRow({
       </View>
     </Pressable>
   );
+}
+
+// ─── ReadonlyRow ──────────────────────────────────────────────────────────────
+
+function ReadonlyRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={[styles.row, styles.readonlyRow]}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <View style={styles.rowRight}>
+        <View style={styles.roleTag}>
+          <Text style={styles.roleTagText}>{value}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function getRoleLabel(role: UserRole | undefined, isGuest: boolean): string {
+  if (isGuest) return "游客";
+  if (role === "merchant") return "商家";
+  if (role === "collector") return "村民";
+  return "普通用户";
 }
 
 // ─── TextEditModal ────────────────────────────────────────────────────────────
@@ -197,20 +221,23 @@ const PROVINCES = [
 // ─── ProfileEditScreen ────────────────────────────────────────────────────────
 
 type ActiveModal =
-  | "name" | "gender" | "year" | "month" | "region" | "address" | null;
+  | "name" | "gender" | "year" | "month" | "bio" | "region" | "address" | null;
 
 export default function ProfileEditScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+
+  const roleLabel = getRoleLabel(user?.role, isGuest);
 
   const [profile, setProfile] = useState<ProfileData>({
     name: user?.username ?? "",
     gender: "保密",
     birthYear: "",
     birthMonth: "",
+    bio: "",
     region: "",
     phone: "138****8888",
     address: "",
@@ -287,6 +314,7 @@ export default function ProfileEditScreen() {
             placeholder="请设置昵称"
             onPress={() => setActiveModal("name")}
           />
+          <ReadonlyRow label="身份" value={roleLabel} />
           <EditRow
             label="性别"
             value={profile.gender}
@@ -303,6 +331,12 @@ export default function ProfileEditScreen() {
             value={profile.birthMonth}
             placeholder="请选择"
             onPress={() => setActiveModal("month")}
+          />
+          <EditRow
+            label="个性签名"
+            value={profile.bio}
+            placeholder="填写个性签名"
+            onPress={() => setActiveModal("bio")}
           />
           <EditRow
             label="地区"
@@ -380,6 +414,15 @@ export default function ProfileEditScreen() {
         value={profile.birthMonth}
         onClose={() => setActiveModal(null)}
         onSelect={(v) => update("birthMonth", v)}
+      />
+
+      <TextEditModal
+        visible={activeModal === "bio"}
+        title="个性签名"
+        value={profile.bio}
+        placeholder="填写一句话介绍自己"
+        onClose={() => setActiveModal(null)}
+        onSave={(v) => update("bio", v)}
       />
 
       <PickerModal
@@ -478,6 +521,18 @@ const styles = StyleSheet.create({
   rowRight: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 6 },
   rowValue: { fontSize: 14, color: "#666", flexShrink: 1, textAlign: "right" },
   rowPlaceholder: { color: "#C0C0C0" },
+  readonlyRow: { backgroundColor: "transparent" },
+  roleTag: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 20,
+    backgroundColor: Colors.light.primary + "18",
+  },
+  roleTagText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.light.primary,
+  },
 
   // Hint
   hint: {

@@ -5,7 +5,8 @@ import { apiRequest } from "@/lib/query-client";
 const AUTH_KEY = "@xiangyin_auth_user";
 const SAVED_KEY = "@xiangyin_saved_accounts";
 
-export type AuthUser = { id: string; username: string };
+export type UserRole = "merchant" | "collector" | "user";
+export type AuthUser = { id: string; username: string; role?: UserRole };
 
 type AuthContextValue = {
   user: AuthUser | null;
