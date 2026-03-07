@@ -7,6 +7,7 @@ import {
   Pressable,
   Platform,
   Alert,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -187,7 +188,15 @@ export default function ProfileScreen() {
         >
           <View style={styles.avatarRow}>
             <View style={styles.avatar}>
-              <Ionicons name="person" size={36} color={Colors.light.primary} />
+              {profile?.avatarUrl ? (
+                <Image
+                  source={{ uri: profile.avatarUrl }}
+                  style={styles.avatarImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Ionicons name="person" size={36} color={Colors.light.primary} />
+              )}
             </View>
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{displayName}</Text>
@@ -370,6 +379,10 @@ const styles = StyleSheet.create({
     width: 68, height: 68, borderRadius: 34,
     backgroundColor: "#fff",
     alignItems: "center", justifyContent: "center",
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: 68, height: 68, borderRadius: 34,
   },
   userInfo: { flex: 1, gap: 4 },
   userName: { fontSize: 20, fontWeight: "700", color: "#fff" },

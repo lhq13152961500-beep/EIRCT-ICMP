@@ -11,11 +11,13 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
 import type { UserRole } from "@/contexts/AuthContext";
@@ -233,6 +235,7 @@ export default function ProfileEditScreen() {
 
   const roleLabel = getRoleLabel(user?.role, isGuest);
   const [isSaving, setIsSaving] = useState(false);
+  const [avatarUri, setAvatarUri] = useState<string | null>(savedProfile?.avatarUrl ?? null);
 
   const [profile, setProfile] = useState<ProfileData>({
     name: savedProfile?.displayName ?? user?.username ?? "",
@@ -248,6 +251,7 @@ export default function ProfileEditScreen() {
   // Sync form state whenever savedProfile loads (e.g. after login)
   useEffect(() => {
     if (savedProfile) {
+      setAvatarUri(savedProfile.avatarUrl ?? null);
       setProfile({
         name: savedProfile.displayName ?? user?.username ?? "",
         gender: (savedProfile.gender as Gender) ?? "保密",
@@ -260,6 +264,60 @@ export default function ProfileEditScreen() {
       });
     }
   }, [savedProfile]);
+
+  const pickFromGallery = async () => {
+    if (Platform.OS !== "web") {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("权限不足", "请在设置中允许访问相册");
+        return;
+      }
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+      base64: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      const dataUri = `data:image/jpeg;base64,${asset.base64}`;
+      setAvatarUri(dataUri);
+    }
+  };
+
+  const takePhoto = async () => {
+    if (Platform.OS === "web") {
+      Alert.alert("不支持", "网页端暂不支持拍照，请从相册选择");
+      return;
+    }
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("权限不足", "请在设置中允许访问相机");
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+      base64: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      const dataUri = `data:image/jpeg;base64,${asset.base64}`;
+      setAvatarUri(dataUri);
+    }
+  };
+
+  const handlePickAvatar = () => {
+    haptic();
+    Alert.alert("修改头像", "请选择方式", [
+      { text: "拍照", onPress: takePhoto },
+      { text: "从相册选择", onPress: pickFromGallery },
+      { text: "取消", style: "cancel" },
+    ]);
+  };
 
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
 
@@ -281,6 +339,7 @@ export default function ProfileEditScreen() {
         region: profile.region || null,
         phone: profile.phone || null,
         address: profile.address || null,
+        avatarUrl: avatarUri || null,
       });
       Alert.alert("保存成功", "个人资料已更新");
     } catch {
@@ -323,17 +382,18 @@ export default function ProfileEditScreen() {
         <View style={styles.avatarSection}>
           <Pressable
             style={({ pressed }) => [styles.avatarWrap, pressed && { opacity: 0.8 }]}
-            onPress={() => {
-              haptic();
-              Alert.alert("修改头像", "请选择方式", [
-                { text: "拍照", onPress: () => {} },
-                { text: "从相册选择", onPress: () => {} },
-                { text: "取消", style: "cancel" },
-              ]);
-            }}
+            onPress={handlePickAvatar}
           >
             <View style={styles.avatarCircle}>
-              <Ionicons name="person" size={44} color={Colors.light.primary} />
+              {avatarUri ? (
+                <Image
+                  source={{ uri: avatarUri }}
+                  style={styles.avatarImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Ionicons name="person" size={44} color={Colors.light.primary} />
+              )}
             </View>
             <View style={styles.avatarCameraTag}>
               <Ionicons name="camera" size={14} color="#fff" />
@@ -519,6 +579,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.primary + "15",
     alignItems: "center", justifyContent: "center",
     borderWidth: 2, borderColor: Colors.light.primary + "30",
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: 88, height: 88, borderRadius: 44,
   },
   avatarCameraTag: {
     position: "absolute", bottom: 0, right: 0,
