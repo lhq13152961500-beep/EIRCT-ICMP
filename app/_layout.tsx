@@ -13,7 +13,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 SplashScreen.preventAutoHideAsync();
 
 function RootLayoutNav() {
-  const { user, isLoading } = useAuth();
+  const { user, isGuest, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -21,17 +21,17 @@ function RootLayoutNav() {
     if (isLoading) return;
     const segment = segments[0] as string | undefined;
     const inTabs = segment === "(tabs)";
-    // Screens only guests may visit
     const isAuthScreen = ["welcome", "signin", "register", "forgot-password"].includes(segment ?? "");
+
     if (!user && (inTabs || (!isAuthScreen && segment !== undefined))) {
-      // Unauthenticated user inside the app → send to welcome
+      // Fully unauthenticated (not even a guest) inside the app → welcome
       router.replace("/welcome");
-    } else if (user && isAuthScreen) {
-      // Authenticated user on a login/register screen → send to app
+    } else if (user && !isGuest && isAuthScreen) {
+      // Fully logged-in user on an auth screen → send to app
+      // Guests are allowed through so they can register / sign in
       router.replace("/");
     }
-    // Authenticated users on non-tab app screens (e.g. profile-edit) are allowed through
-  }, [user, segments, isLoading]);
+  }, [user, isGuest, segments, isLoading]);
 
   return (
     <Stack screenOptions={{ headerBackTitle: "Back" }}>
