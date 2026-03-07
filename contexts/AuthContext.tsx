@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { apiRequest } from "@/lib/query-client";
+import { apiRequest, getApiUrl } from "@/lib/query-client";
 
 const AUTH_KEY = "@xiangyin_auth_user";
 const SAVED_KEY = "@xiangyin_saved_accounts";
@@ -8,17 +8,33 @@ const SAVED_KEY = "@xiangyin_saved_accounts";
 export type UserRole = "merchant" | "collector" | "user";
 export type AuthUser = { id: string; username: string; role?: UserRole };
 
+export interface UserProfile {
+  userId: string;
+  displayName: string | null;
+  bio: string | null;
+  gender: string | null;
+  birthYear: string | null;
+  birthMonth: string | null;
+  region: string | null;
+  phone: string | null;
+  address: string | null;
+  avatarUrl: string | null;
+  updatedAt?: string;
+}
+
 type AuthContextValue = {
   user: AuthUser | null;
   isLoading: boolean;
   isGuest: boolean;
   savedAccounts: AuthUser[];
+  profile: UserProfile | null;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
   loginAsGuest: () => void;
   logout: () => Promise<void>;
   switchToAccount: (account: AuthUser) => Promise<void>;
   removeFromSaved: (id: string) => Promise<void>;
+  updateProfile: (data: Partial<Omit<UserProfile, "userId" | "updatedAt">>) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -38,7 +54,19 @@ async function persistSaved(list: AuthUser[]) {
 
 function upsertAccount(list: AuthUser[], account: AuthUser): AuthUser[] {
   const filtered = list.filter((a) => a.id !== account.id);
-  return [account, ...filtered]; // keep most-recent at top
+  return [account, ...filtered];
+}
+
+async function fetchProfileFromApi(userId: string): Promise<UserProfile | null> {
+  try {
+    const url = new URL(`/api/profile/${encodeURIComponent(userId)}`, getApiUrl());
+    const res = await fetch(url.toString());
+    if (!res.ok) return null;
+    const data = await res.json() as { profile: UserProfile | null };
+    return data.profile ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -46,6 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
   const [savedAccounts, setSavedAccounts] = useState<AuthUser[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -57,10 +86,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (stored) {
           const parsed = JSON.parse(stored) as AuthUser;
           setUser(parsed);
-          // Ensure current user is in saved list
           const updated = upsertAccount(saved, parsed);
           setSavedAccounts(updated);
           await persistSaved(updated);
+          // Fetch profile after restoring session
+          const p = await fetchProfileFromApi(parsed.id);
+          setProfile(p);
         } else {
           setSavedAccounts(saved);
         }
@@ -76,6 +107,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await persistSaved(next);
     setIsGuest(false);
     setUser(u);
+    // Fetch profile for this user
+    const p = await fetchProfileFromApi(u.id);
+    setProfile(p);
   };
 
   const login = async (username: string, password: string) => {
@@ -95,16 +129,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginAsGuest = () => {
     setIsGuest(true);
     setUser({ id: "guest", username: "游客" });
+    setProfile(null);
   };
 
   const logout = async () => {
     await AsyncStorage.removeItem(AUTH_KEY);
     setUser(null);
     setIsGuest(false);
-    // Keep savedAccounts so user can switch back
+    setProfile(null);
   };
 
-  // Switch to a previously saved account without re-authenticating
   const switchToAccount = async (account: AuthUser) => {
     await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(account));
     const next = upsertAccount(savedAccounts, account);
@@ -112,21 +146,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await persistSaved(next);
     setIsGuest(false);
     setUser(account);
+    const p = await fetchProfileFromApi(account.id);
+    setProfile(p);
   };
 
-  // Remove a saved account (does not log out if it's the current user)
   const removeFromSaved = async (id: string) => {
     const next = savedAccounts.filter((a) => a.id !== id);
     setSavedAccounts(next);
     await persistSaved(next);
   };
 
+  const updateProfile = async (data: Partial<Omit<UserProfile, "userId" | "updatedAt">>) => {
+    if (!user || isGuest) return;
+    try {
+      const url = new URL(`/api/profile/${encodeURIComponent(user.id)}`, getApiUrl());
+      const res = await fetch(url.toString(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("保存失败");
+      const json = await res.json() as { profile: UserProfile };
+      setProfile(json.profile);
+    } catch (err) {
+      throw err;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
-        user, isLoading, isGuest, savedAccounts,
+        user, isLoading, isGuest, savedAccounts, profile,
         login, register, loginAsGuest, logout,
-        switchToAccount, removeFromSaved,
+        switchToAccount, removeFromSaved, updateProfile,
       }}
     >
       {children}

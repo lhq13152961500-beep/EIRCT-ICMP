@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Alert,
   TextInput,
   Modal,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -226,22 +227,39 @@ type ActiveModal =
 export default function ProfileEditScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, isGuest } = useAuth();
+  const { user, isGuest, profile: savedProfile, updateProfile } = useAuth();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
   const roleLabel = getRoleLabel(user?.role, isGuest);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [profile, setProfile] = useState<ProfileData>({
-    name: user?.username ?? "",
-    gender: "保密",
-    birthYear: "",
-    birthMonth: "",
-    bio: "",
-    region: "",
-    phone: "138****8888",
-    address: "",
+    name: savedProfile?.displayName ?? user?.username ?? "",
+    gender: (savedProfile?.gender as Gender) ?? "保密",
+    birthYear: savedProfile?.birthYear ?? "",
+    birthMonth: savedProfile?.birthMonth ?? "",
+    bio: savedProfile?.bio ?? "",
+    region: savedProfile?.region ?? "",
+    phone: savedProfile?.phone ?? "",
+    address: savedProfile?.address ?? "",
   });
+
+  // Sync form state whenever savedProfile loads (e.g. after login)
+  useEffect(() => {
+    if (savedProfile) {
+      setProfile({
+        name: savedProfile.displayName ?? user?.username ?? "",
+        gender: (savedProfile.gender as Gender) ?? "保密",
+        birthYear: savedProfile.birthYear ?? "",
+        birthMonth: savedProfile.birthMonth ?? "",
+        bio: savedProfile.bio ?? "",
+        region: savedProfile.region ?? "",
+        phone: savedProfile.phone ?? "",
+        address: savedProfile.address ?? "",
+      });
+    }
+  }, [savedProfile]);
 
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
 
@@ -249,9 +267,27 @@ export default function ProfileEditScreen() {
     setProfile((p) => ({ ...p, [key]: value }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (isSaving) return;
     haptic();
-    Alert.alert("保存成功", "个人资料已更新");
+    setIsSaving(true);
+    try {
+      await updateProfile({
+        displayName: profile.name || null,
+        bio: profile.bio || null,
+        gender: profile.gender,
+        birthYear: profile.birthYear || null,
+        birthMonth: profile.birthMonth || null,
+        region: profile.region || null,
+        phone: profile.phone || null,
+        address: profile.address || null,
+      });
+      Alert.alert("保存成功", "个人资料已更新");
+    } catch {
+      Alert.alert("保存失败", "请检查网络后重试");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const birthDisplay =
@@ -269,8 +305,11 @@ export default function ProfileEditScreen() {
           <Ionicons name="chevron-back" size={24} color={Colors.light.text} />
         </Pressable>
         <Text style={styles.navTitle}>个人资料</Text>
-        <Pressable style={styles.saveBtn} onPress={handleSave}>
-          <Text style={styles.saveBtnText}>保存</Text>
+        <Pressable style={styles.saveBtn} onPress={handleSave} disabled={isSaving}>
+          {isSaving
+            ? <ActivityIndicator size="small" color={Colors.light.primary} />
+            : <Text style={styles.saveBtnText}>保存</Text>
+          }
         </Pressable>
       </View>
 

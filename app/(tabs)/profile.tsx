@@ -144,7 +144,7 @@ function GuestLoginBanner({ onLogin }: { onLogin: () => void }) {
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, isGuest, logout } = useAuth();
+  const { user, isGuest, logout, profile } = useAuth();
   const router = useRouter();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -166,8 +166,10 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const displayName = isGuest ? "游客" : (user?.username ?? "旅行者");
-  const displaySub = isGuest ? "热爱乡村，探索每一寸土地" : "热爱乡村，探索每一寸土地";
+  const displayName = isGuest ? "游客" : (profile?.displayName || user?.username || "旅行者");
+  const displaySub = isGuest
+    ? "热爱乡村，探索每一寸土地"
+    : (profile?.bio || "热爱乡村，探索每一寸土地");
 
   return (
     <View style={styles.container}>

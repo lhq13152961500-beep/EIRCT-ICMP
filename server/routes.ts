@@ -76,6 +76,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Profile ───────────────────────────────────────────────────────────────
+
+  app.get("/api/profile/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      if (!userId) return res.status(400).json({ error: "userId required" });
+      const profile = await storage.getProfile(userId);
+      return res.json({ profile });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: "获取资料失败" });
+    }
+  });
+
+  app.put("/api/profile/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      if (!userId) return res.status(400).json({ error: "userId required" });
+      const { displayName, bio, gender, birthYear, birthMonth, region, phone, address, avatarUrl } = req.body as {
+        displayName?: string;
+        bio?: string;
+        gender?: string;
+        birthYear?: string;
+        birthMonth?: string;
+        region?: string;
+        phone?: string;
+        address?: string;
+        avatarUrl?: string;
+      };
+      const profile = await storage.upsertProfile(userId, {
+        displayName: displayName ?? undefined,
+        bio: bio ?? undefined,
+        gender: gender ?? undefined,
+        birthYear: birthYear ?? undefined,
+        birthMonth: birthMonth ?? undefined,
+        region: region ?? undefined,
+        phone: phone ?? undefined,
+        address: address ?? undefined,
+        avatarUrl: avatarUrl ?? undefined,
+      });
+      return res.json({ profile });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: "保存资料失败" });
+    }
+  });
+
   // ── Recordings ────────────────────────────────────────────────────────────
 
   app.post("/api/recordings", async (req, res) => {
