@@ -454,10 +454,10 @@ export default function MicScreen() {
     if (locationStatus.source === "ip") {
       Alert.alert(
         "需要精确定位",
-        "当前仅获取到网络IP粗略位置，无法满足100米范围内的精确要求。\n\n请确保：\n1. 手机GPS/定位服务已开启\n2. 已允许Expo Go位置权限\n\n然后点击「重试定位」",
+        "当前仅获取到网络IP粗略位置（城市级），无法满足100米范围的精确要求。\n\n请在地图上手动标记你的精确位置：",
         [
-          { text: "去设置", onPress: () => Linking.openSettings() },
-          { text: "重试定位", onPress: () => retryLocation() },
+          { text: "在地图上选点", onPress: () => setShowMapPicker(true) },
+          { text: "重试GPS", onPress: () => retryLocation() },
           { text: "取消", style: "cancel" },
         ],
       );

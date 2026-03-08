@@ -5,7 +5,7 @@ import * as Location from "expo-location";
 export type LocationStatus =
   | { state: "none" }
   | { state: "denied" }
-  | { state: "located"; lat: number; lng: number; locationName: string; accuracy?: number; source: "ip" | "gps" };
+  | { state: "located"; lat: number; lng: number; locationName: string; accuracy?: number; source: "ip" | "gps" | "manual" };
 
 type LocationContextType = {
   locationStatus: LocationStatus;
@@ -117,7 +117,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   const retry = useCallback(() => setTrigger((n) => n + 1), []);
 
   const overrideLocation = useCallback((lat: number, lng: number, name: string) => {
-    setLocationStatus({ state: "located", lat, lng, locationName: name, source: "gps" });
+    setLocationStatus({ state: "located", lat, lng, locationName: name, source: "manual" });
     setIsGpsPrecise(true);
     setIsLocating(false);
   }, []);
