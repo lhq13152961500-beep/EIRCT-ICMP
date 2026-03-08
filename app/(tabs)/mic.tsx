@@ -451,6 +451,18 @@ export default function MicScreen() {
       Alert.alert("无法发布", "请先等待定位成功后再发布。");
       return;
     }
+    if (locationStatus.source === "ip") {
+      Alert.alert(
+        "需要精确定位",
+        "当前仅获取到网络IP粗略位置，精度不够。\n\n请确保手机的定位模式设为「高精度」（同时使用GPS、WiFi和移动网络），然后点击「重试定位」。",
+        [
+          { text: "去系统设置", onPress: () => Linking.openSettings() },
+          { text: "重试定位", onPress: () => retryLocation() },
+          { text: "取消", style: "cancel" },
+        ],
+      );
+      return;
+    }
     const { lat, lng, locationName } = locationStatus;
     const title = `声音随记·${locationName}`;
     Alert.alert(
@@ -577,8 +589,11 @@ export default function MicScreen() {
     if (locationStatus.state === "located") {
       const resolving = locationStatus.locationName === "正在解析地址…";
       const isIp = locationStatus.source === "ip";
+      const isManual = locationStatus.source === "manual";
+      const isGps = locationStatus.source === "gps";
       const acc = locationStatus.accuracy;
       const accText = acc != null ? (acc < 10 ? `±${acc.toFixed(0)}m 精准` : acc < 50 ? `±${acc.toFixed(0)}m` : `±${Math.round(acc)}m`) : null;
+      const gpsStillTrying = isIp && (isLocating || watchActive);
       return (
         <View style={[styles.locationCard, isIp && styles.locationCardWarn]}>
           <View style={styles.locationDotRow}>
@@ -590,30 +605,45 @@ export default function MicScreen() {
                 {isIp ? "IP 定位" : accText ? `GPS · ${accText}` : "GPS 实时"}
               </Text>
             </View>
+            {gpsStillTrying && (
+              <ActivityIndicator size="small" color={Colors.light.primary} style={{ marginLeft: 6 }} />
+            )}
           </View>
           <Text style={styles.locationName}>
             {resolving ? "正在解析地址…" : locationStatus.locationName}
           </Text>
-          <Text style={styles.locationDistText}>
-            {isIp ? "精度不足，需开启GPS才能发布声音作品" : "发布后 100 米内的旅人可听见"}
-          </Text>
-          {isIp && (
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
-              <Pressable
-                onPress={() => { haptic(); Linking.openSettings(); }}
-                style={[styles.mapPickBtn, { backgroundColor: "#F5974E" }]}
-              >
-                <Ionicons name="settings-outline" size={14} color="#fff" />
-                <Text style={styles.mapPickBtnText}>开启GPS</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => { haptic(); retryLocation(); }}
-                style={styles.mapPickBtn}
-              >
-                <Ionicons name="refresh" size={14} color="#fff" />
-                <Text style={styles.mapPickBtnText}>重试定位</Text>
-              </Pressable>
+          {isIp && gpsStillTrying && (
+            <Text style={[styles.locationDistText, { color: "#888" }]}>
+              GPS 信号获取中，请耐心等待…
+            </Text>
+          )}
+          {isIp && !gpsStillTrying && (
+            <View>
+              <Text style={styles.locationDistText}>
+                GPS 获取失败，精度不足无法发布
+              </Text>
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+                <Pressable
+                  onPress={() => { haptic(); Linking.openSettings(); }}
+                  style={[styles.mapPickBtn, { backgroundColor: "#F5974E" }]}
+                >
+                  <Ionicons name="settings-outline" size={14} color="#fff" />
+                  <Text style={styles.mapPickBtnText}>去系统设置</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => { haptic(); retryLocation(); }}
+                  style={styles.mapPickBtn}
+                >
+                  <Ionicons name="refresh" size={14} color="#fff" />
+                  <Text style={styles.mapPickBtnText}>重试定位</Text>
+                </Pressable>
+              </View>
             </View>
+          )}
+          {(isGps || isManual) && (
+            <Text style={styles.locationDistText}>
+              发布后 100 米内的旅人可听见
+            </Text>
           )}
         </View>
       );

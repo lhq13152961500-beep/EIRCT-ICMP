@@ -216,18 +216,34 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        console.log("[loc] Step 4: starting GPS...");
+        console.log("[loc] Step 4: trying last known position...");
+        try {
+          const lastKnown = await Location.getLastKnownPositionAsync({
+            maxAge: 5 * 60 * 1000,
+            requiredAccuracy: 500,
+          });
+          if (lastKnown && mounted && !hasGpsFix) {
+            console.log("[loc] Last known GPS ±", lastKnown.coords.accuracy?.toFixed(0), "m (cached)");
+            setGpsLocation(lastKnown.coords.latitude, lastKnown.coords.longitude, lastKnown.coords.accuracy ?? undefined);
+          } else {
+            console.log("[loc] No recent cached position available");
+          }
+        } catch (e) {
+          console.log("[loc] getLastKnownPositionAsync failed:", e);
+        }
+
+        console.log("[loc] Step 5: starting GPS watch + one-shot...");
         locationSubRef.current?.remove();
 
         Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.High,
-            timeInterval: 3000,
-            distanceInterval: 5,
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 2000,
+            distanceInterval: 3,
             mayShowUserSettingsDialog: true,
           },
           (l) => {
-            console.log("[loc] GPS ±", l.coords.accuracy?.toFixed(0), "m");
+            console.log("[loc] GPS watch ±", l.coords.accuracy?.toFixed(0), "m");
             if (mounted) setGpsLocation(l.coords.latitude, l.coords.longitude, l.coords.accuracy ?? undefined);
           },
         ).then((sub) => {
@@ -242,43 +258,35 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
           console.warn("[loc] GPS watch failed:", e);
         });
 
-        try {
-          console.log("[loc] GPS one-shot (High)...");
-          const pos = await withTimeout(
-            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
-            15000,
-          );
-          if (mounted) {
-            console.log("[loc] GPS fix ±", pos.coords.accuracy?.toFixed(0), "m");
-            setGpsLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
-          }
-        } catch (e) {
-          console.log("[loc] High accuracy failed, trying Balanced...");
+        const accuracyLevels: { level: Location.Accuracy; name: string; timeout: number }[] = [
+          { level: Location.Accuracy.High, name: "High", timeout: 30000 },
+          { level: Location.Accuracy.Balanced, name: "Balanced", timeout: 20000 },
+          { level: Location.Accuracy.Low, name: "Low", timeout: 15000 },
+          { level: Location.Accuracy.Lowest, name: "Lowest", timeout: 10000 },
+        ];
+
+        let gotFix = false;
+        for (const { level, name, timeout } of accuracyLevels) {
+          if (gotFix || !mounted) break;
           try {
+            console.log(`[loc] GPS one-shot (${name}, ${timeout / 1000}s)...`);
             const pos = await withTimeout(
-              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-              10000,
+              Location.getCurrentPositionAsync({ accuracy: level }),
+              timeout,
             );
             if (mounted) {
-              console.log("[loc] Balanced fix ±", pos.coords.accuracy?.toFixed(0), "m");
+              console.log(`[loc] GPS fix (${name}) ±`, pos.coords.accuracy?.toFixed(0), "m");
               setGpsLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
+              gotFix = true;
             }
           } catch {
-            console.log("[loc] Balanced also failed, trying Low...");
-            try {
-              const pos = await withTimeout(
-                Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }),
-                8000,
-              );
-              if (mounted) {
-                console.log("[loc] Low fix ±", pos.coords.accuracy?.toFixed(0), "m");
-                setGpsLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
-              }
-            } catch {
-              console.log("[loc] all GPS attempts failed");
-              if (mounted && !hasIpFix && !hasGpsFix) setIsLocating(false);
-            }
+            console.log(`[loc] ${name} accuracy failed`);
           }
+        }
+
+        if (!gotFix && mounted) {
+          console.log("[loc] all GPS one-shot attempts failed, watch still active");
+          if (!hasIpFix && !hasGpsFix) setIsLocating(false);
         }
       }
 
