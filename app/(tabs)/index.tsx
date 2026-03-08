@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
+import { useAuth } from "@/contexts/AuthContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TAB_BAR_HEIGHT = 80;
@@ -86,6 +87,9 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const { profile } = useAuth();
+  const avatarUrl = profile?.avatarUrl || null;
+  const locationText = profile?.region || profile?.address || "云栖竹径 · 杭";
 
   const [bannerIndex, setBannerIndex] = useState(0);
   const [infoBanner, setInfoBanner] = useState<BannerItem | null>(null);
@@ -142,11 +146,15 @@ export default function HomeScreen() {
       <View style={[styles.header, { paddingTop: topPad + 10 }]}>
         <View style={styles.headerLeft}>
           <View style={styles.avatarCircle}>
-            <Ionicons name="person" size={20} color="#fff" />
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImg} resizeMode="cover" />
+            ) : (
+              <Ionicons name="person" size={20} color="#fff" />
+            )}
           </View>
           <View style={styles.locationBlock}>
             <Text style={styles.locationLabel}>当前位置</Text>
-            <Text style={styles.locationName}>云栖竹径 · 杭</Text>
+            <Text style={styles.locationName} numberOfLines={1}>{locationText}</Text>
           </View>
         </View>
         <View style={styles.headerRight}>
@@ -361,6 +369,10 @@ const styles = StyleSheet.create({
     width: 42, height: 42, borderRadius: 21,
     backgroundColor: Colors.light.primary,
     alignItems: "center", justifyContent: "center",
+    overflow: "hidden",
+  },
+  avatarImg: {
+    width: 42, height: 42, borderRadius: 21,
   },
   locationBlock: { gap: 1 },
   locationLabel: { fontSize: 11, color: Colors.light.textSecondary },
