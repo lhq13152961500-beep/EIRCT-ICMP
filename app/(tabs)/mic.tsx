@@ -12,6 +12,7 @@ import {
   Animated,
   ActivityIndicator,
   Modal,
+  Linking,
 } from "react-native";
 import MapLocationPicker from "@/components/MapLocationPicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -213,7 +214,7 @@ export default function MicScreen() {
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
   const { addMyRecording, setDeviceLocation } = useRecordings();
-  const { locationStatus, isLocating, watchActive, retry: retryLocation, overrideLocation } = useLocation();
+  const { locationStatus, isLocating, watchActive, isGpsPrecise, retry: retryLocation, overrideLocation } = useLocation();
   const [isPublishing, setIsPublishing] = useState(false);
 
   const [showMapPicker, setShowMapPicker] = useState(false);
@@ -447,7 +448,19 @@ export default function MicScreen() {
 
   const handlePublish = useCallback(() => {
     if (locationStatus.state !== "located") {
-      Alert.alert("无法发布", "请先等待 GPS 定位成功后再发布。");
+      Alert.alert("无法发布", "请先等待定位成功后再发布。");
+      return;
+    }
+    if (locationStatus.source === "ip") {
+      Alert.alert(
+        "需要精确定位",
+        "当前仅获取到网络IP粗略位置，无法满足100米范围内的精确要求。\n\n请确保：\n1. 手机GPS/定位服务已开启\n2. 已允许Expo Go位置权限\n\n然后点击「重试定位」",
+        [
+          { text: "去设置", onPress: () => Linking.openSettings() },
+          { text: "重试定位", onPress: () => retryLocation() },
+          { text: "取消", style: "cancel" },
+        ],
+      );
       return;
     }
     const { lat, lng, locationName } = locationStatus;
@@ -575,24 +588,45 @@ export default function MicScreen() {
 
     if (locationStatus.state === "located") {
       const resolving = locationStatus.locationName === "正在解析地址…";
+      const isIp = locationStatus.source === "ip";
       const acc = locationStatus.accuracy;
       const accText = acc != null ? (acc < 10 ? `±${acc.toFixed(0)}m 精准` : acc < 50 ? `±${acc.toFixed(0)}m` : `±${Math.round(acc)}m`) : null;
       return (
-        <View style={styles.locationCard}>
+        <View style={[styles.locationCard, isIp && styles.locationCardWarn]}>
           <View style={styles.locationDotRow}>
-            <View style={[styles.locationDot, { backgroundColor: Colors.light.primary }]} />
-            <Text style={styles.locationLabel}>实时位置</Text>
-            <View style={styles.locationBadge}>
-              <Ionicons name="navigate" size={10} color="#fff" />
+            <View style={[styles.locationDot, { backgroundColor: isIp ? "#F5974E" : Colors.light.primary }]} />
+            <Text style={styles.locationLabel}>{isIp ? "网络粗略位置" : "GPS 精确位置"}</Text>
+            <View style={[styles.locationBadge, isIp && { backgroundColor: "#F5974E" }]}>
+              <Ionicons name={isIp ? "globe-outline" : "navigate"} size={10} color="#fff" />
               <Text style={styles.locationBadgeText}>
-                {accText ? `GPS · ${accText}` : "GPS 实时"}
+                {isIp ? "IP 定位" : accText ? `GPS · ${accText}` : "GPS 实时"}
               </Text>
             </View>
           </View>
           <Text style={styles.locationName}>
             {resolving ? "正在解析地址…" : locationStatus.locationName}
           </Text>
-          <Text style={styles.locationDistText}>发布后 100 米内的旅人可听见</Text>
+          <Text style={styles.locationDistText}>
+            {isIp ? "精度不足，需开启GPS才能发布声音作品" : "发布后 100 米内的旅人可听见"}
+          </Text>
+          {isIp && (
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+              <Pressable
+                onPress={() => { haptic(); Linking.openSettings(); }}
+                style={[styles.mapPickBtn, { backgroundColor: "#F5974E" }]}
+              >
+                <Ionicons name="settings-outline" size={14} color="#fff" />
+                <Text style={styles.mapPickBtnText}>开启GPS</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => { haptic(); retryLocation(); }}
+                style={styles.mapPickBtn}
+              >
+                <Ionicons name="refresh" size={14} color="#fff" />
+                <Text style={styles.mapPickBtnText}>重试定位</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
       );
     }
