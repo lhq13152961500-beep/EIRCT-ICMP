@@ -451,18 +451,6 @@ export default function MicScreen() {
       Alert.alert("无法发布", "请先等待定位成功后再发布。");
       return;
     }
-    if (locationStatus.source === "ip") {
-      Alert.alert(
-        "需要精确定位",
-        "当前仅获取到网络IP粗略位置（城市级），无法满足100米范围的精确要求。\n\n请在地图上手动标记你的精确位置：",
-        [
-          { text: "在地图上选点", onPress: () => setShowMapPicker(true) },
-          { text: "重试GPS", onPress: () => retryLocation() },
-          { text: "取消", style: "cancel" },
-        ],
-      );
-      return;
-    }
     const { lat, lng, locationName } = locationStatus;
     const title = `声音随记·${locationName}`;
     Alert.alert(
