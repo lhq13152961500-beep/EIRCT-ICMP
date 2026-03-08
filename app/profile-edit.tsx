@@ -277,8 +277,9 @@ export default function ProfileEditScreen() {
       mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.7,
+      quality: 0.6,
       base64: true,
+      exif: false,
     });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
@@ -300,8 +301,9 @@ export default function ProfileEditScreen() {
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.7,
+      quality: 0.6,
       base64: true,
+      exif: false,
     });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
