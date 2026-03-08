@@ -250,7 +250,7 @@ export default function ProfileScreen() {
             <MenuItem
               icon="radio-outline" label="发现他人声音"
               value={isGuest ? undefined : "收听 32 次"}
-              color="#5C6BC0" badge={isGuest ? undefined : 3}
+              color="#5C6BC0"
               locked={isGuest}
               onPress={guard(() => {})}
             />
