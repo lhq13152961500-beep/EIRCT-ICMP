@@ -128,8 +128,10 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       }
     } else {
       (async () => {
+        console.log("[loc] requesting permissions...");
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (!mounted) return;
+        console.log("[loc] permission:", status);
         if (status !== "granted") {
           setIsLocating(false);
           setLocationStatus({ state: "denied" });
@@ -139,10 +141,28 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
         try {
           const cached = await Location.getLastKnownPositionAsync({ maxAge: 60 * 60 * 1000 });
           if (cached && mounted && !gotFix) {
+            console.log("[loc] cached position found");
             update(cached.coords);
           }
-        } catch {}
+        } catch (e) {
+          console.log("[loc] no cached position:", e);
+        }
 
+        try {
+          console.log("[loc] trying Low accuracy one-shot...");
+          const pos = await withTimeout(
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }),
+            8000,
+          );
+          if (mounted && !gotFix) {
+            console.log("[loc] Low accuracy fix ±", pos.coords.accuracy?.toFixed(0), "m");
+            update(pos.coords);
+          }
+        } catch (e) {
+          console.log("[loc] Low accuracy failed:", e);
+        }
+
+        console.log("[loc] starting watch (Balanced)...");
         locationSubRef.current?.remove();
         Location.watchPositionAsync(
           {
@@ -152,29 +172,42 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
             mayShowUserSettingsDialog: true,
           },
           (l) => {
+            console.log("[loc] watch fired ±", l.coords.accuracy?.toFixed(0), "m");
             if (mounted) update(l.coords);
           },
         ).then((sub) => {
           if (mounted) {
             locationSubRef.current = sub;
             setWatchActive(true);
+            console.log("[loc] watch subscribed");
           } else {
             sub.remove();
           }
         }).catch((e) => console.warn("[loc] watch failed:", e));
 
-        try {
-          const pos = await withTimeout(
-            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-            15000,
-          );
-          if (mounted) update(pos.coords);
-        } catch {}
+        if (!gotFix) {
+          try {
+            console.log("[loc] trying Balanced one-shot...");
+            const pos = await withTimeout(
+              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+              15000,
+            );
+            if (mounted) {
+              console.log("[loc] Balanced fix ±", pos.coords.accuracy?.toFixed(0), "m");
+              update(pos.coords);
+            }
+          } catch (e) {
+            console.log("[loc] Balanced one-shot failed:", e);
+          }
+        }
 
         setTimeout(() => {
-          if (mounted && !gotFix) setIsLocating(false);
+          if (mounted && !gotFix) {
+            console.log("[loc] 20s timeout - no fix obtained");
+            setIsLocating(false);
+          }
         }, 20000);
-      })().catch(() => {});
+      })().catch((e) => console.warn("[loc] top-level error:", e));
     }
 
     return () => {
