@@ -164,6 +164,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/geocode/reverse", async (req, res) => {
+    try {
+      const { lat, lng } = req.query as { lat?: string; lng?: string };
+      if (!lat || !lng) {
+        return res.status(400).json({ error: "lat and lng are required" });
+      }
+      const amapKey = process.env.AMAP_API_KEY;
+      if (!amapKey) {
+        return res.status(500).json({ error: "AMAP_API_KEY not configured" });
+      }
+      const location = `${lng},${lat}`;
+      const amapRes = await fetch(
+        `https://restapi.amap.com/v3/geocode/regeo?key=${amapKey}&location=${location}&extensions=base&output=json`,
+      );
+      if (!amapRes.ok) {
+        return res.status(502).json({ error: "Amap API request failed" });
+      }
+      const data = await amapRes.json() as any;
+      if (data.status !== "1") {
+        return res.status(502).json({ error: data.info || "Amap API error" });
+      }
+      const comp = data.regeocode?.addressComponent ?? {};
+      const poi = data.regeocode?.pois?.[0]?.name;
+      const township = comp.township;
+      const neighborhood = comp.neighborhood?.name;
+      const street = comp.streetNumber?.street;
+      const district = comp.district;
+      const city = typeof comp.city === "string" && comp.city ? comp.city : comp.province;
+      const detailed = poi || neighborhood || street || township;
+      const parts = [detailed, district || city].filter(Boolean);
+      const name = parts.length > 0 ? parts.join(" · ") : (data.regeocode?.formatted_address || "当前位置");
+      return res.json({ name, raw: data.regeocode });
+    } catch (err) {
+      console.error("Reverse geocode error:", err);
+      return res.status(500).json({ error: "Reverse geocode failed" });
+    }
+  });
+
+  app.get("/api/geocode/ip", async (req, res) => {
+    try {
+      const amapKey = process.env.AMAP_API_KEY;
+      if (!amapKey) {
+        return res.status(500).json({ error: "AMAP_API_KEY not configured" });
+      }
+      const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip;
+      const amapRes = await fetch(
+        `https://restapi.amap.com/v3/ip?key=${amapKey}&ip=${clientIp}&output=json`,
+      );
+      if (!amapRes.ok) {
+        return res.status(502).json({ error: "Amap IP API failed" });
+      }
+      const data = await amapRes.json() as any;
+      if (data.status !== "1") {
+        return res.status(502).json({ error: data.info || "Amap IP error" });
+      }
+      const city = data.city || data.province || "未知位置";
+      const rectangle = data.rectangle;
+      let lat: number | null = null;
+      let lng: number | null = null;
+      if (typeof rectangle === "string" && rectangle.includes(";")) {
+        const [p1, p2] = rectangle.split(";");
+        const [lng1, lat1] = p1.split(",").map(Number);
+        const [lng2, lat2] = p2.split(",").map(Number);
+        lat = (lat1 + lat2) / 2;
+        lng = (lng1 + lng2) / 2;
+      }
+      return res.json({ city, lat, lng });
+    } catch (err) {
+      console.error("IP geocode error:", err);
+      return res.status(500).json({ error: "IP geocode failed" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

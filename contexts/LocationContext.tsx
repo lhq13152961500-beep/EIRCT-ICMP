@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { Platform, Alert, Linking } from "react-native";
 import * as Location from "expo-location";
+import { getApiUrl } from "@/lib/query-client";
 
 export type LocationStatus =
   | { state: "none" }
@@ -31,7 +32,25 @@ export function useLocation() {
 
 async function fetchIpLocation(): Promise<{ lat: number; lng: number; city: string } | null> {
   console.log("[loc] Starting IP Geolocation...");
-  const apis = [
+
+  try {
+    const baseUrl = getApiUrl();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(new URL("/api/geocode/ip", baseUrl).href, { signal: controller.signal });
+    clearTimeout(timer);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.city && data.lat != null && data.lng != null) {
+        console.log("[loc] IP Geolocation Success (Amap):", data.city);
+        return { lat: data.lat, lng: data.lng, city: data.city };
+      }
+    }
+  } catch (e) {
+    console.log("[loc] Amap IP API Failed:", e);
+  }
+
+  const fallbackApis = [
     {
       url: "https://ipapi.co/json/",
       parse: (d: any) => ({ lat: d.latitude, lng: d.longitude, city: d.city || d.region || "未知城市" }),
@@ -42,23 +61,21 @@ async function fetchIpLocation(): Promise<{ lat: number; lng: number; city: stri
     },
   ];
 
-  for (const api of apis) {
+  for (const api of fallbackApis) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
       const res = await fetch(api.url, { signal: controller.signal });
       clearTimeout(timer);
       if (!res.ok) throw new Error(`Status ${res.status}`);
-
       const data = await res.json();
       const result = api.parse(data);
-
       if (result && typeof result.lat === "number" && typeof result.lng === "number") {
-        console.log(`[loc] IP Geolocation Success via ${api.url}:`, result.city);
+        console.log(`[loc] IP Geolocation Fallback Success:`, result.city);
         return result;
       }
     } catch (e) {
-      console.log(`[loc] IP API Failed (${api.url}):`, e);
+      console.log(`[loc] IP Fallback Failed (${api.url}):`, e);
     }
   }
   console.log("[loc] All IP Geolocation APIs failed.");
@@ -67,20 +84,36 @@ async function fetchIpLocation(): Promise<{ lat: number; lng: number; city: stri
 
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   try {
+    const baseUrl = getApiUrl();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(
+      new URL(`/api/geocode/reverse?lat=${lat}&lng=${lng}`, baseUrl).href,
+      { signal: controller.signal },
+    );
+    clearTimeout(timer);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.name) {
+        console.log("[loc] Reverse Geocoded (Amap):", data.name);
+        return data.name;
+      }
+    }
+  } catch (e) {
+    console.warn("[loc] Amap Reverse Geocode Failed:", e);
+  }
 
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=zh&zoom=16`,
       {
-        headers: {
-          "User-Agent": "GuanyouApp/1.0 (contact@guanyou.app)"
-        },
-        signal: controller.signal
+        headers: { "User-Agent": "GuanyouApp/1.0 (contact@guanyou.app)" },
+        signal: controller.signal,
       },
     );
     clearTimeout(timer);
-
     if (res.ok) {
       const data = await res.json();
       const addr = data.address ?? {};
@@ -88,18 +121,15 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
       const district = addr.suburb ?? addr.district ?? addr.town ?? addr.city ?? addr.county;
       const parts = [detailed, district].filter(Boolean);
       const name = parts.length > 0 ? parts.join(" · ") : (data.display_name?.split(",")[0] || "当前位置");
-      console.log("[loc] Reverse Geocoded (OSM):", name);
+      console.log("[loc] Reverse Geocoded (OSM fallback):", name);
       return name;
-    } else {
-      console.warn("[loc] OSM Reverse Geocode HTTP Error:", res.status);
     }
   } catch (e) {
-    console.warn("[loc] OSM Reverse Geocode Exception:", e);
+    console.warn("[loc] OSM Reverse Geocode Failed:", e);
   }
 
   if (Platform.OS !== "web") {
     try {
-      console.log("[loc] Trying Native Reverse Geocode...");
       const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
       if (results.length > 0) {
         const r = results[0];
