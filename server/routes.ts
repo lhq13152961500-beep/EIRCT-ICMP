@@ -187,13 +187,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const comp = data.regeocode?.addressComponent ?? {};
       const poi = data.regeocode?.pois?.[0]?.name;
-      const township = comp.township;
-      const neighborhood = comp.neighborhood?.name;
-      const street = comp.streetNumber?.street;
-      const district = comp.district;
-      const city = typeof comp.city === "string" && comp.city ? comp.city : comp.province;
-      const detailed = poi || neighborhood || street || township;
-      const parts = [detailed, district || city].filter(Boolean);
+      const township = typeof comp.township === "string" && comp.township ? comp.township : null;
+      const neighborhood = typeof comp.neighborhood?.name === "string" && comp.neighborhood.name ? comp.neighborhood.name : null;
+      const streetName = typeof comp.streetNumber?.street === "string" && comp.streetNumber.street ? comp.streetNumber.street : null;
+      const district = typeof comp.district === "string" && comp.district ? comp.district : null;
+      const city = typeof comp.city === "string" && comp.city ? comp.city : (typeof comp.province === "string" ? comp.province : null);
+      const detailed = poi || neighborhood || streetName || township;
+      const area = district || city;
+      const parts = [detailed, area].filter(Boolean);
       const name = parts.length > 0 ? parts.join(" · ") : (data.regeocode?.formatted_address || "当前位置");
       return res.json({ name, raw: data.regeocode });
     } catch (err) {
