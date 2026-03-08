@@ -76,7 +76,6 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
     let gotFix = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let webWatchId: number | null = null;
 
     setIsLocating(true);
@@ -87,9 +86,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     const update = ({ latitude, longitude, accuracy }: { latitude: number; longitude: number; accuracy?: number | null }) => {
       if (!mounted) return;
       gotFix = true;
-      if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
       setIsLocating(false);
-      setWatchActive(false);
 
       const last = lastGeocodedRef.current;
       const shouldGeocode = !last || (() => {
@@ -114,21 +111,17 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    timeoutId = setTimeout(() => {
-      if (mounted) setIsLocating(false);
-    }, 15000);
-
     if (Platform.OS === "web") {
       if (typeof navigator !== "undefined" && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => { if (mounted) update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy }); },
           () => { if (mounted) setIsLocating(false); },
-          { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 },
+          { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 },
         );
         webWatchId = navigator.geolocation.watchPosition(
           (pos) => { if (mounted) update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy }); },
           () => {},
-          { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
+          { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 },
         );
       } else {
         setIsLocating(false);
@@ -142,6 +135,13 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
           setLocationStatus({ state: "denied" });
           return;
         }
+
+        try {
+          const cached = await Location.getLastKnownPositionAsync({ maxAge: 60 * 60 * 1000 });
+          if (cached && mounted && !gotFix) {
+            update(cached.coords);
+          }
+        } catch {}
 
         locationSubRef.current?.remove();
         Location.watchPositionAsync(
@@ -166,23 +166,19 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
         try {
           const pos = await withTimeout(
             Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-            10000,
+            15000,
           );
           if (mounted) update(pos.coords);
-        } catch {
-          try {
-            const last = await Location.getLastKnownPositionAsync({ maxAge: 30 * 60 * 1000 });
-            if (last && mounted) update(last.coords);
-          } catch {}
-        }
+        } catch {}
 
-        if (mounted) setIsLocating(false);
+        setTimeout(() => {
+          if (mounted && !gotFix) setIsLocating(false);
+        }, 20000);
       })().catch(() => {});
     }
 
     return () => {
       mounted = false;
-      if (timeoutId) clearTimeout(timeoutId);
       if (webWatchId !== null && typeof navigator !== "undefined" && navigator.geolocation) {
         navigator.geolocation.clearWatch(webWatchId);
       }
