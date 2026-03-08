@@ -23,6 +23,7 @@ import * as ImagePicker from "expo-image-picker";
 import Colors from "@/constants/colors";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { useRecordings, type PublishedRecording } from "@/contexts/RecordingsContext";
+import { useLocation, type LocationStatus } from "@/contexts/LocationContext";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -34,18 +35,6 @@ function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60).toString().padStart(2, "0");
   const s = (seconds % 60).toString().padStart(2, "0");
   return `${m}:${s}`;
-}
-
-// ─── Timeout wrapper ──────────────────────────────────────────────────────────
-
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timerId = setTimeout(() => reject(new Error(`${ms}ms timeout exceeded`)), ms);
-    promise.then(
-      (v) => { clearTimeout(timerId); resolve(v); },
-      (e) => { clearTimeout(timerId); reject(e); }
-    );
-  });
 }
 
 // ─── Reverse Geocoding ────────────────────────────────────────────────────────
@@ -131,11 +120,6 @@ const MUSIC_LIST: MusicItem[] = [
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type RecordingState = "idle" | "recording" | "paused" | "finished";
-
-type LocationStatus =
-  | { state: "none" }
-  | { state: "denied" }
-  | { state: "located"; lat: number; lng: number; locationName: string; accuracy?: number };
 
 // ─── Waveform ────────────────────────────────────────────────────────────────
 
@@ -228,12 +212,9 @@ export default function MicScreen() {
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
   const { addMyRecording, setDeviceLocation } = useRecordings();
+  const { locationStatus, isLocating, watchActive, retry: retryLocation, overrideLocation } = useLocation();
   const [isPublishing, setIsPublishing] = useState(false);
 
-  const [locationStatus, setLocationStatus] = useState<LocationStatus>({ state: "none" });
-  const [isLocating, setIsLocating] = useState(true);
-  const [watchActive, setWatchActive] = useState(false);
-  const [locationTrigger, setLocationTrigger] = useState(0);
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [recState, setRecState]     = useState<RecordingState>("idle");
   const [elapsed, setElapsed]       = useState(0);
@@ -251,7 +232,6 @@ export default function MicScreen() {
   const recordingRef   = useRef<Audio.Recording | null>(null);
   const previewSoundRef = useRef<Audio.Sound | null>(null);
   const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null);
-  const locationSubRef = useRef<Location.LocationSubscription | null>(null);
   const envSoundRef    = useRef(envSound);
   envSoundRef.current  = envSound;
 
@@ -278,146 +258,11 @@ export default function MicScreen() {
     };
   }, []);
 
-  // ── Location Tracking ──────────────────────────────────────────────────────
-
-  // Throttle reverse geocode: only re-geocode when moved >50m or no name yet
-  const lastGeocodedRef = useRef<{ lat: number; lng: number } | null>(null);
-
   useEffect(() => {
-    let mounted = true;
-    let gotFix = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    let webWatchId: number | null = null;
-
-    setIsLocating(true);
-    setWatchActive(false);
-    setLocationStatus({ state: "none" });
-    lastGeocodedRef.current = null;
-
-    const update = ({ latitude, longitude, accuracy }: { latitude: number; longitude: number; accuracy?: number | null }) => {
-      if (!mounted) return;
-      gotFix = true;
-      if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
-      setIsLocating(false);
-      setWatchActive(false);
-      setDeviceLocation({ lat: latitude, lng: longitude });
-
-      // Only reverse-geocode if no name yet, or moved >50m from last geocode
-      const last = lastGeocodedRef.current;
-      const shouldGeocode = !last || (() => {
-        const R = 6371000, toR = (v: number) => (v * Math.PI) / 180;
-        const dLat = toR(latitude - last.lat), dLon = toR(longitude - last.lng);
-        const a = Math.sin(dLat / 2) ** 2 + Math.cos(toR(last.lat)) * Math.cos(toR(latitude)) * Math.sin(dLon / 2) ** 2;
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) > 50;
-      })();
-
-      setLocationStatus((prev) => {
-        const prevName = prev.state === "located" ? prev.locationName : "正在解析地址…";
-        return { state: "located", lat: latitude, lng: longitude, locationName: shouldGeocode ? "正在解析地址…" : prevName, accuracy: accuracy ?? undefined };
-      });
-
-      if (shouldGeocode) {
-        lastGeocodedRef.current = { lat: latitude, lng: longitude };
-        reverseGeocode(latitude, longitude).then((name) => {
-          if (mounted) {
-            setLocationStatus({ state: "located", lat: latitude, lng: longitude, locationName: name, accuracy: accuracy ?? undefined });
-          }
-        });
-      }
-    };
-
-    // Stop spinner after 15 seconds if nothing resolves
-    timeoutId = setTimeout(() => {
-      if (mounted) setIsLocating(false);
-    }, 15000);
-
-    if (Platform.OS === "web") {
-      if (typeof navigator !== "undefined" && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => { if (mounted) update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy }); },
-          () => { if (mounted) setIsLocating(false); },
-          { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
-        );
-        webWatchId = navigator.geolocation.watchPosition(
-          (pos) => { if (mounted) update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy }); },
-          () => {},
-          { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-        );
-      } else {
-        setIsLocating(false);
-      }
-    } else {
-      (async () => {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (!mounted) return;
-        if (status !== "granted") {
-          setIsLocating(false);
-          setLocationStatus({ state: "denied" });
-          return;
-        }
-
-        // Start the continuous watch immediately — no timeout wrapper so it
-        // is never silently killed. Fires within 1-3s on real devices with
-        // WiFi/network available (Balanced accuracy = no satellite needed).
-        locationSubRef.current?.remove();
-        Location.watchPositionAsync(
-          {
-            accuracy: Location.Accuracy.Balanced,
-            timeInterval: 5000,
-            distanceInterval: 10,
-            mayShowUserSettingsDialog: true,
-          },
-          (l) => {
-            console.log("[loc] watch fired ±", l.coords.accuracy?.toFixed(0), "m");
-            if (mounted) update(l.coords);
-          }
-        ).then((sub) => {
-          if (mounted) {
-            locationSubRef.current = sub;
-            setWatchActive(true);
-            console.log("[loc] watch subscribed");
-          } else {
-            sub.remove();
-          }
-        }).catch((e) => console.warn("[loc] watch failed:", e));
-
-        // In parallel: try a fast one-shot fix. If watch fires first, update()
-        // will have set gotFix=true and this result is effectively a no-op.
-        try {
-          const pos = await withTimeout(
-            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-            10000, "getCurrentBalanced"
-          );
-          if (mounted) {
-            console.log("[loc] one-shot ±", pos.coords.accuracy?.toFixed(0), "m");
-            update(pos.coords);
-          }
-        } catch (e) {
-          console.warn("[loc] one-shot failed:", e);
-          // Try cached last-known as final fallback
-          try {
-            const last = await Location.getLastKnownPositionAsync({ maxAge: 30 * 60 * 1000 });
-            if (last && mounted) {
-              console.log("[loc] lastKnown fallback ±", last.coords.accuracy?.toFixed(0), "m");
-              update(last.coords);
-            }
-          } catch (_) {}
-        }
-
-        if (mounted) setIsLocating(false);
-      })().catch(() => {});
+    if (locationStatus.state === "located") {
+      setDeviceLocation({ lat: locationStatus.lat, lng: locationStatus.lng });
     }
-
-    return () => {
-      mounted = false;
-      if (timeoutId) clearTimeout(timeoutId);
-      if (webWatchId !== null && typeof navigator !== "undefined" && navigator.geolocation) {
-        navigator.geolocation.clearWatch(webWatchId);
-      }
-      locationSubRef.current?.remove();
-      locationSubRef.current = null;
-    };
-  }, [locationTrigger]);
+  }, [locationStatus]);
 
   // ── Recording actions ──────────────────────────────────────────────────────
 
@@ -696,10 +541,10 @@ export default function MicScreen() {
 
   const confirmMapLocation = useCallback(async (lat: number, lng: number) => {
     const name = await reverseGeocode(lat, lng);
-    setLocationStatus({ state: "located", lat, lng, locationName: name });
+    overrideLocation(lat, lng, name);
     setDeviceLocation({ lat, lng });
     setShowMapPicker(false);
-  }, [setDeviceLocation]);
+  }, [setDeviceLocation, overrideLocation]);
 
   const gpsReady = locationStatus.state === "located";
 
@@ -764,7 +609,7 @@ export default function MicScreen() {
             ? <ActivityIndicator size="small" color={Colors.light.primary} style={{ marginLeft: 6 }} />
             : (
               <Pressable
-                onPress={() => { haptic(); setLocationTrigger((n) => n + 1); }}
+                onPress={() => { haptic(); retryLocation(); }}
                 style={styles.retryBtn}
               >
                 <Ionicons name="refresh" size={13} color={Colors.light.primary} />

@@ -17,9 +17,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import * as Location from "expo-location";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLocation } from "@/contexts/LocationContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TAB_BAR_HEIGHT = 80;
@@ -90,47 +90,10 @@ export default function HomeScreen() {
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
   const { profile } = useAuth();
   const avatarUrl = profile?.avatarUrl || null;
-
-  const [locationText, setLocationText] = useState("定位中...");
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (Platform.OS === "web") {
-        try {
-          const pos = await new Promise<GeolocationPosition>((res, rej) =>
-            navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 }),
-          );
-          if (cancelled) return;
-          const resp = await Location.reverseGeocodeAsync({
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-          });
-          if (!cancelled && resp[0]) {
-            const g = resp[0];
-            setLocationText(g.city || g.region || g.district || g.name || "未知位置");
-          }
-        } catch {
-          if (!cancelled) setLocationText("无法定位");
-        }
-        return;
-      }
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") { if (!cancelled) setLocationText("未授权定位"); return; }
-      try {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        if (cancelled) return;
-        const resp = await Location.reverseGeocodeAsync(loc.coords);
-        if (!cancelled && resp[0]) {
-          const g = resp[0];
-          setLocationText(g.city || g.region || g.district || g.name || "未知位置");
-        }
-      } catch {
-        if (!cancelled) setLocationText("无法定位");
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  const { locationStatus, isLocating } = useLocation();
+  const locationText = locationStatus.state === "located"
+    ? locationStatus.locationName
+    : isLocating ? "定位中..." : locationStatus.state === "denied" ? "未授权定位" : "无法定位";
 
   const [bannerIndex, setBannerIndex] = useState(0);
   const [infoBanner, setInfoBanner] = useState<BannerItem | null>(null);
