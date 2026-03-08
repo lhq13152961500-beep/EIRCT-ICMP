@@ -138,37 +138,29 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        console.log("[loc] trying cached position...");
         try {
-          const cached = await Location.getLastKnownPositionAsync({ maxAge: 60 * 60 * 1000 });
-          if (cached && mounted && !gotFix) {
-            console.log("[loc] cached position found");
-            update(cached.coords);
-          }
-        } catch (e) {
-          console.log("[loc] no cached position:", e);
-        }
-
-        try {
-          console.log("[loc] trying Low accuracy one-shot...");
-          const pos = await withTimeout(
-            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }),
-            8000,
+          const cached = await withTimeout(
+            Location.getLastKnownPositionAsync({ maxAge: 60 * 60 * 1000 }),
+            3000,
           );
-          if (mounted && !gotFix) {
-            console.log("[loc] Low accuracy fix ±", pos.coords.accuracy?.toFixed(0), "m");
-            update(pos.coords);
+          if (cached && mounted && !gotFix) {
+            console.log("[loc] cached position found ±", cached.coords.accuracy?.toFixed(0), "m");
+            update(cached.coords);
+          } else {
+            console.log("[loc] no cached position available");
           }
         } catch (e) {
-          console.log("[loc] Low accuracy failed:", e);
+          console.log("[loc] cached position timeout/error:", e);
         }
 
-        console.log("[loc] starting watch (Balanced)...");
+        console.log("[loc] starting watch (Low accuracy)...");
         locationSubRef.current?.remove();
         Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.Balanced,
-            timeInterval: 5000,
-            distanceInterval: 10,
+            accuracy: Location.Accuracy.Low,
+            timeInterval: 3000,
+            distanceInterval: 5,
             mayShowUserSettingsDialog: true,
           },
           (l) => {
@@ -179,18 +171,32 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
           if (mounted) {
             locationSubRef.current = sub;
             setWatchActive(true);
-            console.log("[loc] watch subscribed");
+            console.log("[loc] watch subscribed OK");
           } else {
             sub.remove();
           }
         }).catch((e) => console.warn("[loc] watch failed:", e));
 
+        console.log("[loc] trying Low accuracy one-shot...");
+        try {
+          const pos = await withTimeout(
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }),
+            8000,
+          );
+          if (mounted) {
+            console.log("[loc] Low fix ±", pos.coords.accuracy?.toFixed(0), "m");
+            update(pos.coords);
+          }
+        } catch (e) {
+          console.log("[loc] Low one-shot failed:", e);
+        }
+
         if (!gotFix) {
+          console.log("[loc] trying Balanced one-shot...");
           try {
-            console.log("[loc] trying Balanced one-shot...");
             const pos = await withTimeout(
               Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-              15000,
+              12000,
             );
             if (mounted) {
               console.log("[loc] Balanced fix ±", pos.coords.accuracy?.toFixed(0), "m");
@@ -203,10 +209,10 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 
         setTimeout(() => {
           if (mounted && !gotFix) {
-            console.log("[loc] 20s timeout - no fix obtained");
+            console.log("[loc] 25s timeout - no fix obtained");
             setIsLocating(false);
           }
-        }, 20000);
+        }, 25000);
       })().catch((e) => console.warn("[loc] top-level error:", e));
     }
 
