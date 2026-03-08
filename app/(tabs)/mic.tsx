@@ -41,6 +41,21 @@ function formatTime(seconds: number) {
 
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=zh&zoom=14`,
+      { headers: { "User-Agent": "guanyou-app/1.0" } },
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const addr = data.address ?? {};
+      const parts = [
+        addr.tourism ?? addr.amenity ?? addr.road ?? addr.village,
+        addr.suburb ?? addr.district ?? addr.town ?? addr.city,
+      ].filter(Boolean);
+      return parts.join(" · ") || data.display_name?.split(",")[0] || "当前位置";
+    }
+  } catch {}
+  try {
     if (Platform.OS !== "web") {
       const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
       if (results.length > 0) {
@@ -48,22 +63,8 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
         const parts = [r.name, r.district, r.city].filter(Boolean);
         return parts.slice(0, 2).join(" · ") || "当前位置";
       }
-    } else {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=zh`,
-        { headers: { "User-Agent": "guanyou-app/1.0" } }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const addr = data.address ?? {};
-        const parts = [
-          addr.tourism ?? addr.amenity ?? addr.road,
-          addr.suburb ?? addr.district ?? addr.town,
-        ].filter(Boolean);
-        return parts.join(" · ") || data.display_name?.split(",")[0] || "当前位置";
-      }
     }
-  } catch { /* ignore */ }
+  } catch {}
   return "当前位置";
 }
 

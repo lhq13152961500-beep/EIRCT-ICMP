@@ -27,23 +27,66 @@ export function useLocation() {
   return useContext(LocationContext);
 }
 
+async function fetchIpLocation(): Promise<{ lat: number; lng: number; city: string } | null> {
+  const apis = [
+    {
+      url: "https://ipapi.co/json/",
+      parse: (d: any) => ({ lat: d.latitude, lng: d.longitude, city: d.city || d.region || "未知位置" }),
+    },
+    {
+      url: "http://ip-api.com/json/?lang=zh-CN&fields=lat,lon,city,regionName,status",
+      parse: (d: any) => d.status === "success" ? ({ lat: d.lat, lng: d.lon, city: d.city || d.regionName || "未知位置" }) : null,
+    },
+  ];
+
+  for (const api of apis) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(api.url, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) continue;
+      const data = await res.json();
+      const result = api.parse(data);
+      if (result && typeof result.lat === "number" && typeof result.lng === "number") {
+        console.log("[loc] IP geolocation success:", result.city);
+        return result;
+      }
+    } catch (e) {
+      console.log("[loc] IP API failed:", api.url, e);
+    }
+  }
+  return null;
+}
+
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=zh&zoom=12`,
+      { headers: { "User-Agent": "guanyou-app/1.0" } },
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const addr = data.address ?? {};
+      const parts = [
+        addr.city || addr.town || addr.county,
+        addr.state || addr.province,
+      ].filter(Boolean);
+      if (parts.length > 0) return parts[0];
+      return data.display_name?.split(",")[0] || "当前位置";
+    }
+  } catch {}
+
   try {
     if (Platform.OS !== "web") {
       const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
       if (results.length > 0) {
         const r = results[0];
-        const parts = [r.name, r.district, r.city].filter(Boolean);
-        return parts.slice(0, 2).join(" · ") || "当前位置";
-      }
-    } else {
-      const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
-      if (results.length > 0) {
-        const r = results[0];
-        return r.city || r.region || r.district || r.name || "当前位置";
+        return r.city || r.district || r.name || "当前位置";
       }
     }
   } catch {}
+
   return "当前位置";
 }
 
@@ -64,7 +107,6 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   const [trigger, setTrigger] = useState(0);
 
   const locationSubRef = useRef<Location.LocationSubscription | null>(null);
-  const lastGeocodedRef = useRef<{ lat: number; lng: number } | null>(null);
 
   const retry = useCallback(() => setTrigger((n) => n + 1), []);
 
@@ -81,140 +123,108 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     setIsLocating(true);
     setWatchActive(false);
     setLocationStatus({ state: "none" });
-    lastGeocodedRef.current = null;
 
-    const update = ({ latitude, longitude, accuracy }: { latitude: number; longitude: number; accuracy?: number | null }) => {
+    const updateWithName = (lat: number, lng: number, name: string, accuracy?: number) => {
       if (!mounted) return;
       gotFix = true;
       setIsLocating(false);
+      setLocationStatus({ state: "located", lat, lng, locationName: name, accuracy });
+    };
 
-      const last = lastGeocodedRef.current;
-      const shouldGeocode = !last || (() => {
-        const R = 6371000, toR = (v: number) => (v * Math.PI) / 180;
-        const dLat = toR(latitude - last.lat), dLon = toR(longitude - last.lng);
-        const a = Math.sin(dLat / 2) ** 2 + Math.cos(toR(last.lat)) * Math.cos(toR(latitude)) * Math.sin(dLon / 2) ** 2;
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) > 50;
-      })();
-
-      setLocationStatus((prev) => {
-        const prevName = prev.state === "located" ? prev.locationName : "正在解析地址…";
-        return { state: "located", lat: latitude, lng: longitude, locationName: shouldGeocode ? "正在解析地址…" : prevName, accuracy: accuracy ?? undefined };
-      });
-
-      if (shouldGeocode) {
-        lastGeocodedRef.current = { lat: latitude, lng: longitude };
-        reverseGeocode(latitude, longitude).then((name) => {
-          if (mounted) {
-            setLocationStatus({ state: "located", lat: latitude, lng: longitude, locationName: name, accuracy: accuracy ?? undefined });
-          }
-        });
+    const updateWithGeocode = async (lat: number, lng: number, accuracy?: number) => {
+      if (!mounted) return;
+      gotFix = true;
+      setIsLocating(false);
+      setLocationStatus({ state: "located", lat, lng, locationName: "正在解析地址…", accuracy });
+      const name = await reverseGeocode(lat, lng);
+      if (mounted) {
+        setLocationStatus({ state: "located", lat, lng, locationName: name, accuracy });
       }
     };
 
-    if (Platform.OS === "web") {
-      if (typeof navigator !== "undefined" && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => { if (mounted) update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy }); },
-          () => { if (mounted) setIsLocating(false); },
-          { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 },
-        );
-        webWatchId = navigator.geolocation.watchPosition(
-          (pos) => { if (mounted) update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy }); },
-          () => {},
-          { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 },
-        );
-      } else {
-        setIsLocating(false);
+    (async () => {
+      console.log("[loc] Step 1: trying IP geolocation...");
+      const ipLoc = await fetchIpLocation();
+      if (ipLoc && mounted && !gotFix) {
+        updateWithName(ipLoc.lat, ipLoc.lng, ipLoc.city);
       }
-    } else {
-      (async () => {
-        console.log("[loc] requesting permissions...");
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (!mounted) return;
-        console.log("[loc] permission:", status);
-        if (status !== "granted") {
-          setIsLocating(false);
-          setLocationStatus({ state: "denied" });
-          return;
-        }
 
-        console.log("[loc] trying cached position...");
-        try {
-          const cached = await withTimeout(
-            Location.getLastKnownPositionAsync({ maxAge: 60 * 60 * 1000 }),
-            3000,
+      if (Platform.OS === "web") {
+        if (typeof navigator !== "undefined" && navigator.geolocation) {
+          console.log("[loc] Step 2: trying browser geolocation...");
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              if (mounted) updateWithGeocode(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
+            },
+            () => {},
+            { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
           );
-          if (cached && mounted && !gotFix) {
-            console.log("[loc] cached position found ±", cached.coords.accuracy?.toFixed(0), "m");
-            update(cached.coords);
-          } else {
-            console.log("[loc] no cached position available");
-          }
-        } catch (e) {
-          console.log("[loc] cached position timeout/error:", e);
-        }
-
-        console.log("[loc] starting watch (Low accuracy)...");
-        locationSubRef.current?.remove();
-        Location.watchPositionAsync(
-          {
-            accuracy: Location.Accuracy.Low,
-            timeInterval: 3000,
-            distanceInterval: 5,
-            mayShowUserSettingsDialog: true,
-          },
-          (l) => {
-            console.log("[loc] watch fired ±", l.coords.accuracy?.toFixed(0), "m");
-            if (mounted) update(l.coords);
-          },
-        ).then((sub) => {
-          if (mounted) {
-            locationSubRef.current = sub;
-            setWatchActive(true);
-            console.log("[loc] watch subscribed OK");
-          } else {
-            sub.remove();
-          }
-        }).catch((e) => console.warn("[loc] watch failed:", e));
-
-        console.log("[loc] trying Low accuracy one-shot...");
-        try {
-          const pos = await withTimeout(
-            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }),
-            8000,
+          webWatchId = navigator.geolocation.watchPosition(
+            (pos) => {
+              if (mounted) updateWithGeocode(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
+            },
+            () => {},
+            { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 },
           );
-          if (mounted) {
-            console.log("[loc] Low fix ±", pos.coords.accuracy?.toFixed(0), "m");
-            update(pos.coords);
-          }
-        } catch (e) {
-          console.log("[loc] Low one-shot failed:", e);
         }
+      } else {
+        console.log("[loc] Step 2: requesting device GPS permission...");
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (!mounted) return;
+          console.log("[loc] GPS permission:", status);
+          if (status === "granted") {
+            console.log("[loc] Step 3: starting GPS watch...");
+            locationSubRef.current?.remove();
+            Location.watchPositionAsync(
+              {
+                accuracy: Location.Accuracy.Low,
+                timeInterval: 5000,
+                distanceInterval: 10,
+                mayShowUserSettingsDialog: true,
+              },
+              (l) => {
+                console.log("[loc] GPS watch fired ±", l.coords.accuracy?.toFixed(0), "m");
+                if (mounted) updateWithGeocode(l.coords.latitude, l.coords.longitude, l.coords.accuracy ?? undefined);
+              },
+            ).then((sub) => {
+              if (mounted) {
+                locationSubRef.current = sub;
+                setWatchActive(true);
+                console.log("[loc] GPS watch subscribed");
+              } else {
+                sub.remove();
+              }
+            }).catch((e) => console.warn("[loc] GPS watch failed:", e));
 
-        if (!gotFix) {
-          console.log("[loc] trying Balanced one-shot...");
-          try {
-            const pos = await withTimeout(
-              Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-              12000,
-            );
-            if (mounted) {
-              console.log("[loc] Balanced fix ±", pos.coords.accuracy?.toFixed(0), "m");
-              update(pos.coords);
+            try {
+              const pos = await withTimeout(
+                Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }),
+                10000,
+              );
+              if (mounted) {
+                console.log("[loc] GPS one-shot ±", pos.coords.accuracy?.toFixed(0), "m");
+                updateWithGeocode(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
+              }
+            } catch (e) {
+              console.log("[loc] GPS one-shot failed:", e);
             }
-          } catch (e) {
-            console.log("[loc] Balanced one-shot failed:", e);
-          }
-        }
-
-        setTimeout(() => {
-          if (mounted && !gotFix) {
-            console.log("[loc] 25s timeout - no fix obtained");
+          } else if (!gotFix) {
+            setLocationStatus({ state: "denied" });
             setIsLocating(false);
           }
-        }, 25000);
-      })().catch((e) => console.warn("[loc] top-level error:", e));
-    }
+        } catch (e) {
+          console.warn("[loc] GPS permission error:", e);
+        }
+      }
+
+      setTimeout(() => {
+        if (mounted && !gotFix) {
+          console.log("[loc] final timeout - no fix");
+          setIsLocating(false);
+        }
+      }, 20000);
+    })().catch((e) => console.warn("[loc] error:", e));
 
     return () => {
       mounted = false;
