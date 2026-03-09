@@ -21,6 +21,7 @@ import { Audio } from "expo-av";
 import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
 import Colors from "@/constants/colors";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { useRecordings, type PublishedRecording } from "@/contexts/RecordingsContext";
@@ -476,6 +477,29 @@ export default function MicScreen() {
             haptic(Haptics.ImpactFeedbackStyle.Medium);
             setIsPublishing(true);
             try {
+              let audioData: string | undefined;
+              if (finishedUri) {
+                try {
+                  if (Platform.OS === "web") {
+                    const resp = await fetch(finishedUri);
+                    const blob = await resp.blob();
+                    audioData = await new Promise<string>((resolve) => {
+                      const reader = new FileReader();
+                      reader.onloadend = () => {
+                        const result = reader.result as string;
+                        resolve(result.split(",")[1]);
+                      };
+                      reader.readAsDataURL(blob);
+                    });
+                  } else {
+                    audioData = await FileSystem.readAsStringAsync(finishedUri, {
+                      encoding: FileSystem.EncodingType.Base64,
+                    });
+                  }
+                } catch (e) {
+                  console.log("[mic] Failed to read audio file:", e);
+                }
+              }
               const rec = await apiRequest("POST", "/api/recordings", {
                 title,
                 locationName,
@@ -485,6 +509,7 @@ export default function MicScreen() {
                 author: "附近的旅人",
                 quote: null,
                 tags: ["#声音随记", "#乡村行旅"],
+                audioData,
               }) as PublishedRecording;
               addMyRecording({ ...rec, title, locationName, lat, lng, durationSeconds: elapsed, publishedAt: rec.publishedAt ?? new Date().toISOString(), imageUri: selectedImage ?? undefined, audioUri: finishedUri ?? undefined });
             } catch {

@@ -47,6 +47,7 @@ export interface SoundRecording {
   author: string;
   quote: string | null;
   tags: string[];
+  audioData?: string;
 }
 
 export type InsertRecording = Omit<SoundRecording, "id" | "publishedAt">;
@@ -63,6 +64,7 @@ export interface IStorage {
   upsertProfile(userId: string, data: Partial<Omit<UserProfile, "userId" | "updatedAt">>): Promise<UserProfile>;
 
   addRecording(r: InsertRecording): Promise<SoundRecording>;
+  getRecordingAudio(id: string): Promise<string | null>;
   getNearbyRecordings(lat: number, lng: number, radiusMeters: number): Promise<SoundRecording[]>;
 }
 
@@ -185,13 +187,22 @@ export class HybridStorage implements IStorage {
     const id = randomUUID();
     const rec: SoundRecording = { ...r, id, publishedAt: new Date().toISOString() };
     this.recordings.set(id, rec);
-    return rec;
+    const { audioData: _, ...publicRec } = rec;
+    return publicRec as SoundRecording;
+  }
+
+  async getRecordingAudio(id: string): Promise<string | null> {
+    const rec = this.recordings.get(id);
+    return rec?.audioData ?? null;
   }
 
   async getNearbyRecordings(lat: number, lng: number, radiusMeters: number): Promise<SoundRecording[]> {
-    return Array.from(this.recordings.values()).filter(
-      (r) => haversineMeters(lat, lng, r.lat, r.lng) <= radiusMeters
-    );
+    return Array.from(this.recordings.values())
+      .filter((r) => haversineMeters(lat, lng, r.lat, r.lng) <= radiusMeters)
+      .map((r) => {
+        const { audioData: _, ...pub } = r;
+        return { ...pub, audioUri: r.audioData ? `/api/recordings/${r.id}/audio` : undefined } as SoundRecording & { audioUri?: string };
+      });
   }
 }
 

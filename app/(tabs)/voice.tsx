@@ -1734,6 +1734,7 @@ interface NearbyRec {
   author: string;
   quote: string | null;
   tags: string[];
+  audioUri?: string;
 }
 
 interface NearbyComment {
@@ -1785,7 +1786,13 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
     }
     await stopGlobalAudio();
     await ensureAudioMode();
-    const audioUrl = rec.audioUri || getDemoAudio(rec.id);
+    let audioUrl: string;
+    if (rec.audioUri) {
+      const base = getApiUrl();
+      audioUrl = rec.audioUri.startsWith("http") ? rec.audioUri : new URL(rec.audioUri, base).toString();
+    } else {
+      audioUrl = getDemoAudio(rec.id);
+    }
     try {
       const { sound } = await Audio.Sound.createAsync({ uri: audioUrl }, { shouldPlay: true });
       soundRef.current = sound;

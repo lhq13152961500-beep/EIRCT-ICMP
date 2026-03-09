@@ -60,6 +60,9 @@ assets/images/
 - Record new diary button
 - Stats bar (entries, total duration, locations)
 - Diary entry list with play buttons
+- Real audio upload: recordings are uploaded as base64 to server and served via /api/recordings/:id/audio
+- No simulated likes/comments — all interactions are from real users
+- Nearby users can discover and listen to actual recorded audio in "发现他人声音"
 
 ### 我的 (Profile)
 - Green gradient header with avatar
