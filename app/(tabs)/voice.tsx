@@ -1771,6 +1771,11 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isReplying, setIsReplying] = useState(false);
   const [replyText, setReplyText] = useState("");
+  const [replyMode, setReplyMode] = useState<"text" | "mixed" | "voice">("text");
+  const [isRecordingComment, setIsRecordingComment] = useState(false);
+  const [mixedVoiceDur, setMixedVoiceDur] = useState<string | null>(null);
+  const [mixedVoiceUri, setMixedVoiceUri] = useState<string | null>(null);
+  const [replyToUsername, setReplyToUsername] = useState<string | null>(null);
   const [comments, setComments] = useState<NearbyComment[]>(mapComments(rec.comments ?? []));
 
   useEffect(() => {
@@ -1851,7 +1856,8 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
       return !v;
     });
     try {
-      const result = await apiRequest("POST", `/api/recordings/${rec.id}/like`, { userId: user.id }) as { liked: boolean; likeCount: number };
+      const resp = await apiRequest("POST", `/api/recordings/${rec.id}/like`, { userId: user.id });
+      const result = await resp.json() as { liked: boolean; likeCount: number };
       setIsLiked(result.liked);
       setLikeCount(result.likeCount);
       refreshMyRecordings();
@@ -1860,24 +1866,88 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
     }
   };
 
-  const submitReply = async () => {
-    if (!replyText.trim() || !user || user.id === "guest") return;
-    const text = replyText.trim();
+  const openReply = (targetUsername?: string) => {
+    setIsReplying(true);
     setReplyText("");
+    setReplyMode("text");
+    setMixedVoiceDur(null);
+    setMixedVoiceUri(null);
+    setIsRecordingComment(false);
+    setReplyToUsername(targetUsername ?? null);
+    haptic();
+  };
+
+  const closeReply = () => {
     setIsReplying(false);
+    setReplyText("");
+    setReplyMode("text");
+    setMixedVoiceDur(null);
+    setMixedVoiceUri(null);
+    setIsRecordingComment(false);
+    setReplyToUsername(null);
+  };
+
+  const handleCommentRecordStart = async () => {
+    const ok = await startRecording();
+    if (ok) setIsRecordingComment(true);
+  };
+
+  const handleMixedRecordEnd = async () => {
+    const { uri, duration: dur, recorded } = await stopRecording();
+    setIsRecordingComment(false);
+    if (recorded) {
+      setMixedVoiceDur(dur);
+      setMixedVoiceUri(uri);
+    }
+  };
+
+  const handleVoiceRecordEnd = async () => {
+    const { uri, duration: dur, recorded } = await stopRecording();
+    setIsRecordingComment(false);
+    if (!recorded || !user || user.id === "guest") return;
+    const prefix = replyToUsername ? `@${replyToUsername} ` : "";
+    const voiceText = `${prefix}🎤 语音 ${dur}`;
+    const now = new Date();
+    const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const tempId = Date.now().toString();
+    setComments((prev) => [...prev, { id: tempId, username: user.username || "我", time, text: voiceText }]);
+    closeReply();
+    try {
+      const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: user.username || "匿名", text: voiceText });
+      const comment = await commentResp.json();
+      setComments((prev) => prev.map((c) => c.id === tempId ? { ...c, id: comment.id } : c));
+      refreshMyRecordings();
+    } catch (e) { console.warn("Voice comment failed:", e); }
+  };
+
+  const submitReply = async () => {
+    if (!user || user.id === "guest") return;
+    const text = replyText.trim();
+    const voicePart = mixedVoiceDur ? `🎤 语音 ${mixedVoiceDur}` : null;
+    const prefix = replyToUsername ? `@${replyToUsername} ` : "";
+    const combinedText = voicePart
+      ? (text ? `${prefix}${text}\n${voicePart}` : `${prefix}${voicePart}`)
+      : (text ? `${prefix}${text}` : "");
+    if (!combinedText) return;
     haptic();
     const now = new Date();
     const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const tempId = Date.now().toString();
-    setComments((prev) => [...prev, { id: tempId, username: user.username || "我", time, text }]);
+    setComments((prev) => [...prev, { id: tempId, username: user.username || "我", time, text: combinedText }]);
+    closeReply();
     try {
-      const comment = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: user.username || "匿名", text }) as any;
+      const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: user.username || "匿名", text: combinedText });
+      const comment = await commentResp.json();
       setComments((prev) => prev.map((c) => c.id === tempId ? { ...c, id: comment.id } : c));
       refreshMyRecordings();
     } catch (e) {
       console.warn("Comment failed:", e);
     }
   };
+
+  const canSend = replyMode === "text"
+    ? replyText.trim().length > 0
+    : replyText.trim().length > 0 || !!mixedVoiceDur;
 
   return (
     <View style={styles.postcardCard}>
@@ -1951,7 +2021,7 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
           </Pressable>
           <Pressable
             style={[styles.postcardReplyActionBtn, isReplying && styles.postcardReplyActionBtnActive]}
-            onPress={() => { setIsReplying((v) => !v); haptic(); }}
+            onPress={() => { isReplying ? closeReply() : openReply(); }}
           >
             <Ionicons name="chatbubble-outline" size={16} color={isReplying ? Colors.light.primary : "#666"} />
           </Pressable>
@@ -1962,44 +2032,107 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
         <View style={styles.postcardCommentList}>
           <Text style={styles.postcardCommentTitle}>留言 · {comments.length} 条</Text>
           {comments.map((c) => (
-            <View key={c.id} style={styles.uniComment}>
-              <View style={styles.uniCommentPressable}>
-                <View style={styles.uniCommentAvatar}>
-                  <Ionicons name="person" size={12} color="#fff" />
-                </View>
-                <View style={styles.uniCommentBody}>
-                  <View style={styles.uniCommentHeader}>
-                    <Text style={styles.uniCommentName}>{c.username}</Text>
-                    <Text style={styles.uniCommentTime}>{c.time}</Text>
+            <Pressable key={c.id} onPress={() => openReply(c.username)}>
+              <View style={styles.uniComment}>
+                <View style={styles.uniCommentPressable}>
+                  <View style={styles.uniCommentAvatar}>
+                    <Ionicons name="person" size={12} color="#fff" />
                   </View>
-                  <Text style={styles.uniCommentText}>{c.text}</Text>
+                  <View style={styles.uniCommentBody}>
+                    <View style={styles.uniCommentHeader}>
+                      <Text style={styles.uniCommentName}>{c.username}</Text>
+                      <Text style={styles.uniCommentTime}>{c.time}</Text>
+                    </View>
+                    <Text style={styles.uniCommentText}>{c.text}</Text>
+                  </View>
                 </View>
               </View>
-            </View>
+            </Pressable>
           ))}
         </View>
       )}
 
       {isReplying && (
-        <View style={styles.postcardReplyBox}>
-          <View style={styles.replyInputRow}>
-            <TextInput
-              style={styles.postcardReplyInput}
-              placeholder="写下你的文字留言..."
-              placeholderTextColor={Colors.light.textSecondary}
-              value={replyText}
-              onChangeText={setReplyText}
-              multiline
-              autoFocus
-            />
+        <View style={styles.commentReplyCard}>
+          <View style={styles.commentReplySegment}>
             <Pressable
-              style={[styles.postcardReplySend, !replyText.trim() && { opacity: 0.4 }]}
-              onPress={submitReply}
-              disabled={!replyText.trim()}
+              style={[styles.commentReplySegBtn, replyMode === "text" && styles.commentReplySegBtnActive]}
+              onPress={() => { setReplyMode("text"); setMixedVoiceDur(null); setMixedVoiceUri(null); haptic(); }}
             >
-              <Text style={styles.postcardReplySendText}>发送</Text>
+              <Ionicons name="chatbubble-outline" size={16} color={replyMode === "text" ? Colors.light.primary : Colors.light.textSecondary} />
+            </Pressable>
+            <Pressable
+              style={[styles.commentReplySegBtn, replyMode === "mixed" && styles.commentReplySegBtnActive]}
+              onPress={() => { setReplyMode("mixed"); haptic(); }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                <Ionicons name="chatbubble-outline" size={12} color={replyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary} />
+                <Text style={{ fontSize: 9, color: replyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary, fontWeight: "700" as const }}>+</Text>
+                <Ionicons name="mic-outline" size={12} color={replyMode === "mixed" ? Colors.light.primary : Colors.light.textSecondary} />
+              </View>
+            </Pressable>
+            <Pressable
+              style={[styles.commentReplySegBtn, replyMode === "voice" && styles.commentReplySegBtnActive]}
+              onPress={() => { setReplyMode("voice"); setMixedVoiceDur(null); setMixedVoiceUri(null); haptic(); }}
+            >
+              <Ionicons name="mic-outline" size={16} color={replyMode === "voice" ? Colors.light.primary : Colors.light.textSecondary} />
             </Pressable>
           </View>
+
+          {replyMode === "voice" ? (
+            <Pressable
+              style={[styles.commentReplyMicArea, isRecordingComment && styles.commentReplyMicAreaActive]}
+              onPressIn={() => { handleCommentRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+              onPressOut={handleVoiceRecordEnd}
+            >
+              <View style={[styles.commentReplyMicRing, isRecordingComment && styles.commentReplyMicRingActive]}>
+                <Ionicons name="mic" size={22} color={isRecordingComment ? "#fff" : Colors.light.primary} />
+              </View>
+              <Text style={[styles.commentReplyMicLabel, isRecordingComment && { color: "#fff" }]}>
+                {isRecordingComment ? "录音中 · 松开发送" : "按住开始录音"}
+              </Text>
+            </Pressable>
+          ) : (
+            <View style={styles.commentReplyInputArea}>
+              <TextInput
+                style={styles.commentReplyTextInput}
+                placeholder={replyToUsername ? `回复 @${replyToUsername}...` : "写下你的留言..."}
+                placeholderTextColor={Colors.light.textSecondary}
+                value={replyText}
+                onChangeText={setReplyText}
+                autoFocus={replyMode === "text"}
+                multiline
+              />
+              <View style={styles.commentReplyActions}>
+                {replyMode === "mixed" && (
+                  mixedVoiceDur ? (
+                    <View style={styles.mixedVoiceChip}>
+                      <Ionicons name="mic" size={11} color="#fff" />
+                      <Text style={styles.mixedVoiceChipText}>{mixedVoiceDur}</Text>
+                      <Pressable onPress={() => { setMixedVoiceDur(null); setMixedVoiceUri(null); }} hitSlop={6}>
+                        <Ionicons name="close" size={11} color="#fff" />
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Pressable
+                      style={[styles.commentReplyMicSmall, isRecordingComment && styles.commentReplyMicSmallActive]}
+                      onPressIn={() => { handleCommentRecordStart(); haptic(Haptics.ImpactFeedbackStyle.Heavy); }}
+                      onPressOut={handleMixedRecordEnd}
+                    >
+                      <Ionicons name="mic" size={14} color={isRecordingComment ? "#fff" : Colors.light.primary} />
+                    </Pressable>
+                  )
+                )}
+                <Pressable
+                  style={[styles.commentReplySendBtn, !canSend && { opacity: 0.38 }]}
+                  onPress={submitReply}
+                  disabled={!canSend}
+                >
+                  <Ionicons name="arrow-up" size={15} color="#fff" />
+                </Pressable>
+              </View>
+            </View>
+          )}
         </View>
       )}
     </View>
