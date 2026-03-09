@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
-import { Platform, Alert, Linking } from "react-native";
+import { Platform, Alert, Linking, View, StyleSheet } from "react-native";
 import * as Location from "expo-location";
 import { getApiUrl } from "@/lib/query-client";
 
@@ -28,6 +28,15 @@ const LocationContext = createContext<LocationContextType>({
 
 export function useLocation() {
   return useContext(LocationContext);
+}
+
+let WebView: any = null;
+if (Platform.OS !== "web") {
+  try {
+    WebView = require("react-native-webview").default;
+  } catch (e) {
+    console.log("[loc] react-native-webview not available");
+  }
 }
 
 async function fetchAmapKey(): Promise<string | null> {
@@ -245,8 +254,11 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   const [watchActive, setWatchActive] = useState(false);
   const [isGpsPrecise, setIsGpsPrecise] = useState(false);
   const [trigger, setTrigger] = useState(0);
+  const [webViewUrl, setWebViewUrl] = useState<string | null>(null);
 
   const locationSubRef = useRef<Location.LocationSubscription | null>(null);
+  const mountedRef = useRef(true);
+  const hasGpsFixRef = useRef(false);
 
   const retry = useCallback(() => {
     console.log("[loc] Manual Retry Triggered");
@@ -260,11 +272,43 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     setIsLocating(false);
   }, []);
 
+  const handleWebViewMessage = useCallback(async (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === "location" && data.lat && data.lng) {
+        console.log(`[loc] Amap WebView GPS: ${data.lat}, ${data.lng} (±${data.accuracy}m)`);
+        hasGpsFixRef.current = true;
+        setIsGpsPrecise(true);
+        setIsLocating(false);
+        setWatchActive(true);
+
+        setLocationStatus((prev) => {
+          if (prev.state === "located" && prev.source === "gps" && (prev.accuracy ?? 9999) < (data.accuracy ?? 9999)) {
+            return prev;
+          }
+          return { state: "located", lat: data.lat, lng: data.lng, locationName: "正在解析地址…", accuracy: data.accuracy, source: "gps" };
+        });
+
+        const name = data.address || await reverseGeocode(data.lat, data.lng);
+        if (mountedRef.current) {
+          setLocationStatus({ state: "located", lat: data.lat, lng: data.lng, locationName: name, accuracy: data.accuracy, source: "gps" });
+        }
+      } else if (data.type === "error") {
+        console.warn("[loc] Amap WebView Error:", data.message);
+      }
+    } catch (e) {
+      console.warn("[loc] WebView message parse error:", e);
+    }
+  }, []);
+
   useEffect(() => {
     let mounted = true;
     let hasIpFix = false;
     let hasGpsFix = false;
     let amapWatchTimer: ReturnType<typeof setInterval> | null = null;
+
+    mountedRef.current = true;
+    hasGpsFixRef.current = false;
 
     console.log("[loc] LocationProvider Started (Trigger:", trigger, ")");
 
@@ -272,11 +316,12 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     setWatchActive(false);
     setIsGpsPrecise(false);
     setLocationStatus({ state: "none" });
+    setWebViewUrl(null);
 
     const setIpLocation = (lat: number, lng: number, name: string) => {
       if (!mounted) return;
       hasIpFix = true;
-      if (!hasGpsFix) {
+      if (!hasGpsFix && !hasGpsFixRef.current) {
         console.log("[loc] Set IP Location:", name);
         setIsLocating(false);
         setLocationStatus({ state: "located", lat, lng, locationName: name, source: "ip" });
@@ -286,6 +331,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     const setGpsLocation = async (lat: number, lng: number, accuracy?: number) => {
       if (!mounted) return;
       hasGpsFix = true;
+      hasGpsFixRef.current = true;
       setIsGpsPrecise(true);
       setIsLocating(false);
       console.log(`[loc] Set GPS Location: ${lat}, ${lng} (±${accuracy}m)`);
@@ -357,19 +403,14 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 
         } catch (e) {
           console.warn("[loc] Amap SDK geolocation failed:", e);
-          console.log("[loc] Falling back to browser geolocation...");
           if (typeof navigator !== "undefined" && navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
               (pos) => {
                 if (mounted) setGpsLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
               },
-              (error) => {
-                console.error("[loc] Browser GPS Fallback Error:", error.code, error.message);
+              () => {
                 if (!mounted) return;
-                if (!hasIpFix) {
-                  if (error.code === 1) setLocationStatus({ state: "denied" });
-                  setIsLocating(false);
-                }
+                if (!hasIpFix) setIsLocating(false);
               },
               { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
             );
@@ -378,81 +419,70 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } else {
-        console.log("[loc] Running in NATIVE mode");
-        try {
-          const gpsEnabled = await Location.hasServicesEnabledAsync();
-          if (!gpsEnabled) {
-            console.warn("[loc] GPS Service Disabled");
-            if (mounted && !hasIpFix) setIsLocating(false);
-            Alert.alert("需要开启定位服务", "请在系统设置中开启定位/GPS服务", [
-              { text: "去设置", onPress: () => Linking.openSettings() },
-              { text: "稍后再说", style: "cancel" },
-            ]);
-            return;
-          }
+        console.log("[loc] Running in NATIVE mode - using Amap WebView + expo-location");
 
+        const baseUrl = getApiUrl();
+        const amapLocateUrl = new URL("/api/amap-locate", baseUrl).href;
+        console.log("[loc] Loading Amap WebView:", amapLocateUrl);
+        setWebViewUrl(amapLocateUrl);
+        setWatchActive(true);
+
+        try {
           const { status } = await Location.requestForegroundPermissionsAsync();
           if (!mounted) return;
 
-          if (status !== "granted") {
-            console.warn("[loc] Permission Denied");
-            if (!hasIpFix) setLocationStatus({ state: "denied" });
-            setIsLocating(false);
-            Alert.alert("需要位置权限", "请允许位置权限", [
-              { text: "去设置", onPress: () => Linking.openSettings() },
-              { text: "取消", style: "cancel" },
-            ]);
-            return;
-          }
-
-          try {
-            const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60 * 1000, requiredAccuracy: 500 });
-            if (lastKnown && mounted && !hasGpsFix) {
-              console.log("[loc] Using Cached Position");
-              setGpsLocation(lastKnown.coords.latitude, lastKnown.coords.longitude, lastKnown.coords.accuracy ?? undefined);
-            }
-          } catch (e) { /* ignore */ }
-
-          locationSubRef.current?.remove();
-          Location.watchPositionAsync(
-            { accuracy: Location.Accuracy.Balanced, timeInterval: 2000, distanceInterval: 3 },
-            (l) => { if (mounted) setGpsLocation(l.coords.latitude, l.coords.longitude, l.coords.accuracy ?? undefined); }
-          ).then((sub) => {
-            if (mounted) { locationSubRef.current = sub; setWatchActive(true); }
-            else sub.remove();
-          });
-
-          const accuracies = [Location.Accuracy.High, Location.Accuracy.Balanced, Location.Accuracy.Low];
-          let gotFix = false;
-          for (const acc of accuracies) {
-            if (gotFix || !mounted) break;
+          if (status === "granted") {
             try {
-              const pos = await withTimeout(Location.getCurrentPositionAsync({ accuracy: acc }), 20000);
-              if (mounted) {
-                setGpsLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
-                gotFix = true;
+              const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60 * 1000, requiredAccuracy: 500 });
+              if (lastKnown && mounted && !hasGpsFix && !hasGpsFixRef.current) {
+                console.log("[loc] Using Cached Position from expo-location");
+                setGpsLocation(lastKnown.coords.latitude, lastKnown.coords.longitude, lastKnown.coords.accuracy ?? undefined);
               }
-            } catch (e) { console.log("[loc] Accuracy level failed"); }
+            } catch (e) { /* ignore */ }
+
+            locationSubRef.current?.remove();
+            Location.watchPositionAsync(
+              { accuracy: Location.Accuracy.Balanced, timeInterval: 2000, distanceInterval: 3 },
+              (l) => { if (mounted) setGpsLocation(l.coords.latitude, l.coords.longitude, l.coords.accuracy ?? undefined); }
+            ).then((sub) => {
+              if (mounted) { locationSubRef.current = sub; }
+              else sub.remove();
+            }).catch((e) => {
+              console.log("[loc] expo-location watch failed (expected in China):", e);
+            });
+
+            const accuracies = [Location.Accuracy.Balanced, Location.Accuracy.Low];
+            for (const acc of accuracies) {
+              if (hasGpsFix || hasGpsFixRef.current || !mounted) break;
+              try {
+                const pos = await withTimeout(Location.getCurrentPositionAsync({ accuracy: acc }), 10000);
+                if (mounted && !hasGpsFixRef.current) {
+                  setGpsLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
+                  hasGpsFix = true;
+                }
+              } catch (e) {
+                console.log("[loc] expo-location accuracy level failed (expected in China)");
+              }
+            }
+          } else {
+            console.log("[loc] Location permission denied, relying on Amap WebView only");
           }
-
-          if (!gotFix && !hasIpFix && mounted) setIsLocating(false);
-
         } catch (e) {
-          console.error("[loc] Native Fatal Error:", e);
-          if (mounted && !hasIpFix) setIsLocating(false);
+          console.log("[loc] expo-location init failed, relying on Amap WebView:", e);
         }
       }
 
       setTimeout(() => {
-        if (mounted && !hasIpFix && !hasGpsFix) {
+        if (mounted && !hasIpFix && !hasGpsFix && !hasGpsFixRef.current) {
           console.log("[loc] Final Timeout reached");
           setIsLocating(false);
         }
-      }, 25000);
+      }, 30000);
     })().catch((e) => console.error("[loc] Top Level Error:", e));
 
     return () => {
       mounted = false;
+      mountedRef.current = false;
       if (amapWatchTimer) clearInterval(amapWatchTimer);
       locationSubRef.current?.remove();
       locationSubRef.current = null;
@@ -462,6 +492,32 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   return (
     <LocationContext.Provider value={{ locationStatus, isLocating, watchActive, isGpsPrecise, retry, overrideLocation }}>
       {children}
+      {Platform.OS !== "web" && WebView && webViewUrl && (
+        <View style={hiddenStyles.container} pointerEvents="none">
+          <WebView
+            source={{ uri: webViewUrl }}
+            onMessage={handleWebViewMessage}
+            javaScriptEnabled
+            geolocationEnabled
+            style={hiddenStyles.webview}
+            onError={(e: any) => console.warn("[loc] WebView error:", e.nativeEvent?.description)}
+          />
+        </View>
+      )}
     </LocationContext.Provider>
   );
 }
+
+const hiddenStyles = StyleSheet.create({
+  container: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    opacity: 0,
+    overflow: "hidden",
+  },
+  webview: {
+    width: 1,
+    height: 1,
+  },
+});

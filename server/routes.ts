@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { createHash } from "crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { storage, type InsertRecording } from "./storage";
 
 const PW_SALT = "xiangyin_banlu_2026";
@@ -168,6 +170,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const key = process.env.AMAP_API_KEY;
     if (!key) return res.status(500).json({ error: "AMAP_API_KEY not configured" });
     return res.json({ key });
+  });
+
+  app.get("/api/amap-locate", (_req, res) => {
+    const key = process.env.AMAP_API_KEY;
+    if (!key) return res.status(500).send("AMAP_API_KEY not configured");
+    try {
+      const html = readFileSync(join(__dirname, "amap-locate.html"), "utf-8");
+      const page = html.replace(/__AMAP_KEY__/g, key);
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.send(page);
+    } catch (e) {
+      return res.status(500).send("Failed to load locate page");
+    }
   });
 
   app.get("/api/geocode/reverse", async (req, res) => {

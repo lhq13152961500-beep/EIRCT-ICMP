@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>定位</title>
+<style>body{margin:0;background:#f5f5f5;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#666}#status{text-align:center;font-size:14px}</style>
+</head>
+<body>
+<div id="status">正在定位...</div>
+<script>
+var AMAP_KEY = '__AMAP_KEY__';
+function sendToApp(data) {
+  try {
+    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      window.ReactNativeWebView.postMessage(JSON.stringify(data));
+    }
+  } catch(e) {}
+}
+function doLocate() {
+  if (!window.AMap) {
+    document.getElementById('status').textContent = 'SDK加载失败';
+    sendToApp({type:'error', message:'AMap SDK not loaded'});
+    return;
+  }
+  var geo = new AMap.Geolocation({
+    enableHighAccuracy: true,
+    timeout: 20000,
+    buttonPosition: 'hidden',
+    showButton: false,
+    showMarker: false,
+    showCircle: false,
+    panToLocation: false,
+    zoomToAccuracy: false,
+    GeoLocationFirst: true,
+    useNative: true,
+    noIpLocate: 3,
+    extensions: 'base'
+  });
+  function onSuccess(status, result) {
+    if (status === 'complete' && result.position) {
+      var lat = result.position.lat || (result.position.getLat && result.position.getLat());
+      var lng = result.position.lng || (result.position.getLng && result.position.getLng());
+      var acc = result.accuracy || 50;
+      var addr = '';
+      if (result.formattedAddress) addr = result.formattedAddress;
+      else if (result.addressComponent) {
+        var c = result.addressComponent;
+        addr = (c.township || '') + (c.street || '') + (c.streetNumber || '');
+        if (!addr) addr = (c.district || '') + (c.city || '');
+      }
+      document.getElementById('status').textContent = addr || (lat+','+lng);
+      sendToApp({type:'location', lat:lat, lng:lng, accuracy:acc, address:addr});
+    } else {
+      document.getElementById('status').textContent = '定位失败: '+(result.message||status);
+      sendToApp({type:'error', message:result.message||'unknown'});
+    }
+  }
+  geo.getCurrentPosition(onSuccess);
+  setInterval(function(){
+    geo.getCurrentPosition(onSuccess);
+  }, 15000);
+}
+</script>
+<script src="https://webapi.amap.com/maps?v=2.0&key=__AMAP_KEY__&plugin=AMap.Geolocation" onload="doLocate()" onerror="sendToApp({type:'error',message:'SDK load failed'})"></script>
+</body>
+</html>
