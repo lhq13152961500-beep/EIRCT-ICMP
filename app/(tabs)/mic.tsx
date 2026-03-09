@@ -21,7 +21,6 @@ import { Audio } from "expo-av";
 import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system";
 import Colors from "@/constants/colors";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { useRecordings, type PublishedRecording } from "@/contexts/RecordingsContext";
@@ -480,22 +479,18 @@ export default function MicScreen() {
               let audioData: string | undefined;
               if (finishedUri) {
                 try {
-                  if (Platform.OS === "web") {
-                    const resp = await fetch(finishedUri);
-                    const blob = await resp.blob();
-                    audioData = await new Promise<string>((resolve) => {
-                      const reader = new FileReader();
-                      reader.onloadend = () => {
-                        const result = reader.result as string;
-                        resolve(result.split(",")[1]);
-                      };
-                      reader.readAsDataURL(blob);
-                    });
-                  } else {
-                    audioData = await FileSystem.readAsStringAsync(finishedUri, {
-                      encoding: FileSystem.EncodingType.Base64,
-                    });
-                  }
+                  const resp = await fetch(finishedUri);
+                  const blob = await resp.blob();
+                  audioData = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                      const result = reader.result as string;
+                      const b64 = result.split(",")[1];
+                      resolve(b64 || "");
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                  });
                 } catch (e) {
                   console.log("[mic] Failed to read audio file:", e);
                 }

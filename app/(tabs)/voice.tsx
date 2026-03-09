@@ -1753,22 +1753,24 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
   const [comments, setComments] = useState<NearbyComment[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionMs, setPositionMs] = useState(0);
+  const [audioDurationMs, setAudioDurationMs] = useState(0);
   const soundRef = useRef<Audio.Sound | null>(null);
 
   useEffect(() => {
     return () => { soundRef.current?.unloadAsync().catch(() => {}); };
   }, []);
 
-  const mins = Math.floor(rec.durationSeconds / 60).toString().padStart(2, "0");
-  const secs = (rec.durationSeconds % 60).toString().padStart(2, "0");
+  const totalMs = audioDurationMs > 0 ? audioDurationMs : rec.durationSeconds * 1000;
+  const totalSec = Math.ceil(totalMs / 1000);
+  const mins = Math.floor(totalSec / 60).toString().padStart(2, "0");
+  const secs = (totalSec % 60).toString().padStart(2, "0");
   const duration = `${mins}:${secs}`;
-  const totalMs = rec.durationSeconds * 1000;
-  const remainMs = Math.max(0, totalMs - positionMs);
-  const remainSec = Math.ceil(remainMs / 1000);
-  const countdown = `${Math.floor(remainSec / 60).toString().padStart(2, "0")}:${(remainSec % 60).toString().padStart(2, "0")}`;
   const elapsedSec = Math.floor(positionMs / 1000);
   const elapsed = `${Math.floor(elapsedSec / 60).toString().padStart(2, "0")}:${(elapsedSec % 60).toString().padStart(2, "0")}`;
   const playProgress = totalMs > 0 ? positionMs / totalMs : 0;
+  const remainMs = Math.max(0, totalMs - positionMs);
+  const remainSec = Math.ceil(remainMs / 1000);
+  const countdown = `${Math.floor(remainSec / 60).toString().padStart(2, "0")}:${(remainSec % 60).toString().padStart(2, "0")}`;
   const dt = new Date(rec.publishedAt);
   const datetime = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")} ${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
 
@@ -1806,6 +1808,7 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
           setPositionMs(0);
           if (_gSound === sound) _gSound = null;
         } else if (s.durationMillis && s.durationMillis > 0) {
+          setAudioDurationMs(s.durationMillis);
           setPositionMs(s.positionMillis);
         }
       });
