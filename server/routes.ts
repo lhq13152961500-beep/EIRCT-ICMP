@@ -164,6 +164,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/config/amap-key", (_req, res) => {
+    const key = process.env.AMAP_API_KEY;
+    if (!key) return res.status(500).json({ error: "AMAP_API_KEY not configured" });
+    return res.json({ key });
+  });
+
   app.get("/api/geocode/reverse", async (req, res) => {
     try {
       const { lat, lng } = req.query as { lat?: string; lng?: string };

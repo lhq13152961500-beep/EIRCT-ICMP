@@ -30,6 +30,91 @@ export function useLocation() {
   return useContext(LocationContext);
 }
 
+async function fetchAmapKey(): Promise<string | null> {
+  try {
+    const baseUrl = getApiUrl();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(new URL("/api/config/amap-key", baseUrl).href, { signal: controller.signal });
+    clearTimeout(timer);
+    if (res.ok) {
+      const data = await res.json();
+      console.log("[loc] Amap key fetched successfully");
+      return data.key || null;
+    }
+    console.log("[loc] Amap key endpoint returned:", res.status);
+  } catch (e) {
+    console.log("[loc] Failed to fetch Amap key:", e);
+  }
+  return null;
+}
+
+function loadAmapSdk(key: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return reject(new Error("Not in browser"));
+    }
+    if ((window as any).AMap) {
+      resolve();
+      return;
+    }
+    const existing = document.querySelector('script[src*="webapi.amap.com"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      if ((window as any).AMap) resolve();
+      return;
+    }
+    const callbackName = "_amapInitCallback_" + Date.now();
+    (window as any)[callbackName] = () => {
+      delete (window as any)[callbackName];
+      console.log("[loc] Amap JS SDK loaded");
+      resolve();
+    };
+    const script = document.createElement("script");
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${key}&plugin=AMap.Geolocation&callback=${callbackName}`;
+    script.onerror = () => {
+      delete (window as any)[callbackName];
+      reject(new Error("Failed to load Amap JS SDK"));
+    };
+    document.head.appendChild(script);
+  });
+}
+
+function amapGeolocate(): Promise<{ lat: number; lng: number; accuracy: number }> {
+  return new Promise((resolve, reject) => {
+    const AMap = (window as any).AMap;
+    if (!AMap) return reject(new Error("AMap not loaded"));
+
+    const geolocation = new AMap.Geolocation({
+      enableHighAccuracy: true,
+      timeout: 15000,
+      buttonPosition: "hidden",
+      showButton: false,
+      showMarker: false,
+      showCircle: false,
+      panToLocation: false,
+      zoomToAccuracy: false,
+      GeoLocationFirst: true,
+      useNative: true,
+      noIpLocate: 0,
+      extensions: "base",
+    });
+
+    geolocation.getCurrentPosition((status: string, result: any) => {
+      if (status === "complete" && result.position) {
+        const lng = result.position.lng ?? result.position.getLng?.();
+        const lat = result.position.lat ?? result.position.getLat?.();
+        const accuracy = result.accuracy ?? 50;
+        console.log(`[loc] Amap Geolocation Success: ${lat}, ${lng} (±${accuracy}m)`);
+        resolve({ lat, lng, accuracy });
+      } else {
+        console.warn("[loc] Amap Geolocation Failed:", result?.message || status);
+        reject(new Error(result?.message || "Amap geolocation failed"));
+      }
+    });
+  });
+}
+
 async function fetchIpLocation(): Promise<{ lat: number; lng: number; city: string } | null> {
   console.log("[loc] Starting IP Geolocation...");
 
@@ -179,7 +264,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
     let hasIpFix = false;
     let hasGpsFix = false;
-    let webWatchId: number | null = null;
+    let amapWatchTimer: ReturnType<typeof setInterval> | null = null;
 
     console.log("[loc] LocationProvider Started (Trigger:", trigger, ")");
 
@@ -203,7 +288,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       hasGpsFix = true;
       setIsGpsPrecise(true);
       setIsLocating(false);
-      console.log(`[loc] Set GPS Location: ${lat}, ${lng} (+-${accuracy}m)`);
+      console.log(`[loc] Set GPS Location: ${lat}, ${lng} (±${accuracy}m)`);
 
       setLocationStatus((prev) => {
         if (prev.state === "located" && prev.source === "gps" && (prev.accuracy ?? 9999) < (accuracy ?? 9999)) {
@@ -225,36 +310,72 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (Platform.OS === "web") {
-        console.log("[loc] Running in WEB mode");
-        if (typeof navigator !== "undefined" && navigator.geolocation) {
+        console.log("[loc] Running in WEB mode - using Amap JS SDK");
 
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              console.log("[loc] Browser GPS Success");
-              if (mounted) setGpsLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
-            },
-            (error) => {
-              console.error("[loc] Browser GPS Error:", error.code, error.message);
-              if (!mounted) return;
-              if (!hasIpFix) {
-                if (error.code === 1) setLocationStatus({ state: "denied" });
-                setIsLocating(false);
-              }
-            },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
-          );
+        const amapKey = await fetchAmapKey();
+        if (!amapKey) {
+          console.warn("[loc] No Amap key, falling back to browser geolocation");
+          if (typeof navigator !== "undefined" && navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                if (mounted) setGpsLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
+              },
+              (error) => {
+                console.error("[loc] Browser GPS Error:", error.code, error.message);
+                if (!mounted) return;
+                if (!hasIpFix) {
+                  if (error.code === 1) setLocationStatus({ state: "denied" });
+                  setIsLocating(false);
+                }
+              },
+              { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+            );
+          }
+          return;
+        }
 
-          webWatchId = navigator.geolocation.watchPosition(
-            (pos) => {
-              console.log("[loc] Watch Position Update");
-              if (mounted) setGpsLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
-            },
-            (error) => console.warn("[loc] Watch Error:", error),
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
-          );
-        } else {
-          console.error("[loc] Geolocation API not supported in this browser");
-          setIsLocating(false);
+        try {
+          await loadAmapSdk(amapKey);
+          if (!mounted) return;
+          console.log("[loc] Amap SDK ready, requesting position...");
+          setWatchActive(true);
+
+          const result = await amapGeolocate();
+          if (mounted) {
+            await setGpsLocation(result.lat, result.lng, result.accuracy);
+          }
+
+          amapWatchTimer = setInterval(async () => {
+            if (!mounted) return;
+            try {
+              const pos = await amapGeolocate();
+              if (mounted) setGpsLocation(pos.lat, pos.lng, pos.accuracy);
+            } catch {
+              // ignore watch errors
+            }
+          }, 15000);
+
+        } catch (e) {
+          console.warn("[loc] Amap SDK geolocation failed:", e);
+          console.log("[loc] Falling back to browser geolocation...");
+          if (typeof navigator !== "undefined" && navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                if (mounted) setGpsLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
+              },
+              (error) => {
+                console.error("[loc] Browser GPS Fallback Error:", error.code, error.message);
+                if (!mounted) return;
+                if (!hasIpFix) {
+                  if (error.code === 1) setLocationStatus({ state: "denied" });
+                  setIsLocating(false);
+                }
+              },
+              { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+            );
+          } else if (!hasIpFix) {
+            setIsLocating(false);
+          }
         }
       } else {
         console.log("[loc] Running in NATIVE mode");
@@ -332,9 +453,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       mounted = false;
-      if (webWatchId !== null && typeof navigator !== "undefined" && navigator.geolocation) {
-        navigator.geolocation.clearWatch(webWatchId);
-      }
+      if (amapWatchTimer) clearInterval(amapWatchTimer);
       locationSubRef.current?.remove();
       locationSubRef.current = null;
     };
