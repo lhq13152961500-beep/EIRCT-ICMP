@@ -497,7 +497,8 @@ export default function MicScreen() {
                   console.log("[mic] Failed to read audio file:", e);
                 }
               }
-              const rec = await apiRequest("POST", "/api/recordings", {
+              console.log("[mic] Publishing with userId:", user?.id, "audioData length:", audioData?.length ?? 0);
+              const resp = await apiRequest("POST", "/api/recordings", {
                 title,
                 locationName,
                 lat,
@@ -506,11 +507,13 @@ export default function MicScreen() {
                 author: user?.username || "附近的旅人",
                 quote: null,
                 tags: ["#声音随记", "#乡村行旅"],
-                audioData,
+                audioData: audioData || undefined,
                 userId: user?.id || null,
                 imageUri: selectedImage || null,
-              }) as PublishedRecording;
-              addMyRecording({ ...rec, title, locationName, lat, lng, durationSeconds: elapsed, publishedAt: rec.publishedAt ?? new Date().toISOString(), imageUri: selectedImage ?? undefined, audioUri: rec.audioUri ?? finishedUri ?? undefined });
+              });
+              const rec = await resp.json() as PublishedRecording;
+              console.log("[mic] Published recording:", rec.id, "audioUri:", rec.audioUri, "audioUrl:", (rec as any).audioUrl);
+              addMyRecording({ ...rec, title, locationName, lat, lng, durationSeconds: elapsed, publishedAt: rec.publishedAt ?? new Date().toISOString(), imageUri: selectedImage ?? undefined, audioUri: rec.audioUri ?? rec.audioUrl ?? finishedUri ?? undefined });
               setTimeout(() => refreshMyRecordings(), 1000);
             } catch {
               addMyRecording({

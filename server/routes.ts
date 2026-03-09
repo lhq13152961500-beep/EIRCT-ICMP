@@ -126,6 +126,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/recordings", async (req, res) => {
     try {
       const { title, locationName, lat, lng, durationSeconds, author, quote, tags, audioData, userId, imageUri } = req.body;
+      console.log(`[recordings] POST /api/recordings - userId: ${userId}, hasAudio: ${typeof audioData === "string" ? audioData.length : "none"}, lat: ${lat}, lng: ${lng}`);
       if (typeof lat !== "number" || typeof lng !== "number") {
         return res.status(400).json({ error: "lat and lng are required numbers" });
       }
@@ -159,9 +160,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/recordings/:id/audio", async (req, res) => {
     try {
-      const audioData = await storage.getRecordingAudio(req.params.id);
-      if (!audioData) return res.status(404).json({ error: "Audio not found" });
-      const buf = Buffer.from(audioData, "base64");
+      const result = await storage.getRecordingAudio(req.params.id);
+      if (!result) return res.status(404).json({ error: "Audio not found" });
+      if (result.startsWith("http")) {
+        return res.redirect(result);
+      }
+      const buf = Buffer.from(result, "base64");
       let mime = "audio/mp4";
       if (buf[0] === 0x1A && buf[1] === 0x45 && buf[2] === 0xDF && buf[3] === 0xA3) {
         mime = "audio/webm";

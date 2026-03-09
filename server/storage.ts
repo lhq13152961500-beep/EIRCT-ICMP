@@ -45,6 +45,7 @@ export interface SoundRecording {
   audioData?: string;
   imageUri?: string;
   audioUri?: string;
+  audioUrl?: string;
   likeCount?: number;
   comments?: RecordingComment[];
   isLiked?: boolean;
@@ -198,14 +199,43 @@ export class HybridStorage implements IStorage {
       quote: row.quote as string | null,
       tags: (row.tags as string[]) || [],
       imageUri: row.image_uri as string | undefined,
+      audioUrl: row.audio_url as string | undefined,
     };
   }
 
   async addRecording(r: InsertRecording): Promise<SoundRecording> {
+    let audioUrl: string | null = null;
+
+    if (r.audioData && r.audioData.length > 0) {
+      const recId = randomUUID();
+      const buf = Buffer.from(r.audioData, "base64");
+      let ext = "m4a";
+      let mime = "audio/mp4";
+      if (buf[0] === 0x1A && buf[1] === 0x45) { ext = "webm"; mime = "audio/webm"; }
+      else if (buf[0] === 0x4F && buf[1] === 0x67) { ext = "ogg"; mime = "audio/ogg"; }
+      const filePath = `recordings/${recId}.${ext}`;
+
+      const { error: bucketErr } = await supabase.storage.getBucket("audio");
+      if (bucketErr) {
+        await supabase.storage.createBucket("audio", { public: true, fileSizeLimit: 10 * 1024 * 1024 });
+      }
+
+      const { error: uploadErr } = await supabase.storage.from("audio").upload(filePath, buf, {
+        contentType: mime,
+        upsert: true,
+      });
+      if (uploadErr) {
+        console.error("[storage] Supabase audio upload error:", uploadErr);
+        throw new Error(`Audio upload failed: ${uploadErr.message}`);
+      }
+      const { data: urlData } = supabase.storage.from("audio").getPublicUrl(filePath);
+      audioUrl = urlData.publicUrl;
+    }
+
     const res = await pgPool.query(
-      `INSERT INTO recordings (user_id, title, location_name, lat, lng, duration_seconds, author, quote, tags, audio_data, image_uri)
+      `INSERT INTO recordings (user_id, title, location_name, lat, lng, duration_seconds, author, quote, tags, audio_url, image_uri)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING id, user_id, title, location_name, lat, lng, duration_seconds, published_at, author, quote, tags, image_uri`,
+       RETURNING id, user_id, title, location_name, lat, lng, duration_seconds, published_at, author, quote, tags, image_uri, audio_url`,
       [
         r.userId ?? null,
         r.title,
@@ -216,7 +246,7 @@ export class HybridStorage implements IStorage {
         r.author,
         r.quote,
         r.tags,
-        r.audioData ?? null,
+        audioUrl,
         r.imageUri ?? null,
       ]
     );
@@ -225,17 +255,18 @@ export class HybridStorage implements IStorage {
 
   async getRecordingAudio(id: string): Promise<string | null> {
     const res = await pgPool.query(
-      "SELECT audio_data FROM recordings WHERE id = $1",
+      "SELECT audio_url, audio_data FROM recordings WHERE id = $1",
       [id]
     );
     if (res.rows.length === 0) return null;
+    if (res.rows[0].audio_url) return res.rows[0].audio_url;
     return res.rows[0].audio_data ?? null;
   }
 
   async getNearbyRecordings(lat: number, lng: number, radiusMeters: number, viewerUserId?: string): Promise<SoundRecording[]> {
     const res = await pgPool.query(
-      `SELECT id, user_id, title, location_name, lat, lng, duration_seconds, published_at, author, quote, tags, image_uri,
-              (audio_data IS NOT NULL) AS has_audio
+      `SELECT id, user_id, title, location_name, lat, lng, duration_seconds, published_at, author, quote, tags, image_uri, audio_url,
+              (audio_data IS NOT NULL OR audio_url IS NOT NULL) AS has_audio
        FROM recordings
        ORDER BY published_at DESC
        LIMIT 200`
@@ -244,7 +275,9 @@ export class HybridStorage implements IStorage {
       .filter((r: any) => haversineMeters(lat, lng, r.lat, r.lng) <= radiusMeters)
       .map((r: any) => {
         const rec = this.rowToRecording(r);
-        if (r.has_audio) {
+        if (rec.audioUrl) {
+          rec.audioUri = rec.audioUrl;
+        } else if (r.has_audio) {
           rec.audioUri = `/api/recordings/${rec.id}/audio`;
         }
         return rec;
@@ -298,8 +331,8 @@ export class HybridStorage implements IStorage {
 
   async getRecordingsByUser(userId: string): Promise<SoundRecording[]> {
     const res = await pgPool.query(
-      `SELECT id, user_id, title, location_name, lat, lng, duration_seconds, published_at, author, quote, tags, image_uri,
-              (audio_data IS NOT NULL) AS has_audio
+      `SELECT id, user_id, title, location_name, lat, lng, duration_seconds, published_at, author, quote, tags, image_uri, audio_url,
+              (audio_data IS NOT NULL OR audio_url IS NOT NULL) AS has_audio
        FROM recordings
        WHERE user_id = $1
        ORDER BY published_at DESC`,
@@ -307,7 +340,11 @@ export class HybridStorage implements IStorage {
     );
     const recs = res.rows.map((r: any) => {
       const rec = this.rowToRecording(r);
-      if (r.has_audio) rec.audioUri = `/api/recordings/${rec.id}/audio`;
+      if (rec.audioUrl) {
+        rec.audioUri = rec.audioUrl;
+      } else if (r.has_audio) {
+        rec.audioUri = `/api/recordings/${rec.id}/audio`;
+      }
       return rec;
     });
 

@@ -12,6 +12,7 @@ export interface PublishedRecording {
   publishedAt: string;
   imageUri?: string;
   audioUri?: string;
+  audioUrl?: string;
   likeCount?: number;
   comments?: RecordingComment[];
   isLiked?: boolean;

@@ -909,7 +909,7 @@ function MyPublishedCard({
             <Text style={styles.diaryMainMetaText} numberOfLines={1}>{rec.locationName}</Text>
           </View>
         </View>
-        <PlayButton size={32} audioUrl={rec.audioUri} />
+        <PlayButton size={32} audioUrl={rec.audioUri || rec.audioUrl} />
       </View>
 
       {/* Stats row — identical to DiaryGroup */}
@@ -1736,6 +1736,7 @@ interface NearbyRec {
   quote: string | null;
   tags: string[];
   audioUri?: string;
+  audioUrl?: string;
   likeCount?: number;
   comments?: ServerComment[];
   isLiked?: boolean;
@@ -1815,9 +1816,10 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
     await stopGlobalAudio();
     await ensureAudioMode();
     let audioUrl: string;
-    if (rec.audioUri) {
+    const srcAudio = rec.audioUri || rec.audioUrl;
+    if (srcAudio) {
       const base = getApiUrl();
-      audioUrl = rec.audioUri.startsWith("http") ? rec.audioUri : new URL(rec.audioUri, base).toString();
+      audioUrl = srcAudio.startsWith("http") ? srcAudio : new URL(srcAudio, base).toString();
     } else {
       audioUrl = getDemoAudio(rec.id);
     }

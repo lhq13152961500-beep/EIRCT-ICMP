@@ -61,7 +61,8 @@ assets/images/
 - Stats bar (entries, total duration, locations)
 - Diary entry list with play buttons
 - Recordings persisted to PostgreSQL (recordings table) — survive server restarts
-- Real audio upload: recordings uploaded as base64, stored in DB, served via /api/recordings/:id/audio
+- Audio files stored in Supabase Storage (bucket: "audio"), URL saved in recordings.audio_url column
+- Legacy base64 audio in recordings.audio_data still supported (fallback)
 - Likes & comments stored in PostgreSQL (recording_likes, recording_comments tables)
 - API: POST /api/recordings/:id/like (toggle), POST /api/recordings/:id/comment, GET /api/recordings/my/:userId
 - RecordingsContext auto-fetches user's recordings from server every 15s
