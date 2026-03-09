@@ -1756,6 +1756,7 @@ interface NearbyComment {
   username: string;
   time: string;
   text: string;
+  voiceUri?: string | null;
 }
 
 function NearbyPostcard({ rec }: { rec: NearbyRec }) {
@@ -1910,7 +1911,7 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
     const now = new Date();
     const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const tempId = Date.now().toString();
-    setComments((prev) => [...prev, { id: tempId, username: user.username || "我", time, text: voiceText }]);
+    setComments((prev) => [...prev, { id: tempId, username: user.username || "我", time, text: voiceText, voiceUri: uri }]);
     closeReply();
     try {
       const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: user.username || "匿名", text: voiceText });
@@ -1933,7 +1934,8 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
     const now = new Date();
     const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const tempId = Date.now().toString();
-    setComments((prev) => [...prev, { id: tempId, username: user.username || "我", time, text: combinedText }]);
+    const capturedUri = mixedVoiceUri;
+    setComments((prev) => [...prev, { id: tempId, username: user.username || "我", time, text: combinedText, voiceUri: capturedUri }]);
     closeReply();
     try {
       const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: user.username || "匿名", text: combinedText });
@@ -2031,24 +2033,44 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
       {isExpanded && comments.length > 0 && (
         <View style={styles.postcardCommentList}>
           <Text style={styles.postcardCommentTitle}>留言 · {comments.length} 条</Text>
-          {comments.map((c) => (
-            <Pressable key={c.id} onPress={() => openReply(c.username)}>
-              <View style={styles.uniComment}>
-                <View style={styles.uniCommentPressable}>
-                  <View style={styles.uniCommentAvatar}>
-                    <Ionicons name="person" size={12} color="#fff" />
+          {comments.map((c) => {
+            const atMatch = c.text.match(/^@(\S+)\s*/);
+            const mentionName = atMatch ? atMatch[1] : null;
+            const restText = atMatch ? c.text.slice(atMatch[0].length) : c.text;
+            return (
+              <Pressable key={c.id} onPress={() => openReply(c.username)}>
+                <View style={styles.chatBubble}>
+                  <View style={styles.chatBubbleContent}>
+                    <Text style={styles.chatBubbleText}>
+                      {mentionName && (
+                        <Text style={styles.chatBubbleMention}>@{mentionName} </Text>
+                      )}
+                      {(() => {
+                        const { body, voice } = parseVoiceText(restText);
+                        return body;
+                      })()}
+                    </Text>
+                    {(() => {
+                      const { voice } = parseVoiceText(restText);
+                      if (!voice) return null;
+                      return (
+                        <View style={styles.chatBubbleVoicePill}>
+                          <PlayButton size={22} audioUrl={c.voiceUri} />
+                          <View style={styles.chatBubbleWave}>
+                            {[3, 6, 4, 7, 5, 3, 6, 4, 7, 5].map((h, i) => (
+                              <View key={i} style={[styles.chatBubbleWaveBar, { height: h * 1.8 }]} />
+                            ))}
+                          </View>
+                          <Text style={styles.chatBubbleVoiceDur}>{voice}</Text>
+                        </View>
+                      );
+                    })()}
                   </View>
-                  <View style={styles.uniCommentBody}>
-                    <View style={styles.uniCommentHeader}>
-                      <Text style={styles.uniCommentName}>{c.username}</Text>
-                      <Text style={styles.uniCommentTime}>{c.time}</Text>
-                    </View>
-                    <Text style={styles.uniCommentText}>{c.text}</Text>
-                  </View>
+                  <Text style={styles.chatBubbleTime}>{c.time}</Text>
                 </View>
-              </View>
-            </Pressable>
-          ))}
+              </Pressable>
+            );
+          })}
         </View>
       )}
 
@@ -3608,6 +3630,59 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.light.primary,
     marginBottom: 2,
+  },
+  chatBubble: {
+    backgroundColor: "#EAF7F0",
+    borderRadius: 14,
+    borderTopLeftRadius: 4,
+    padding: 12,
+    paddingBottom: 8,
+    marginBottom: 2,
+  },
+  chatBubbleContent: {
+    gap: 6,
+  },
+  chatBubbleText: {
+    fontSize: 14,
+    color: "#333",
+    lineHeight: 20,
+  },
+  chatBubbleMention: {
+    fontSize: 14,
+    fontWeight: "700" as const,
+    color: Colors.light.primary,
+  },
+  chatBubbleVoicePill: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+    backgroundColor: "#fff",
+    borderRadius: 22,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    alignSelf: "flex-start" as const,
+  },
+  chatBubbleWave: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 2.5,
+  },
+  chatBubbleWaveBar: {
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: Colors.light.primary,
+  },
+  chatBubbleVoiceDur: {
+    fontSize: 12,
+    color: "#555",
+    fontWeight: "500" as const,
+    marginLeft: 2,
+  },
+  chatBubbleTime: {
+    fontSize: 11,
+    color: "#999",
+    marginTop: 4,
+    alignSelf: "flex-end" as const,
   },
   uniComment: {
     flexDirection: "column",
