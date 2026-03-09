@@ -65,6 +65,8 @@ assets/images/
 - Green gradient header with avatar
 - User stats bar (visited places, check-ins, diaries, itineraries)
 - Menu groups: travel, tools, about
+- Account switching with multi-account support (add account flows through signin)
+- Account security page: 换绑手机, 绑定邮箱, 实名认证, 第三方账号绑定(微信/QQ/支付宝), 登录设备管理
 
 ## Workflows
 

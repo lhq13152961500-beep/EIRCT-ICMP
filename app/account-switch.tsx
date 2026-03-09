@@ -46,7 +46,7 @@ function AccountAvatar({ username, size = 52 }: { username: string; size?: numbe
 export default function AccountSwitchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, savedAccounts, switchToAccount, removeFromSaved } = useAuth();
+  const { user, savedAccounts, switchToAccount, removeFromSaved, setAddingAccount } = useAuth();
   const [managing, setManaging] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -78,7 +78,8 @@ export default function AccountSwitchScreen() {
 
   const handleAddAccount = () => {
     haptic();
-    router.push("/signin");
+    setAddingAccount(true);
+    router.push("/signin?from=account-switch");
   };
 
   return (

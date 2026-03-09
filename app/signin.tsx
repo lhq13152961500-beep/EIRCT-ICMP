@@ -13,7 +13,7 @@ import {
   ScrollView,
   Animated,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { AntDesign, Ionicons } from "@expo/vector-icons";
@@ -30,7 +30,9 @@ type Mode = "phone" | "password";
 export default function SignInScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { login, loginAsGuest } = useAuth();
+  const { login, loginAsGuest, setAddingAccount } = useAuth();
+  const { from } = useLocalSearchParams<{ from?: string }>();
+  const isFromAccountSwitch = from === "account-switch";
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -79,6 +81,13 @@ export default function SignInScreen() {
     }, 1000);
   };
 
+  const afterLogin = () => {
+    if (isFromAccountSwitch) {
+      router.replace("/account-switch");
+      setTimeout(() => setAddingAccount(false), 500);
+    }
+  };
+
   const handlePhoneLogin = async () => {
     if (!phone.trim()) { setError("请输入手机号码"); return; }
     if (!smsCode.trim()) { setError("请输入验证码"); return; }
@@ -87,10 +96,9 @@ export default function SignInScreen() {
     setError("");
     setLoading(true);
     try {
-      // Use phone as username for demo
       await login(phone.trim(), sentCode!);
+      afterLogin();
     } catch {
-      // If no account exists, auto-register with phone
       try {
         const { apiRequest } = await import("@/lib/query-client");
         const res = await apiRequest("POST", "/api/auth/register", {
@@ -100,6 +108,7 @@ export default function SignInScreen() {
         const data = await res.json();
         if (!res.ok && data.error !== "该用户名已被注册") throw new Error(data.error);
         await login(phone.trim(), sentCode!);
+        afterLogin();
       } catch (e: any) {
         setError(e.message || "登录失败，请重试");
       }
@@ -115,6 +124,7 @@ export default function SignInScreen() {
     setLoading(true);
     try {
       await login(username.trim(), password);
+      afterLogin();
     } catch (e: any) {
       setError(e.message || "登录失败，请重试");
     } finally {
@@ -148,7 +158,7 @@ export default function SignInScreen() {
           >
             {/* Top bar */}
             <View style={styles.topBar}>
-              <Pressable style={styles.closeBtn} onPress={() => { haptic(); router.back(); }}>
+              <Pressable style={styles.closeBtn} onPress={() => { haptic(); setAddingAccount(false); router.back(); }}>
                 <Ionicons name="close" size={22} color="rgba(255,255,255,0.9)" />
               </Pressable>
               <Pressable onPress={() => switchMode(mode === "phone" ? "password" : "phone")}>

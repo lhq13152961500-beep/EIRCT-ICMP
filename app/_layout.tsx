@@ -14,7 +14,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 SplashScreen.preventAutoHideAsync();
 
 function RootLayoutNav() {
-  const { user, isGuest, isLoading } = useAuth();
+  const { user, isGuest, isLoading, addingAccount } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -25,11 +25,11 @@ function RootLayoutNav() {
     const isAuthScreen = ["welcome", "signin", "register", "forgot-password"].includes(segment ?? "");
 
     if (!user && (inTabs || (!isAuthScreen && segment !== undefined))) {
-      // Fully unauthenticated (not even a guest) inside the app → welcome
       router.replace("/welcome");
     } else if (user && !isGuest && isAuthScreen) {
-      // Fully logged-in user on an auth screen → send to app
-      // Guests are allowed through so they can register / sign in
+      if (segment === "signin" && addingAccount) {
+        return;
+      }
       router.replace("/");
     }
   }, [user, isGuest, segments, isLoading]);
@@ -40,8 +40,9 @@ function RootLayoutNav() {
       <Stack.Screen name="signin"   options={{ headerShown: false, animation: "fade_from_bottom" }} />
       <Stack.Screen name="register"        options={{ headerShown: false, animation: "fade_from_bottom" }} />
       <Stack.Screen name="forgot-password" options={{ headerShown: false, animation: "fade_from_bottom" }} />
-      <Stack.Screen name="profile-edit"    options={{ headerShown: false, animation: "slide_from_right" }} />
-      <Stack.Screen name="account-switch"  options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="profile-edit"      options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="account-switch"   options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="account-security" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="(tabs)"   options={{ headerShown: false }} />
     </Stack>
   );

@@ -311,7 +311,7 @@ export default function ProfileScreen() {
             <MenuItem
               icon="shield-checkmark-outline" label="账号安全" color="#1565C0"
               locked={isGuest}
-              onPress={guard(() => {})}
+              onPress={guard(() => router.push("/account-security"))}
             />
             <MenuItem icon="language-outline" label="语言设置" value="简体中文" color="#00897B" />
             <MenuItem icon="notifications-outline" label="通知设置" color="#7B1FA2" isLast />

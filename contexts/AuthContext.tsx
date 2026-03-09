@@ -28,6 +28,8 @@ type AuthContextValue = {
   isGuest: boolean;
   savedAccounts: AuthUser[];
   profile: UserProfile | null;
+  addingAccount: boolean;
+  setAddingAccount: (v: boolean) => void;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
   loginAsGuest: () => void;
@@ -75,6 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isGuest, setIsGuest] = useState(false);
   const [savedAccounts, setSavedAccounts] = useState<AuthUser[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [addingAccount, setAddingAccount] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -177,6 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider
       value={{
         user, isLoading, isGuest, savedAccounts, profile,
+        addingAccount, setAddingAccount,
         login, register, loginAsGuest, logout,
         switchToAccount, removeFromSaved, updateProfile,
       }}
