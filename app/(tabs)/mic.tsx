@@ -1157,7 +1157,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.primary, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 4,
   },
   locationBadgeText: { fontSize: 10, color: "#fff", fontWeight: "600" },
-  locationName: { fontSize: 14, fontWeight: "600", color: Colors.light.text, letterSpacing: 0.2, textAlign: "center", lineHeight: 20 },
+  locationName: { fontSize: 12, fontWeight: "600", color: Colors.light.text, letterSpacing: 0.1, textAlign: "center", lineHeight: 17 },
   locationNameSmall: { fontSize: 13, color: Colors.light.textSecondary, textAlign: "center" },
   retryBtn: {
     flexDirection: "row",
