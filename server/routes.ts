@@ -12,8 +12,6 @@ function hashPassword(pw: string) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // ── Auth ──────────────────────────────────────────────────────────────────
-
   app.post("/api/auth/register", async (req, res) => {
     try {
       const { username, password } = req.body as { username?: string; password?: string };
@@ -78,8 +76,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ── Profile ───────────────────────────────────────────────────────────────
-
   app.get("/api/profile/:userId", async (req, res) => {
     try {
       const { userId } = req.params;
@@ -125,13 +121,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ── Recordings ────────────────────────────────────────────────────────────
-
   const MAX_AUDIO_BYTES = 5 * 1024 * 1024;
 
   app.post("/api/recordings", async (req, res) => {
     try {
-      const { title, locationName, lat, lng, durationSeconds, author, quote, tags, audioData } = req.body;
+      const { title, locationName, lat, lng, durationSeconds, author, quote, tags, audioData, userId, imageUri } = req.body;
       if (typeof lat !== "number" || typeof lng !== "number") {
         return res.status(400).json({ error: "lat and lng are required numbers" });
       }
@@ -144,6 +138,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validAudio = audioData;
       }
       const rec = await storage.addRecording({
+        userId: userId || null,
         title: title || "声音随记",
         locationName: locationName || "未知位置",
         lat,
@@ -153,6 +148,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         quote: quote ?? null,
         tags: Array.isArray(tags) ? tags : ["#声音随记"],
         audioData: validAudio,
+        imageUri: imageUri || null,
       });
       return res.json(rec);
     } catch (err) {
@@ -182,15 +178,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/recordings/my/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      if (!userId) return res.status(400).json({ error: "userId required" });
+      const recordings = await storage.getRecordingsByUser(userId);
+      return res.json(recordings);
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: "Failed to fetch recordings" });
+    }
+  });
+
+  app.post("/api/recordings/:id/like", async (req, res) => {
+    try {
+      const { userId } = req.body as { userId?: string };
+      if (!userId) return res.status(400).json({ error: "userId required" });
+      const result = await storage.toggleLike(req.params.id, userId);
+      return res.json(result);
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: "Failed to toggle like" });
+    }
+  });
+
+  app.post("/api/recordings/:id/comment", async (req, res) => {
+    try {
+      const { userId, username, text } = req.body as { userId?: string; username?: string; text?: string };
+      if (!userId || !text?.trim()) return res.status(400).json({ error: "userId and text required" });
+      const comment = await storage.addComment(req.params.id, userId, username || "匿名", text.trim());
+      return res.json(comment);
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: "Failed to add comment" });
+    }
+  });
+
+  app.get("/api/recordings/:id/interactions", async (req, res) => {
+    try {
+      const viewerUserId = req.query.viewerUserId as string | undefined;
+      const result = await storage.getInteractions(req.params.id, viewerUserId);
+      return res.json(result);
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: "Failed to fetch interactions" });
+    }
+  });
+
   app.get("/api/recordings/nearby", async (req, res) => {
     try {
       const lat = parseFloat(req.query.lat as string);
       const lng = parseFloat(req.query.lng as string);
       const radius = parseFloat(req.query.radius as string) || 100;
+      const viewerUserId = req.query.viewerUserId as string | undefined;
       if (isNaN(lat) || isNaN(lng)) {
         return res.status(400).json({ error: "lat and lng are required" });
       }
-      const recordings = await storage.getNearbyRecordings(lat, lng, radius);
+      const recordings = await storage.getNearbyRecordings(lat, lng, radius, viewerUserId);
       return res.json(recordings);
     } catch (err) {
       console.error(err);

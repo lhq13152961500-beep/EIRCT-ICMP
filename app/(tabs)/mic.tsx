@@ -24,6 +24,7 @@ import * as ImagePicker from "expo-image-picker";
 import Colors from "@/constants/colors";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { useRecordings, type PublishedRecording } from "@/contexts/RecordingsContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useLocation, type LocationStatus } from "@/contexts/LocationContext";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -213,7 +214,8 @@ export default function MicScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const { addMyRecording, setDeviceLocation } = useRecordings();
+  const { addMyRecording, setDeviceLocation, refreshMyRecordings } = useRecordings();
+  const { user } = useAuth();
   const { locationStatus, isLocating, watchActive, isGpsPrecise, retry: retryLocation, overrideLocation } = useLocation();
   const [isPublishing, setIsPublishing] = useState(false);
 
@@ -501,12 +503,15 @@ export default function MicScreen() {
                 lat,
                 lng,
                 durationSeconds: elapsed,
-                author: "附近的旅人",
+                author: user?.username || "附近的旅人",
                 quote: null,
                 tags: ["#声音随记", "#乡村行旅"],
                 audioData,
+                userId: user?.id || null,
+                imageUri: selectedImage || null,
               }) as PublishedRecording;
-              addMyRecording({ ...rec, title, locationName, lat, lng, durationSeconds: elapsed, publishedAt: rec.publishedAt ?? new Date().toISOString(), imageUri: selectedImage ?? undefined, audioUri: finishedUri ?? undefined });
+              addMyRecording({ ...rec, title, locationName, lat, lng, durationSeconds: elapsed, publishedAt: rec.publishedAt ?? new Date().toISOString(), imageUri: selectedImage ?? undefined, audioUri: rec.audioUri ?? finishedUri ?? undefined });
+              setTimeout(() => refreshMyRecordings(), 1000);
             } catch {
               addMyRecording({
                 id: Date.now().toString() + Math.random().toString(36).slice(2),
@@ -531,7 +536,7 @@ export default function MicScreen() {
         },
       ]
     );
-  }, [locationStatus, elapsed, addMyRecording, selectedImage, finishedUri]);
+  }, [locationStatus, elapsed, addMyRecording, refreshMyRecordings, selectedImage, finishedUri, user]);
 
   const handleDiscard = useCallback(() => {
     Alert.alert("丢弃录音", "确认丢弃这段录音？", [

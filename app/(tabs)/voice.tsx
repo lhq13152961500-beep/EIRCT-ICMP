@@ -20,8 +20,9 @@ import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import { Audio } from "expo-av";
 import Colors from "@/constants/colors";
-import { getApiUrl } from "@/lib/query-client";
+import { getApiUrl, apiRequest } from "@/lib/query-client";
 import { useRecordings, type PublishedRecording, type RecordingComment } from "@/contexts/RecordingsContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TAB_BAR_HEIGHT = 80;
@@ -1735,6 +1736,18 @@ interface NearbyRec {
   quote: string | null;
   tags: string[];
   audioUri?: string;
+  likeCount?: number;
+  comments?: ServerComment[];
+  isLiked?: boolean;
+}
+
+interface ServerComment {
+  id: string;
+  recordingId: string;
+  userId: string;
+  username: string;
+  text: string;
+  createdAt: string;
 }
 
 interface NearbyComment {
@@ -1745,12 +1758,25 @@ interface NearbyComment {
 }
 
 function NearbyPostcard({ rec }: { rec: NearbyRec }) {
-  const [isLiked, setIsLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(0);
+  const { user } = useAuth();
+  const { refreshMyRecordings } = useRecordings();
+  const mapComments = (cs: ServerComment[]): NearbyComment[] =>
+    cs.map((c) => {
+      const d = new Date(c.createdAt);
+      return { id: c.id, username: c.username, time: `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`, text: c.text };
+    });
+  const [isLiked, setIsLiked] = useState(rec.isLiked ?? false);
+  const [likeCount, setLikeCount] = useState(rec.likeCount ?? 0);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isReplying, setIsReplying] = useState(false);
   const [replyText, setReplyText] = useState("");
-  const [comments, setComments] = useState<NearbyComment[]>([]);
+  const [comments, setComments] = useState<NearbyComment[]>(mapComments(rec.comments ?? []));
+
+  useEffect(() => {
+    setIsLiked(rec.isLiked ?? false);
+    setLikeCount(rec.likeCount ?? 0);
+    setComments(mapComments(rec.comments ?? []));
+  }, [rec.isLiked, rec.likeCount, rec.comments]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionMs, setPositionMs] = useState(0);
   const [audioDurationMs, setAudioDurationMs] = useState(0);
@@ -1815,22 +1841,40 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
     } catch (e) { console.warn("NearbyPostcard audio error:", e); }
   };
 
-  const toggleLike = () => {
+  const toggleLike = async () => {
+    if (!user || user.id === "guest") return;
+    haptic();
     setIsLiked((v) => {
       setLikeCount((c) => c + (v ? -1 : 1));
       return !v;
     });
-    haptic();
+    try {
+      const result = await apiRequest("POST", `/api/recordings/${rec.id}/like`, { userId: user.id }) as { liked: boolean; likeCount: number };
+      setIsLiked(result.liked);
+      setLikeCount(result.likeCount);
+      refreshMyRecordings();
+    } catch (e) {
+      console.warn("Like failed:", e);
+    }
   };
 
-  const submitReply = () => {
-    if (!replyText.trim()) return;
-    const now = new Date();
-    const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    setComments((prev) => [...prev, { id: Date.now().toString(), username: "我", time, text: replyText.trim() }]);
+  const submitReply = async () => {
+    if (!replyText.trim() || !user || user.id === "guest") return;
+    const text = replyText.trim();
     setReplyText("");
     setIsReplying(false);
     haptic();
+    const now = new Date();
+    const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const tempId = Date.now().toString();
+    setComments((prev) => [...prev, { id: tempId, username: user.username || "我", time, text }]);
+    try {
+      const comment = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: user.username || "匿名", text }) as any;
+      setComments((prev) => prev.map((c) => c.id === tempId ? { ...c, id: comment.id } : c));
+      refreshMyRecordings();
+    } catch (e) {
+      console.warn("Comment failed:", e);
+    }
   };
 
   return (
@@ -1966,6 +2010,7 @@ const DISCOVER_FALLBACK_LNG = 87.5987;
 function DiscoverOthersTab() {
   "use no memo";
   const { deviceLocation } = useRecordings();
+  const { user } = useAuth();
   const [nearbyRecs, setNearbyRecs] = useState<NearbyRec[]>([]);
   const [nearbyError, setNearbyError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -1980,6 +2025,9 @@ function DiscoverOthersTab() {
         url.searchParams.set("lat", String(lat));
         url.searchParams.set("lng", String(lng));
         url.searchParams.set("radius", "100");
+        if (user && user.id !== "guest") {
+          url.searchParams.set("viewerUserId", user.id);
+        }
         const res = await fetch(url.toString());
         if (res.ok) {
           const data: NearbyRec[] = await res.json();
@@ -2021,7 +2069,7 @@ function DiscoverOthersTab() {
       }
       await doFetch(fallbackLat, fallbackLng);
     }
-  }, [deviceLocation]);
+  }, [deviceLocation, user]);
 
   useEffect(() => { fetchNearby(); }, [fetchNearby]);
 

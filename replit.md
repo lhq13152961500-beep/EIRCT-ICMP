@@ -60,9 +60,13 @@ assets/images/
 - Record new diary button
 - Stats bar (entries, total duration, locations)
 - Diary entry list with play buttons
-- Real audio upload: recordings are uploaded as base64 to server and served via /api/recordings/:id/audio
-- No simulated likes/comments — all interactions are from real users
-- Nearby users can discover and listen to actual recorded audio in "发现他人声音"
+- Recordings persisted to PostgreSQL (recordings table) — survive server restarts
+- Real audio upload: recordings uploaded as base64, stored in DB, served via /api/recordings/:id/audio
+- Likes & comments stored in PostgreSQL (recording_likes, recording_comments tables)
+- API: POST /api/recordings/:id/like (toggle), POST /api/recordings/:id/comment, GET /api/recordings/my/:userId
+- RecordingsContext auto-fetches user's recordings from server every 15s
+- Nearby recordings include like counts, comments, and user's liked status
+- Likes/comments sync between "我的日记" and "发现他人声音"
 
 ### 我的 (Profile)
 - Green gradient header with avatar

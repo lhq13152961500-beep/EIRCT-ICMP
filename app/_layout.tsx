@@ -7,11 +7,24 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
-import { RecordingsProvider } from "@/contexts/RecordingsContext";
+import { RecordingsProvider, useRecordings } from "@/contexts/RecordingsContext";
 import { LocationProvider } from "@/contexts/LocationContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 
 SplashScreen.preventAutoHideAsync();
+
+function SyncUserToRecordings() {
+  const { user, isGuest } = useAuth();
+  const { setCurrentUserId } = useRecordings();
+  useEffect(() => {
+    if (user && !isGuest) {
+      setCurrentUserId(user.id);
+    } else {
+      setCurrentUserId(null);
+    }
+  }, [user, isGuest, setCurrentUserId]);
+  return null;
+}
 
 function RootLayoutNav() {
   const { user, isGuest, isLoading, addingAccount } = useAuth();
@@ -71,6 +84,7 @@ export default function RootLayout() {
         <AuthProvider>
           <LocationProvider>
             <RecordingsProvider>
+              <SyncUserToRecordings />
               <GestureHandlerRootView>
                 <KeyboardProvider>
                   <RootLayoutNav />
