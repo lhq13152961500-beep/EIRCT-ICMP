@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Modal,
   Linking,
+  TextInput,
 } from "react-native";
 import MapLocationPicker from "@/components/MapLocationPicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -227,6 +228,7 @@ export default function MicScreen() {
   const [showMusicModal, setShowMusicModal] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showImageViewer, setShowImageViewer] = useState(false);
+  const [customTitle, setCustomTitle] = useState("");
   const [previewingMusic, setPreviewingMusic] = useState<number | null>(null);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewSoundMusicRef = useRef<Audio.Sound | null>(null);
@@ -466,7 +468,7 @@ export default function MicScreen() {
       return;
     }
     const { lat, lng, locationName } = locationStatus;
-    const title = `声音随记·${locationName}`;
+    const title = customTitle.trim() || `声音随记·${locationName}`;
     Alert.alert(
       "发布声音随记",
       `将在「${locationName}」发布这段录音（${formatTime(elapsed)}），100 米内的旅人可以接收，是否确认？`,
@@ -534,12 +536,13 @@ export default function MicScreen() {
             setElapsed(0);
             setRecState("idle");
             setSelectedImage(null);
+            setCustomTitle("");
             Alert.alert("发布成功 🌿", `已发布到「${locationName}」，100 米内的旅人可以聆听，作品已保存在「我的日记」`);
           },
         },
       ]
     );
-  }, [locationStatus, elapsed, addMyRecording, refreshMyRecordings, selectedImage, finishedUri, user]);
+  }, [locationStatus, elapsed, addMyRecording, refreshMyRecordings, selectedImage, finishedUri, user, customTitle]);
 
   const handleDiscard = useCallback(() => {
     Alert.alert("丢弃录音", "确认丢弃这段录音？", [
@@ -1015,6 +1018,34 @@ export default function MicScreen() {
           )}
         </View>
 
+        {/* Custom Title Section */}
+        <View style={styles.imageSection}>
+          <View style={styles.musicHeader}>
+            <Text style={styles.musicTitle}>作品名称</Text>
+            {customTitle.length > 0 && (
+              <Text style={styles.titleCharCount}>{customTitle.length}/20</Text>
+            )}
+          </View>
+          <View style={styles.titleInputWrapper}>
+            <Ionicons name="pencil-outline" size={18} color={Colors.light.textSecondary} style={{ marginRight: 8 }} />
+            <TextInput
+              style={styles.titleInput}
+              placeholder={`声音随记·${locationStatus?.locationName || "当前位置"}`}
+              placeholderTextColor="#bbb"
+              value={customTitle}
+              onChangeText={(t) => setCustomTitle(t.slice(0, 20))}
+              maxLength={20}
+              returnKeyType="done"
+            />
+            {customTitle.length > 0 && (
+              <Pressable onPress={() => { setCustomTitle(""); haptic(); }} hitSlop={8}>
+                <Ionicons name="close-circle" size={18} color={Colors.light.textSecondary} />
+              </Pressable>
+            )}
+          </View>
+          <Text style={styles.titleHint}>留空则使用默认名称「声音随记·地点」</Text>
+        </View>
+
         {/* Full-screen Image Viewer */}
         <Modal
           visible={showImageViewer}
@@ -1418,5 +1449,21 @@ const styles = StyleSheet.create({
     position: "absolute", top: 54, right: 20,
     backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 20,
     width: 40, height: 40, alignItems: "center", justifyContent: "center",
+  },
+  titleInputWrapper: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "#F5F7FA", borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderWidth: 1.5, borderColor: "#E8ECF0",
+  },
+  titleInput: {
+    flex: 1, fontSize: 15, color: Colors.light.text,
+    padding: 0,
+  },
+  titleCharCount: {
+    fontSize: 12, color: Colors.light.textSecondary,
+  },
+  titleHint: {
+    fontSize: 11, color: Colors.light.textSecondary, marginTop: -6,
   },
 });
