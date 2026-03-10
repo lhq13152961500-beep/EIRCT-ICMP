@@ -60,6 +60,7 @@ export interface RecordingComment {
   username: string;
   text: string;
   createdAt: string;
+  voiceUrl?: string | null;
 }
 
 export interface IStorage {
@@ -77,7 +78,7 @@ export interface IStorage {
   getRecordingsByUser(userId: string): Promise<SoundRecording[]>;
 
   toggleLike(recordingId: string, userId: string): Promise<{ liked: boolean; likeCount: number }>;
-  addComment(recordingId: string, userId: string, username: string, text: string): Promise<RecordingComment>;
+  addComment(recordingId: string, userId: string, username: string, text: string, voiceData?: string): Promise<RecordingComment>;
   getInteractions(recordingId: string, viewerUserId?: string): Promise<{ likeCount: number; isLiked: boolean; comments: RecordingComment[] }>;
 }
 
@@ -294,7 +295,7 @@ export class HybridStorage implements IStorage {
     for (const row of likesRes.rows) likeMap[row.recording_id] = row.cnt;
 
     const commentsRes = await pgPool.query(
-      `SELECT id, recording_id, user_id, username, text, created_at FROM recording_comments WHERE recording_id = ANY($1) ORDER BY created_at ASC`,
+      `SELECT id, recording_id, user_id, username, text, created_at, voice_url FROM recording_comments WHERE recording_id = ANY($1) ORDER BY created_at ASC`,
       [ids]
     );
     const commentMap: Record<string, RecordingComment[]> = {};
@@ -308,6 +309,7 @@ export class HybridStorage implements IStorage {
         username: row.username,
         text: row.text,
         createdAt: (row.created_at as Date).toISOString(),
+        voiceUrl: row.voice_url,
       });
     }
 
@@ -359,7 +361,7 @@ export class HybridStorage implements IStorage {
     for (const row of likesRes.rows) likeMap[row.recording_id] = row.cnt;
 
     const commentsRes = await pgPool.query(
-      `SELECT id, recording_id, user_id, username, text, created_at FROM recording_comments WHERE recording_id = ANY($1) ORDER BY created_at ASC`,
+      `SELECT id, recording_id, user_id, username, text, created_at, voice_url FROM recording_comments WHERE recording_id = ANY($1) ORDER BY created_at ASC`,
       [ids]
     );
     const commentMap: Record<string, RecordingComment[]> = {};
@@ -373,6 +375,7 @@ export class HybridStorage implements IStorage {
         username: row.username,
         text: row.text,
         createdAt: (row.created_at as Date).toISOString(),
+        voiceUrl: row.voice_url,
       });
     }
 
@@ -406,10 +409,38 @@ export class HybridStorage implements IStorage {
     return { liked, likeCount: countRes.rows[0].cnt };
   }
 
-  async addComment(recordingId: string, userId: string, username: string, text: string): Promise<RecordingComment> {
+  async addComment(recordingId: string, userId: string, username: string, text: string, voiceData?: string): Promise<RecordingComment> {
+    let voiceUrl: string | null = null;
+
+    if (voiceData && voiceData.length > 0) {
+      const buf = Buffer.from(voiceData, "base64");
+      let ext = "m4a";
+      let mime = "audio/mp4";
+      if (buf[0] === 0x1A && buf[1] === 0x45) { ext = "webm"; mime = "audio/webm"; }
+      else if (buf[0] === 0x4F && buf[1] === 0x67) { ext = "ogg"; mime = "audio/ogg"; }
+      const fileId = randomUUID();
+      const filePath = `comments/${fileId}.${ext}`;
+
+      const { error: bucketErr } = await supabase.storage.getBucket("audio");
+      if (bucketErr) {
+        await supabase.storage.createBucket("audio", { public: true, fileSizeLimit: 10 * 1024 * 1024 });
+      }
+
+      const { error: uploadErr } = await supabase.storage.from("audio").upload(filePath, buf, {
+        contentType: mime,
+        upsert: true,
+      });
+      if (uploadErr) {
+        console.error("[storage] Comment voice upload error:", uploadErr);
+      } else {
+        const { data: urlData } = supabase.storage.from("audio").getPublicUrl(filePath);
+        voiceUrl = urlData.publicUrl;
+      }
+    }
+
     const res = await pgPool.query(
-      `INSERT INTO recording_comments (recording_id, user_id, username, text) VALUES ($1, $2, $3, $4) RETURNING *`,
-      [recordingId, userId, username, text]
+      `INSERT INTO recording_comments (recording_id, user_id, username, text, voice_url) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [recordingId, userId, username, text, voiceUrl]
     );
     const row = res.rows[0];
     return {
@@ -419,6 +450,7 @@ export class HybridStorage implements IStorage {
       username: row.username,
       text: row.text,
       createdAt: (row.created_at as Date).toISOString(),
+      voiceUrl: row.voice_url,
     };
   }
 
@@ -436,7 +468,7 @@ export class HybridStorage implements IStorage {
       isLiked = ul.rows.length > 0;
     }
     const commentsRes = await pgPool.query(
-      `SELECT id, recording_id, user_id, username, text, created_at FROM recording_comments WHERE recording_id = $1 ORDER BY created_at ASC`,
+      `SELECT id, recording_id, user_id, username, text, created_at, voice_url FROM recording_comments WHERE recording_id = $1 ORDER BY created_at ASC`,
       [recordingId]
     );
     const comments: RecordingComment[] = commentsRes.rows.map((row: any) => ({
@@ -446,6 +478,7 @@ export class HybridStorage implements IStorage {
       username: row.username,
       text: row.text,
       createdAt: (row.created_at as Date).toISOString(),
+      voiceUrl: row.voice_url,
     }));
     return { likeCount: likeRes.rows[0].cnt, isLiked, comments };
   }

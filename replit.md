@@ -64,7 +64,8 @@ assets/images/
 - Audio files stored in Supabase Storage (bucket: "audio"), URL saved in recordings.audio_url column
 - Legacy base64 audio in recordings.audio_data still supported (fallback)
 - Likes & comments stored in PostgreSQL (recording_likes, recording_comments tables)
-- API: POST /api/recordings/:id/like (toggle), POST /api/recordings/:id/comment, GET /api/recordings/my/:userId
+- Voice comments: audio uploaded to Supabase Storage (audio/comments/), URL saved in recording_comments.voice_url
+- API: POST /api/recordings/:id/like (toggle), POST /api/recordings/:id/comment (accepts voiceData base64), GET /api/recordings/my/:userId
 - RecordingsContext auto-fetches user's recordings from server every 15s
 - Nearby recordings include like counts, comments, and user's liked status
 - Likes/comments sync between "我的日记" and "发现他人声音"

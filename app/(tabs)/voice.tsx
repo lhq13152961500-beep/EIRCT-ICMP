@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
+import * as FileSystem from "expo-file-system";
 import { Audio } from "expo-av";
 import Colors from "@/constants/colors";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
@@ -1769,6 +1770,7 @@ interface ServerComment {
   username: string;
   text: string;
   createdAt: string;
+  voiceUrl?: string | null;
 }
 
 interface NearbyComment {
@@ -1785,7 +1787,7 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
   const mapComments = (cs: ServerComment[]): NearbyComment[] =>
     cs.map((c) => {
       const d = new Date(c.createdAt);
-      return { id: c.id, username: c.username, time: `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`, text: c.text };
+      return { id: c.id, username: c.username, time: `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`, text: c.text, voiceUri: c.voiceUrl || null };
     });
   const [isLiked, setIsLiked] = useState(rec.isLiked ?? false);
   const [likeCount, setLikeCount] = useState(rec.likeCount ?? 0);
@@ -1922,6 +1924,28 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
     }
   };
 
+  const readAudioBase64 = async (uri?: string | null): Promise<string | undefined> => {
+    if (!uri) return undefined;
+    try {
+      if (Platform.OS === "web") {
+        const resp = await fetch(uri);
+        const blob = await resp.blob();
+        return await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            resolve(result.split(",")[1] || "");
+          };
+          reader.readAsDataURL(blob);
+        });
+      }
+      return await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    } catch (e) {
+      console.warn("readAudioBase64 failed:", e);
+      return undefined;
+    }
+  };
+
   const handleVoiceRecordEnd = async () => {
     const { uri, duration: dur, recorded } = await stopRecording();
     setIsRecordingComment(false);
@@ -1934,9 +1958,10 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
     setComments((prev) => [...prev, { id: tempId, username: user.username || "我", time, text: voiceText, voiceUri: uri }]);
     closeReply();
     try {
-      const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: user.username || "匿名", text: voiceText });
+      const voiceData = await readAudioBase64(uri);
+      const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: user.username || "匿名", text: voiceText, voiceData });
       const comment = await commentResp.json();
-      setComments((prev) => prev.map((c) => c.id === tempId ? { ...c, id: comment.id } : c));
+      setComments((prev) => prev.map((c) => c.id === tempId ? { ...c, id: comment.id, voiceUri: comment.voiceUrl || c.voiceUri } : c));
       refreshMyRecordings();
     } catch (e) { console.warn("Voice comment failed:", e); }
   };
@@ -1958,9 +1983,10 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
     setComments((prev) => [...prev, { id: tempId, username: user.username || "我", time, text: combinedText, voiceUri: capturedUri }]);
     closeReply();
     try {
-      const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: user.username || "匿名", text: combinedText });
+      const voiceData = capturedUri ? await readAudioBase64(capturedUri) : undefined;
+      const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: user.username || "匿名", text: combinedText, voiceData });
       const comment = await commentResp.json();
-      setComments((prev) => prev.map((c) => c.id === tempId ? { ...c, id: comment.id } : c));
+      setComments((prev) => prev.map((c) => c.id === tempId ? { ...c, id: comment.id, voiceUri: comment.voiceUrl || c.voiceUri } : c));
       refreshMyRecordings();
     } catch (e) {
       console.warn("Comment failed:", e);
