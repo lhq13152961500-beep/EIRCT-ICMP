@@ -216,7 +216,7 @@ export default function MicScreen() {
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
   const { addMyRecording, setDeviceLocation, refreshMyRecordings } = useRecordings();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { locationStatus, isLocating, watchActive, isGpsPrecise, retry: retryLocation, overrideLocation } = useLocation();
   const [isPublishing, setIsPublishing] = useState(false);
 
@@ -506,7 +506,7 @@ export default function MicScreen() {
                 lat,
                 lng,
                 durationSeconds: elapsed,
-                author: user?.username || "附近的旅人",
+                author: profile?.displayName || user?.username || "附近的旅人",
                 quote: null,
                 tags: ["#声音随记", "#乡村行旅"],
                 audioData: audioData || undefined,

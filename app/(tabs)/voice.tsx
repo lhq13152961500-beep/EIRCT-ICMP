@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import { Audio } from "expo-av";
 import Colors from "@/constants/colors";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
@@ -1782,8 +1782,9 @@ interface NearbyComment {
 }
 
 function NearbyPostcard({ rec }: { rec: NearbyRec }) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { refreshMyRecordings } = useRecordings();
+  const displayName = profile?.displayName || user?.username || "我";
   const mapComments = (cs: ServerComment[]): NearbyComment[] =>
     cs.map((c) => {
       const d = new Date(c.createdAt);
@@ -1971,11 +1972,11 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
     const now = new Date();
     const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const tempId = Date.now().toString();
-    setComments((prev) => [...prev, { id: tempId, username: user.username || "我", time, text: voiceText, voiceUri: uri }]);
+    setComments((prev) => [...prev, { id: tempId, username: displayName, time, text: voiceText, voiceUri: uri }]);
     closeReply();
     try {
       const voiceData = await readAudioBase64(uri);
-      const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: user.username || "匿名", text: voiceText, voiceData });
+      const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: displayName, text: voiceText, voiceData });
       const comment = await commentResp.json();
       setComments((prev) => prev.map((c) => c.id === tempId ? { ...c, id: comment.id, voiceUri: comment.voiceUrl || c.voiceUri } : c));
       refreshMyRecordings();
@@ -1996,11 +1997,11 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
     const time = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const tempId = Date.now().toString();
     const capturedUri = mixedVoiceUri;
-    setComments((prev) => [...prev, { id: tempId, username: user.username || "我", time, text: combinedText, voiceUri: capturedUri }]);
+    setComments((prev) => [...prev, { id: tempId, username: displayName, time, text: combinedText, voiceUri: capturedUri }]);
     closeReply();
     try {
       const voiceData = capturedUri ? await readAudioBase64(capturedUri) : undefined;
-      const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: user.username || "匿名", text: combinedText, voiceData });
+      const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: displayName, text: combinedText, voiceData });
       const comment = await commentResp.json();
       setComments((prev) => prev.map((c) => c.id === tempId ? { ...c, id: comment.id, voiceUri: comment.voiceUrl || c.voiceUri } : c));
       refreshMyRecordings();

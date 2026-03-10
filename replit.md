@@ -6,7 +6,7 @@ A beautiful Chinese rural tourism guide mobile app built with Expo React Native.
 
 - **Frontend**: Expo Router with file-based routing, React Native
 - **Backend**: Express.js server on port 5000
-- **State**: Local component state (no database needed)
+- **State**: React Context + React Query for server state
 - **Navigation**: Tab-based with 5 tabs + center mic tab
 
 ## App Structure
@@ -78,6 +78,20 @@ assets/images/
 - Menu groups: travel, tools, about
 - Account switching with multi-account support (add account flows through signin)
 - Account security page: 换绑手机, 绑定邮箱, 实名认证, 第三方账号绑定(微信/QQ/支付宝), 登录设备管理
+
+## Auth & User Display
+
+- Auth: Supabase `users` table (phone-SMS + password login modes)
+- Profiles: Local PostgreSQL `profiles` table with `display_name`, `phone`, `avatar_url`
+- Display name priority: `profile?.displayName || user?.username || "我"`
+- Phone-SMS login stores phone as `username` — always use display name from profile
+
+## Technical Notes
+
+- `expo-file-system` import MUST use `from "expo-file-system/legacy"` (non-legacy API deprecated)
+- `readAudioBase64(uri)`: tries `FileSystem.readAsStringAsync` first, falls back to `fetch+FileReader`
+- Audio URLs: recordings in `recordings/*.m4a`, comments in `comments/*.m4a` on Supabase Storage
+- `apiRequest` returns `Response` — always call `.json()` to parse
 
 ## Workflows
 
