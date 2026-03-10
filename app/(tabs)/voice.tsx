@@ -1124,18 +1124,24 @@ type DiaryListItem =
   | { kind: "group"; group: typeof MY_DIARY_GROUPS[0] };
 
 function SortPicker({ sortBy, onChange }: { sortBy: SortOrder | null; onChange: (v: SortOrder | null) => void }) {
+  "use no memo";
   const options: { key: SortOrder; label: string }[] = [
     { key: "time", label: "时间" },
     { key: "comments", label: "评论数" },
     { key: "likes", label: "点赞数" },
   ];
+  const handlePress = (key: SortOrder | null) => {
+    console.log("[sort] pressed:", key, "current:", sortBy);
+    onChange(key);
+    haptic();
+  };
   return (
     <View style={styles.sortPicker}>
       {options.map((opt) => (
         <Pressable
           key={opt.key}
           style={[styles.sortChip, sortBy === opt.key && styles.sortChipActive]}
-          onPress={() => { onChange(opt.key); haptic(); }}
+          onPress={() => handlePress(opt.key)}
         >
           <Text style={[styles.sortChipText, sortBy === opt.key && styles.sortChipTextActive]}>
             {opt.label}
@@ -1144,7 +1150,7 @@ function SortPicker({ sortBy, onChange }: { sortBy: SortOrder | null; onChange: 
       ))}
       <Pressable
         style={[styles.sortChip, !sortBy && styles.sortChipActive]}
-        onPress={() => { onChange(null); haptic(); }}
+        onPress={() => handlePress(null)}
       >
         <Text style={[styles.sortChipText, !sortBy && styles.sortChipTextActive]}>重置</Text>
       </Pressable>
@@ -2549,6 +2555,8 @@ function DiscoverOthersTab() {
   const sortedNearby = sortBy
     ? [...nearbyRecs].sort((a, b) => {
         if (sortBy === "time") return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+        if (sortBy === "comments") return (b.comments?.length ?? 0) - (a.comments?.length ?? 0);
+        if (sortBy === "likes") return (b.likeCount ?? 0) - (a.likeCount ?? 0);
         return 0;
       })
     : nearbyRecs;
