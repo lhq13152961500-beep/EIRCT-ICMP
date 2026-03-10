@@ -10,6 +10,9 @@
 <div id="status">正在定位...</div>
 <script>
 var AMAP_KEY = '__AMAP_KEY__';
+var sdkLoaded = false;
+var sdkLoadTimeout = null;
+
 function sendToApp(data) {
   try {
     if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
@@ -17,10 +20,41 @@ function sendToApp(data) {
     }
   } catch(e) {}
 }
+
+function tryBrowserGeo() {
+  if (!navigator.geolocation) {
+    sendToApp({type:'error', message:'Browser geolocation not available'});
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    function(pos) {
+      sendToApp({type:'location', lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:Math.round(pos.coords.accuracy)||50, address:''});
+      document.getElementById('status').textContent = pos.coords.latitude+','+pos.coords.longitude;
+    },
+    function(err) {
+      sendToApp({type:'error', message:'Browser geo failed: '+err.message});
+    },
+    {enableHighAccuracy:true, timeout:15000, maximumAge:30000}
+  );
+  setInterval(function(){
+    navigator.geolocation.getCurrentPosition(
+      function(pos) {
+        sendToApp({type:'location', lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:Math.round(pos.coords.accuracy)||50, address:''});
+      },
+      function(){},
+      {enableHighAccuracy:true, timeout:15000, maximumAge:30000}
+    );
+  }, 15000);
+}
+
 function doLocate() {
+  sdkLoaded = true;
+  if (sdkLoadTimeout) { clearTimeout(sdkLoadTimeout); sdkLoadTimeout = null; }
+
   if (!window.AMap) {
-    document.getElementById('status').textContent = 'SDK加载失败';
-    sendToApp({type:'error', message:'AMap SDK not loaded'});
+    document.getElementById('status').textContent = 'SDK加载失败，使用备用定位';
+    sendToApp({type:'error', message:'AMap SDK not loaded, trying browser geo'});
+    tryBrowserGeo();
     return;
   }
   var geo = new AMap.Geolocation({
@@ -37,7 +71,8 @@ function doLocate() {
     noIpLocate: 3,
     extensions: 'base'
   });
-  function onSuccess(status, result) {
+  var gotFirstFix = false;
+  function onResult(status, result) {
     if (status === 'complete' && result.position) {
       var lat = result.position.lat || (result.position.getLat && result.position.getLat());
       var lng = result.position.lng || (result.position.getLng && result.position.getLng());
@@ -49,19 +84,32 @@ function doLocate() {
         addr = (c.township || '') + (c.street || '') + (c.streetNumber || '');
         if (!addr) addr = (c.district || '') + (c.city || '');
       }
+      gotFirstFix = true;
       document.getElementById('status').textContent = addr || (lat+','+lng);
       sendToApp({type:'location', lat:lat, lng:lng, accuracy:acc, address:addr});
     } else {
-      document.getElementById('status').textContent = '定位失败: '+(result.message||status);
-      sendToApp({type:'error', message:result.message||'unknown'});
+      var msg = (result && result.message) ? result.message : (status || 'unknown');
+      document.getElementById('status').textContent = '高德定位失败: '+msg;
+      sendToApp({type:'error', message:'Amap geo failed: '+msg});
+      if (!gotFirstFix) {
+        tryBrowserGeo();
+      }
     }
   }
-  geo.getCurrentPosition(onSuccess);
+  geo.getCurrentPosition(onResult);
   setInterval(function(){
-    geo.getCurrentPosition(onSuccess);
+    geo.getCurrentPosition(onResult);
   }, 15000);
 }
+
+sdkLoadTimeout = setTimeout(function(){
+  if (!sdkLoaded) {
+    document.getElementById('status').textContent = 'SDK加载超时，使用备用定位';
+    sendToApp({type:'error', message:'Amap SDK load timeout (8s), trying browser geo'});
+    tryBrowserGeo();
+  }
+}, 8000);
 </script>
-<script src="https://webapi.amap.com/maps?v=2.0&key=__AMAP_KEY__&plugin=AMap.Geolocation" onload="doLocate()" onerror="sendToApp({type:'error',message:'SDK load failed'})"></script>
+<script src="https://webapi.amap.com/maps?v=2.0&key=__AMAP_KEY__&plugin=AMap.Geolocation" onload="doLocate()" onerror="sendToApp({type:'error',message:'SDK script load failed'});tryBrowserGeo();"></script>
 </body>
 </html>

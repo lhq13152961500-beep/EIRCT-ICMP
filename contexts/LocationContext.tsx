@@ -427,6 +427,12 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
         setWebViewUrl(amapLocateUrl);
         setWatchActive(true);
 
+        const webViewTimeout = setTimeout(() => {
+          if (mounted && !hasGpsFixRef.current && !hasGpsFix) {
+            console.warn("[loc] Amap WebView did not respond within 20s — relying on IP location");
+          }
+        }, 20000);
+
         try {
           const { status } = await Location.requestForegroundPermissionsAsync();
           if (!mounted) return;
@@ -486,6 +492,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       if (amapWatchTimer) clearInterval(amapWatchTimer);
       locationSubRef.current?.remove();
       locationSubRef.current = null;
+      setWebViewUrl(null);
     };
   }, [trigger]);
 
@@ -499,8 +506,13 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
             onMessage={handleWebViewMessage}
             javaScriptEnabled
             geolocationEnabled
+            androidLayerType="hardware"
+            allowFileAccess
+            mixedContentMode="compatibility"
+            onShouldStartLoadWithRequest={() => true}
             style={hiddenStyles.webview}
             onError={(e: any) => console.warn("[loc] WebView error:", e.nativeEvent?.description)}
+            onHttpError={(e: any) => console.warn("[loc] WebView HTTP error:", e.nativeEvent?.statusCode)}
           />
         </View>
       )}
