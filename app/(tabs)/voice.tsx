@@ -698,8 +698,9 @@ function DiaryGroup({
             </View>
           )}
         </View>
-        <PlayButton size={32} audioUrl={getDemoAudio(group.id)} />
       </View>
+
+      <ProgressBar progress={0} total={group.duration} audioUrl={getDemoAudio(group.id)} />
 
       <View style={styles.diaryStatsRow}>
         <Pressable
@@ -909,8 +910,13 @@ function MyPublishedCard({
             <Text style={styles.diaryMainMetaText} numberOfLines={1}>{rec.locationName}</Text>
           </View>
         </View>
-        <PlayButton size={32} audioUrl={rec.audioUri || rec.audioUrl} />
       </View>
+
+      <ProgressBar progress={0} total={dur} audioUrl={(() => {
+        const src = rec.audioUri || rec.audioUrl;
+        if (!src) return undefined;
+        return src.startsWith("http") ? src : new URL(src, getApiUrl()).toString();
+      })()} />
 
       {/* Stats row — identical to DiaryGroup */}
       <View style={styles.diaryStatsRow}>
@@ -950,11 +956,25 @@ function MyPublishedCard({
               const subs = subRepliesByComment[c.id] ?? [];
               const replyText = replyTextByComment[c.id] ?? "";
               const replyMode = replyModeByComment[c.id] ?? "text";
+              const { body: commentBody, voice: commentVoice } = parseVoiceText(c.text);
               return (
                 <View key={c.id}>
                   <View style={styles.replyItem}>
                     <View style={styles.replyLeft}>
-                      <Text style={styles.replyTitle} numberOfLines={1}>{c.text}</Text>
+                      {commentBody.length > 0 && (
+                        <Text style={styles.replyTitle} numberOfLines={2}>{commentBody}</Text>
+                      )}
+                      {commentVoice && (
+                        <View style={styles.diaryCommentVoicePill}>
+                          <PlayButton size={28} color={Colors.light.primary} audioUrl={c.voiceUri ?? undefined} />
+                          <View style={styles.diaryCommentWave}>
+                            {[3, 6, 4, 7, 5, 3, 6, 4, 7, 5].map((h, i) => (
+                              <View key={i} style={[styles.diaryCommentWaveBar, { height: h * 1.8 }]} />
+                            ))}
+                          </View>
+                          <Text style={styles.diaryCommentVoiceDur}>{commentVoice}</Text>
+                        </View>
+                      )}
                       <View style={styles.replyMeta}>
                         <Ionicons name="calendar-outline" size={10} color={Colors.light.textSecondary} />
                         <Text style={styles.replyMetaText}>{c.time}</Text>
@@ -1974,28 +1994,28 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
 
       <Text style={styles.postcardSender}>发送者：{rec.author}</Text>
 
-      {rec.quote ? (
+      {rec.quote && (
         <View style={styles.postcardQuote}>
           <Text style={styles.postcardQuoteText}>{rec.quote}</Text>
         </View>
-      ) : (
-        <View style={styles.postcardProgress}>
-          <View style={styles.progressRow}>
-            <Pressable
-              style={[styles.playBtn, { width: 28, height: 28, borderRadius: 14, borderColor: Colors.light.primary }]}
-              onPress={toggleAudio}
-            >
-              <Ionicons name={isPlaying ? "pause" : "play"} size={13} color={Colors.light.primary} />
+      )}
+
+      <View style={styles.postcardProgress}>
+        <View style={styles.progressRow}>
+          <Pressable
+            style={[styles.playBtn, { width: 28, height: 28, borderRadius: 14, borderColor: Colors.light.primary }]}
+            onPress={toggleAudio}
+          >
+            <Ionicons name={isPlaying ? "pause" : "play"} size={13} color={Colors.light.primary} />
             </Pressable>
-            <View style={styles.progressTrackWrap}>
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${Math.round(playProgress * 100)}%` as any }]} />
-              </View>
-              <Text style={styles.progressTime}>{elapsed} / {duration}</Text>
+          <View style={styles.progressTrackWrap}>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${Math.round(playProgress * 100)}%` as any }]} />
             </View>
+            <Text style={styles.progressTime}>{elapsed} / {duration}</Text>
           </View>
         </View>
-      )}
+      </View>
 
       <View style={styles.postcardTagRow}>
         {rec.tags.map((tag) => (
@@ -2055,10 +2075,10 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
                       if (!voice) return null;
                       return (
                         <View style={styles.chatBubbleVoicePill}>
-                          <PlayButton size={22} audioUrl={c.voiceUri} />
+                          <PlayButton size={30} audioUrl={c.voiceUri ?? undefined} />
                           <View style={styles.chatBubbleWave}>
                             {[3, 6, 4, 7, 5, 3, 6, 4, 7, 5].map((h, i) => (
-                              <View key={i} style={[styles.chatBubbleWaveBar, { height: h * 1.8 }]} />
+                              <View key={i} style={[styles.chatBubbleWaveBar, { height: h * 2.0 }]} />
                             ))}
                           </View>
                           <Text style={styles.chatBubbleVoiceDur}>{voice}</Text>
@@ -3274,6 +3294,7 @@ const styles = StyleSheet.create({
   progressFill: {
     height: "100%",
     borderRadius: 2,
+    backgroundColor: Colors.light.primary,
   },
   progressTime: {
     fontSize: 10,
@@ -3655,27 +3676,56 @@ const styles = StyleSheet.create({
   chatBubbleVoicePill: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
-    gap: 8,
+    gap: 10,
     backgroundColor: "#fff",
-    borderRadius: 22,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    borderRadius: 24,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     alignSelf: "flex-start" as const,
+    minHeight: 44,
   },
   chatBubbleWave: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
-    gap: 2.5,
+    gap: 3,
   },
   chatBubbleWaveBar: {
-    width: 3,
+    width: 3.5,
     borderRadius: 2,
     backgroundColor: Colors.light.primary,
   },
   chatBubbleVoiceDur: {
-    fontSize: 12,
+    fontSize: 13,
     color: "#555",
-    fontWeight: "500" as const,
+    fontWeight: "600" as const,
+    marginLeft: 2,
+  },
+  diaryCommentVoicePill: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 10,
+    backgroundColor: "#EAF7F0",
+    borderRadius: 24,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    alignSelf: "flex-start" as const,
+    marginTop: 4,
+    minHeight: 44,
+  },
+  diaryCommentWave: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 3,
+  },
+  diaryCommentWaveBar: {
+    width: 3.5,
+    borderRadius: 2,
+    backgroundColor: Colors.light.primary,
+  },
+  diaryCommentVoiceDur: {
+    fontSize: 13,
+    color: "#555",
+    fontWeight: "600" as const,
     marginLeft: 2,
   },
   chatBubbleTime: {

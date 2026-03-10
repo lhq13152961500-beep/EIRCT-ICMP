@@ -32,6 +32,7 @@ export interface RecordingComment {
   text: string;
   createdAt: string;
   time: string;
+  voiceUri?: string | null;
 }
 
 export interface DeviceLocation {
