@@ -61,10 +61,12 @@ assets/images/
 - Stats bar (entries, total duration, locations)
 - Diary entry list with play buttons
 - Recordings persisted to PostgreSQL (recordings table) — survive server restarts
-- Audio files stored in Supabase Storage (bucket: "audio"), URL saved in recordings.audio_url column
-- Legacy base64 audio in recordings.audio_data still supported (fallback)
+- Supabase Storage bucket "audio" (public, 10MB limit):
+  - `recordings/` — 声音作品音频文件 (m4a/webm/ogg)
+  - `comments/` — 评论语音音频文件 (m4a/webm/ogg)
+- Audio URLs saved in PostgreSQL: recordings.audio_url, recording_comments.voice_url
+- Legacy base64 audio in recordings.audio_data still supported (fallback proxy at /api/recordings/:id/audio)
 - Likes & comments stored in PostgreSQL (recording_likes, recording_comments tables)
-- Voice comments: audio uploaded to Supabase Storage (audio/comments/), URL saved in recording_comments.voice_url
 - API: POST /api/recordings/:id/like (toggle), POST /api/recordings/:id/comment (accepts voiceData base64), GET /api/recordings/my/:userId
 - RecordingsContext auto-fetches user's recordings from server every 15s
 - Nearby recordings include like counts, comments, and user's liked status

@@ -1939,10 +1939,26 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
           reader.readAsDataURL(blob);
         });
       }
-      return await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      const encoding = FileSystem.EncodingType?.Base64 ?? "base64";
+      return await FileSystem.readAsStringAsync(uri, { encoding: encoding as any });
     } catch (e) {
       console.warn("readAudioBase64 failed:", e);
-      return undefined;
+      try {
+        const resp = await fetch(uri);
+        const blob = await resp.blob();
+        return await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            resolve(result.split(",")[1] || "");
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } catch (e2) {
+        console.warn("readAudioBase64 fallback also failed:", e2);
+        return undefined;
+      }
     }
   };
 

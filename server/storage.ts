@@ -215,6 +215,7 @@ export class HybridStorage implements IStorage {
       if (buf[0] === 0x1A && buf[1] === 0x45) { ext = "webm"; mime = "audio/webm"; }
       else if (buf[0] === 0x4F && buf[1] === 0x67) { ext = "ogg"; mime = "audio/ogg"; }
       const filePath = `recordings/${recId}.${ext}`;
+      console.log(`[storage] Uploading recording: ${filePath} (${buf.length} bytes, ${mime})`);
 
       const { error: bucketErr } = await supabase.storage.getBucket("audio");
       if (bucketErr) {
@@ -231,6 +232,7 @@ export class HybridStorage implements IStorage {
       }
       const { data: urlData } = supabase.storage.from("audio").getPublicUrl(filePath);
       audioUrl = urlData.publicUrl;
+      console.log(`[storage] Recording uploaded: ${audioUrl}`);
     }
 
     const res = await pgPool.query(
@@ -420,21 +422,27 @@ export class HybridStorage implements IStorage {
       else if (buf[0] === 0x4F && buf[1] === 0x67) { ext = "ogg"; mime = "audio/ogg"; }
       const fileId = randomUUID();
       const filePath = `comments/${fileId}.${ext}`;
+      console.log(`[storage] Uploading comment voice: ${filePath} (${buf.length} bytes, ${mime})`);
 
-      const { error: bucketErr } = await supabase.storage.getBucket("audio");
-      if (bucketErr) {
-        await supabase.storage.createBucket("audio", { public: true, fileSizeLimit: 10 * 1024 * 1024 });
-      }
+      try {
+        const { error: bucketErr } = await supabase.storage.getBucket("audio");
+        if (bucketErr) {
+          await supabase.storage.createBucket("audio", { public: true, fileSizeLimit: 10 * 1024 * 1024 });
+        }
 
-      const { error: uploadErr } = await supabase.storage.from("audio").upload(filePath, buf, {
-        contentType: mime,
-        upsert: true,
-      });
-      if (uploadErr) {
-        console.error("[storage] Comment voice upload error:", uploadErr);
-      } else {
-        const { data: urlData } = supabase.storage.from("audio").getPublicUrl(filePath);
-        voiceUrl = urlData.publicUrl;
+        const { error: uploadErr } = await supabase.storage.from("audio").upload(filePath, buf, {
+          contentType: mime,
+          upsert: true,
+        });
+        if (uploadErr) {
+          console.error("[storage] Comment voice upload error:", uploadErr);
+        } else {
+          const { data: urlData } = supabase.storage.from("audio").getPublicUrl(filePath);
+          voiceUrl = urlData.publicUrl;
+          console.log(`[storage] Comment voice uploaded: ${voiceUrl}`);
+        }
+      } catch (e) {
+        console.error("[storage] Comment voice upload exception:", e);
       }
     }
 

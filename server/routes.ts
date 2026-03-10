@@ -210,7 +210,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { userId, username, text, voiceData } = req.body as { userId?: string; username?: string; text?: string; voiceData?: string };
       if (!userId || !text?.trim()) return res.status(400).json({ error: "userId and text required" });
+      console.log(`[comment] POST /api/recordings/${req.params.id}/comment - hasVoice: ${!!voiceData}, voiceLen: ${voiceData?.length ?? 0}`);
       const comment = await storage.addComment(req.params.id, userId, username || "匿名", text.trim(), voiceData);
+      console.log(`[comment] Saved comment ${comment.id}, voiceUrl: ${comment.voiceUrl ?? 'none'}`);
       return res.json(comment);
     } catch (err) {
       console.error(err);
