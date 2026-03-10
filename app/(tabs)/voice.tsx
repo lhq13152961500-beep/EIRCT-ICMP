@@ -1117,42 +1117,55 @@ function MyPublishedCard({
   );
 }
 
-type SortOrder = "time" | "comments" | "likes";
+type SortKey = "time" | "comments" | "likes";
+type SortDir = "asc" | "desc";
+type SortState = { key: SortKey; dir: SortDir } | null;
 
 type DiaryListItem =
   | { kind: "recording"; rec: PublishedRecording }
   | { kind: "group"; group: typeof MY_DIARY_GROUPS[0] };
 
-function SortPicker({ sortBy, onChange }: { sortBy: SortOrder | null; onChange: (v: SortOrder | null) => void }) {
+function SortPicker({ sort, onChange }: { sort: SortState; onChange: (v: SortState) => void }) {
   "use no memo";
-  const options: { key: SortOrder; label: string }[] = [
+  const options: { key: SortKey; label: string }[] = [
     { key: "time", label: "时间" },
     { key: "comments", label: "评论数" },
     { key: "likes", label: "点赞数" },
   ];
-  const handlePress = (key: SortOrder | null) => {
-    console.log("[sort] pressed:", key, "current:", sortBy);
-    onChange(key);
+  const handlePress = (key: SortKey) => {
+    if (sort && sort.key === key) {
+      onChange({ key, dir: sort.dir === "desc" ? "asc" : "desc" });
+    } else {
+      onChange({ key, dir: "desc" });
+    }
+    haptic();
+  };
+  const handleReset = () => {
+    onChange(null);
     haptic();
   };
   return (
     <View style={styles.sortPicker}>
-      {options.map((opt) => (
-        <Pressable
-          key={opt.key}
-          style={[styles.sortChip, sortBy === opt.key && styles.sortChipActive]}
-          onPress={() => handlePress(opt.key)}
-        >
-          <Text style={[styles.sortChipText, sortBy === opt.key && styles.sortChipTextActive]}>
-            {opt.label}
-          </Text>
-        </Pressable>
-      ))}
+      {options.map((opt) => {
+        const isActive = sort?.key === opt.key;
+        const arrow = isActive ? (sort.dir === "desc" ? " ↓" : " ↑") : "";
+        return (
+          <Pressable
+            key={opt.key}
+            style={[styles.sortChip, isActive && styles.sortChipActive]}
+            onPress={() => handlePress(opt.key)}
+          >
+            <Text style={[styles.sortChipText, isActive && styles.sortChipTextActive]}>
+              {opt.label}{arrow}
+            </Text>
+          </Pressable>
+        );
+      })}
       <Pressable
-        style={[styles.sortChip, !sortBy && styles.sortChipActive]}
-        onPress={() => handlePress(null)}
+        style={[styles.sortChip, !sort && styles.sortChipActive]}
+        onPress={handleReset}
       >
-        <Text style={[styles.sortChipText, !sortBy && styles.sortChipTextActive]}>重置</Text>
+        <Text style={[styles.sortChipText, !sort && styles.sortChipTextActive]}>重置</Text>
       </Pressable>
     </View>
   );
@@ -1166,7 +1179,7 @@ function MyDiaryTab() {
   const [highlightedHearts, setHighlightedHearts] = useState<string[]>([]);
   const [highlightedComments, setHighlightedComments] = useState<string[]>([]);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [sortBy, setSortBy] = useState<SortOrder | null>(null);
+  const [sort, setSort] = useState<SortState>(null);
   const [sortOpen, setSortOpen] = useState(false);
   const { myRecordings, newIds, acknowledgeNew, notifications, acknowledgeNotifications, likeCounts, commentsByRecording } = useRecordings();
 
@@ -1201,29 +1214,24 @@ function MyDiaryTab() {
     ...MY_DIARY_GROUPS.map((group) => ({ kind: "group" as const, group })),
   ];
 
-  const sortedItems: DiaryListItem[] = sortBy
+  const getSortValue = (item: DiaryListItem, mode: SortKey): number => {
+    if (mode === "time") {
+      return item.kind === "recording"
+        ? new Date(item.rec.publishedAt).getTime()
+        : new Date(item.group.date.replace(" ", "T")).getTime();
+    }
+    if (mode === "comments") {
+      return item.kind === "recording"
+        ? (commentsByRecording[item.rec.id]?.length ?? 0)
+        : item.group.replies.length;
+    }
+    return item.kind === "recording" ? (likeCounts[item.rec.id] ?? 0) : item.group.likeCount;
+  };
+
+  const sortedItems: DiaryListItem[] = sort
     ? [...allDiaryItems].sort((a, b) => {
-        if (sortBy === "time") {
-          const aT = a.kind === "recording"
-            ? new Date(a.rec.publishedAt).getTime()
-            : new Date(a.group.date.replace(" ", "T")).getTime();
-          const bT = b.kind === "recording"
-            ? new Date(b.rec.publishedAt).getTime()
-            : new Date(b.group.date.replace(" ", "T")).getTime();
-          return bT - aT;
-        }
-        if (sortBy === "comments") {
-          const aC = a.kind === "recording"
-            ? (commentsByRecording[a.rec.id]?.length ?? 0)
-            : a.group.replies.length;
-          const bC = b.kind === "recording"
-            ? (commentsByRecording[b.rec.id]?.length ?? 0)
-            : b.group.replies.length;
-          return bC - aC;
-        }
-        const aL = a.kind === "recording" ? (likeCounts[a.rec.id] ?? 0) : a.group.likeCount;
-        const bL = b.kind === "recording" ? (likeCounts[b.rec.id] ?? 0) : b.group.likeCount;
-        return bL - aL;
+        const diff = getSortValue(b, sort.key) - getSortValue(a, sort.key);
+        return sort.dir === "asc" ? -diff : diff;
       })
     : allDiaryItems;
 
@@ -1239,7 +1247,7 @@ function MyDiaryTab() {
             <Ionicons name="options-outline" size={20} color={sortOpen ? Colors.light.primary : Colors.light.text} />
           </Pressable>
         </View>
-        {sortOpen && <SortPicker sortBy={sortBy} onChange={setSortBy} />}
+        {sortOpen && <SortPicker sort={sort} onChange={setSort} />}
 
         {hasNew && (
           <Pressable onPress={handleNewDotPress} style={styles.myPublishedNewCountDot} hitSlop={12}>
@@ -1247,12 +1255,13 @@ function MyDiaryTab() {
           </Pressable>
         )}
 
-        {sortedItems.map((item) => {
+        {sortedItems.map((item, idx) => {
+          const sortLabel = sort ? `${sort.key}-${sort.dir}` : "default";
           if (item.kind === "recording") {
             const rec = item.rec;
             return (
               <MyPublishedCard
-                key={rec.id}
+                key={`${sortLabel}-${rec.id}`}
                 rec={rec}
                 onViewImage={setViewerImage}
                 isHighlighted={highlightedIds.includes(rec.id)}
@@ -1266,7 +1275,7 @@ function MyDiaryTab() {
           const g = item.group;
           return (
             <DiaryGroup
-              key={g.id}
+              key={`${sortLabel}-${g.id}`}
               group={g}
               isExpanded={!!expandedIds[g.id]}
               onToggleExpand={() => toggleExpand(g.id)}
@@ -2306,7 +2315,7 @@ function DiscoverOthersTab() {
   }, [fetchNearby]);
 
   const [likedIds, setLikedIds] = useState<Record<string, boolean>>({});
-  const [sortBy, setSortBy] = useState<SortOrder | null>(null);
+  const [sort, setSort] = useState<SortState>(null);
   const [sortOpen, setSortOpen] = useState(false);
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>(
     Object.fromEntries(SOUND_POSTCARDS.map((p) => [p.id, p.likeCount]))
@@ -2552,21 +2561,24 @@ function DiscoverOthersTab() {
 
   const totalFound = SOUND_POSTCARDS.length + nearbyRecs.length;
 
-  const sortedNearby = sortBy
-    ? [...nearbyRecs].sort((a, b) => {
-        if (sortBy === "time") return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
-        if (sortBy === "comments") return (b.comments?.length ?? 0) - (a.comments?.length ?? 0);
-        if (sortBy === "likes") return (b.likeCount ?? 0) - (a.likeCount ?? 0);
-        return 0;
-      })
+  const getNearbyVal = (r: NearbyRec, k: SortKey): number => {
+    if (k === "time") return new Date(r.publishedAt).getTime();
+    if (k === "comments") return r.comments?.length ?? 0;
+    return r.likeCount ?? 0;
+  };
+  const getPostcardVal = (p: typeof SOUND_POSTCARDS[0], k: SortKey): number => {
+    if (k === "time") return new Date(p.datetime.replace(" ", "T")).getTime();
+    if (k === "comments") return commentsByPostcard[p.id]?.length ?? 0;
+    return likeCounts[p.id] ?? 0;
+  };
+
+  const dirMul = sort?.dir === "asc" ? 1 : -1;
+  const sortedNearby = sort
+    ? [...nearbyRecs].sort((a, b) => dirMul * (getNearbyVal(b, sort.key) - getNearbyVal(a, sort.key)))
     : nearbyRecs;
 
-  const sortedPostcards = sortBy
-    ? [...SOUND_POSTCARDS].sort((a, b) => {
-        if (sortBy === "time") return new Date(b.datetime.replace(" ", "T")).getTime() - new Date(a.datetime.replace(" ", "T")).getTime();
-        if (sortBy === "comments") return (commentsByPostcard[b.id]?.length ?? 0) - (commentsByPostcard[a.id]?.length ?? 0);
-        return (likeCounts[b.id] ?? 0) - (likeCounts[a.id] ?? 0);
-      })
+  const sortedPostcards = sort
+    ? [...SOUND_POSTCARDS].sort((a, b) => dirMul * (getPostcardVal(b, sort.key) - getPostcardVal(a, sort.key)))
     : SOUND_POSTCARDS;
 
   return (
@@ -2589,16 +2601,19 @@ function DiscoverOthersTab() {
           <Ionicons name="options-outline" size={20} color={sortOpen ? Colors.light.primary : Colors.light.text} />
         </Pressable>
       </View>
-      {sortOpen && <SortPicker sortBy={sortBy} onChange={setSortBy} />}
+      {sortOpen && <SortPicker sort={sort} onChange={setSort} />}
 
       {/* ── 附近用户发布的声音随记（全卡片样式） ─────────── */}
-      {sortedNearby.map((rec) => (
-        <NearbyPostcard key={rec.id} rec={rec} />
-      ))}
+      {sortedNearby.map((rec) => {
+        const sortLabel = sort ? `${sort.key}-${sort.dir}` : "default";
+        return <NearbyPostcard key={`${sortLabel}-${rec.id}`} rec={rec} />;
+      })}
 
-      {sortedPostcards.map((p) => (
+      {sortedPostcards.map((p) => {
+        const sortLabel = sort ? `${sort.key}-${sort.dir}` : "default";
+        return (
         <SoundPostcard
-          key={p.id}
+          key={`${sortLabel}-${p.id}`}
           item={p}
           comments={commentsByPostcard[p.id] ?? []}
           isLiked={!!likedIds[p.id]}
@@ -2640,7 +2655,8 @@ function DiscoverOthersTab() {
           commentMixedVoiceDur={commentMixedVoiceDur}
           onClearCommentMixedVoice={() => { setCommentMixedVoiceDur(null); setCommentMixedVoiceUri(null); }}
         />
-      ))}
+        );
+      })}
 
       <View style={styles.deliveryNote}>
         <Text style={styles.deliveryNoteText}>· · · 时光邮局正在派送更多声音...</Text>
