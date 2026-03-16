@@ -256,10 +256,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/amap-locate", (_req, res) => {
     const key = process.env.AMAP_API_KEY;
+    const securityKey = process.env.AMAP_SECURITY_KEY || "";
     if (!key) return res.status(500).send("AMAP_API_KEY not configured");
     try {
       const html = readFileSync(join(__dirname, "amap-locate.html"), "utf-8");
-      const page = html.replace(/__AMAP_KEY__/g, key);
+      const page = html
+        .replace(/__AMAP_KEY__/g, key)
+        .replace(/__AMAP_SECURITY_KEY__/g, securityKey);
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       return res.send(page);
     } catch (e) {
