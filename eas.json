@@ -8,6 +8,9 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "EIRCT-ICMP.replit.app"
       }
     },
     "production": {
@@ -16,6 +19,9 @@
       },
       "ios": {
         "simulator": false
+      },
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "EIRCT-ICMP.replit.app"
       }
     }
   },
