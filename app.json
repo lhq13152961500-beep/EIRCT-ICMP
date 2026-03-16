@@ -55,7 +55,11 @@
     "extra": {
       "router": {
         "origin": "https://replit.com/"
+      },
+      "eas": {
+        "projectId": "03243c55-4342-48f4-91af-cb72051d63dc"
       }
-    }
+    },
+    "owner": "blacktoo"
   }
 }
