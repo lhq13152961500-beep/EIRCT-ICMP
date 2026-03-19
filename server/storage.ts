@@ -1,6 +1,5 @@
 import { type User, type InsertUser } from "@shared/schema";
 import { randomUUID } from "crypto";
-import { supabase } from "./supabase";
 import { Pool } from "pg";
 
 const pgPool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -79,51 +78,48 @@ export interface IStorage {
 
   toggleLike(recordingId: string, userId: string): Promise<{ liked: boolean; likeCount: number }>;
   addComment(recordingId: string, userId: string, username: string, text: string, voiceData?: string): Promise<RecordingComment>;
+  getCommentVoice(commentId: string): Promise<string | null>;
   getInteractions(recordingId: string, viewerUserId?: string): Promise<{ likeCount: number; isLiked: boolean; comments: RecordingComment[] }>;
 }
 
 export class HybridStorage implements IStorage {
 
   async getUser(id: string): Promise<User | undefined> {
-    const { data, error } = await supabase
-      .from("users")
-      .select("id, username, password")
-      .eq("id", id)
-      .single();
-    if (error || !data) return undefined;
-    return { id: data.id, username: data.username, password: data.password };
+    const res = await pgPool.query(
+      "SELECT id, username, password FROM users WHERE id = $1",
+      [id]
+    );
+    if (res.rows.length === 0) return undefined;
+    const row = res.rows[0];
+    return { id: row.id, username: row.username, password: row.password };
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const { data, error } = await supabase
-      .from("users")
-      .select("id, username, password")
-      .eq("username", username)
-      .single();
-    if (error || !data) return undefined;
-    return { id: data.id, username: data.username, password: data.password };
+    const res = await pgPool.query(
+      "SELECT id, username, password FROM users WHERE username = $1",
+      [username]
+    );
+    if (res.rows.length === 0) return undefined;
+    const row = res.rows[0];
+    return { id: row.id, username: row.username, password: row.password };
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const { data, error } = await supabase
-      .from("users")
-      .insert({ id, username: insertUser.username, password: insertUser.password })
-      .select("id, username, password")
-      .single();
-    if (error || !data) throw new Error(error?.message ?? "Failed to create user");
-    return { id: data.id, username: data.username, password: data.password };
+    const res = await pgPool.query(
+      "INSERT INTO users (id, username, password) VALUES ($1, $2, $3) RETURNING id, username, password",
+      [id, insertUser.username, insertUser.password]
+    );
+    const row = res.rows[0];
+    return { id: row.id, username: row.username, password: row.password };
   }
 
   async updateUserPassword(username: string, hashedPassword: string): Promise<boolean> {
-    const { data, error } = await supabase
-      .from("users")
-      .update({ password: hashedPassword })
-      .eq("username", username)
-      .select("id")
-      .single();
-    if (error || !data) return false;
-    return true;
+    const res = await pgPool.query(
+      "UPDATE users SET password = $1 WHERE username = $2 RETURNING id",
+      [hashedPassword, username]
+    );
+    return (res.rowCount ?? 0) > 0;
   }
 
   private rowToProfile(row: Record<string, unknown>): UserProfile {
@@ -205,38 +201,14 @@ export class HybridStorage implements IStorage {
   }
 
   async addRecording(r: InsertRecording): Promise<SoundRecording> {
-    let audioUrl: string | null = null;
+    let audioData: string | null = null;
 
     if (r.audioData && r.audioData.length > 0) {
-      const recId = randomUUID();
-      const buf = Buffer.from(r.audioData, "base64");
-      let ext = "m4a";
-      let mime = "audio/mp4";
-      if (buf[0] === 0x1A && buf[1] === 0x45) { ext = "webm"; mime = "audio/webm"; }
-      else if (buf[0] === 0x4F && buf[1] === 0x67) { ext = "ogg"; mime = "audio/ogg"; }
-      const filePath = `recordings/${recId}.${ext}`;
-      console.log(`[storage] Uploading recording: ${filePath} (${buf.length} bytes, ${mime})`);
-
-      const { error: bucketErr } = await supabase.storage.getBucket("audio");
-      if (bucketErr) {
-        await supabase.storage.createBucket("audio", { public: true, fileSizeLimit: 10 * 1024 * 1024 });
-      }
-
-      const { error: uploadErr } = await supabase.storage.from("audio").upload(filePath, buf, {
-        contentType: mime,
-        upsert: true,
-      });
-      if (uploadErr) {
-        console.error("[storage] Supabase audio upload error:", uploadErr);
-        throw new Error(`Audio upload failed: ${uploadErr.message}`);
-      }
-      const { data: urlData } = supabase.storage.from("audio").getPublicUrl(filePath);
-      audioUrl = urlData.publicUrl;
-      console.log(`[storage] Recording uploaded: ${audioUrl}`);
+      audioData = r.audioData;
     }
 
     const res = await pgPool.query(
-      `INSERT INTO recordings (user_id, title, location_name, lat, lng, duration_seconds, author, quote, tags, audio_url, image_uri)
+      `INSERT INTO recordings (user_id, title, location_name, lat, lng, duration_seconds, author, quote, tags, audio_data, image_uri)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id, user_id, title, location_name, lat, lng, duration_seconds, published_at, author, quote, tags, image_uri, audio_url`,
       [
@@ -249,11 +221,15 @@ export class HybridStorage implements IStorage {
         r.author,
         r.quote,
         r.tags,
-        audioUrl,
+        audioData,
         r.imageUri ?? null,
       ]
     );
-    return this.rowToRecording(res.rows[0]);
+    const rec = this.rowToRecording(res.rows[0]);
+    if (audioData) {
+      rec.audioUri = `/api/recordings/${rec.id}/audio`;
+    }
+    return rec;
   }
 
   async getRecordingAudio(id: string): Promise<string | null> {
@@ -414,43 +390,20 @@ export class HybridStorage implements IStorage {
   async addComment(recordingId: string, userId: string, username: string, text: string, voiceData?: string): Promise<RecordingComment> {
     let voiceUrl: string | null = null;
 
-    if (voiceData && voiceData.length > 0) {
-      const buf = Buffer.from(voiceData, "base64");
-      let ext = "m4a";
-      let mime = "audio/mp4";
-      if (buf[0] === 0x1A && buf[1] === 0x45) { ext = "webm"; mime = "audio/webm"; }
-      else if (buf[0] === 0x4F && buf[1] === 0x67) { ext = "ogg"; mime = "audio/ogg"; }
-      const fileId = randomUUID();
-      const filePath = `comments/${fileId}.${ext}`;
-      console.log(`[storage] Uploading comment voice: ${filePath} (${buf.length} bytes, ${mime})`);
-
-      try {
-        const { error: bucketErr } = await supabase.storage.getBucket("audio");
-        if (bucketErr) {
-          await supabase.storage.createBucket("audio", { public: true, fileSizeLimit: 10 * 1024 * 1024 });
-        }
-
-        const { error: uploadErr } = await supabase.storage.from("audio").upload(filePath, buf, {
-          contentType: mime,
-          upsert: true,
-        });
-        if (uploadErr) {
-          console.error("[storage] Comment voice upload error:", uploadErr);
-        } else {
-          const { data: urlData } = supabase.storage.from("audio").getPublicUrl(filePath);
-          voiceUrl = urlData.publicUrl;
-          console.log(`[storage] Comment voice uploaded: ${voiceUrl}`);
-        }
-      } catch (e) {
-        console.error("[storage] Comment voice upload exception:", e);
-      }
-    }
-
     const res = await pgPool.query(
-      `INSERT INTO recording_comments (recording_id, user_id, username, text, voice_url) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [recordingId, userId, username, text, voiceUrl]
+      `INSERT INTO recording_comments (recording_id, user_id, username, text, voice_url, voice_data) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [recordingId, userId, username, text, voiceUrl, voiceData ?? null]
     );
     const row = res.rows[0];
+
+    if (voiceData) {
+      voiceUrl = `/api/comments/${row.id}/voice`;
+      await pgPool.query(
+        "UPDATE recording_comments SET voice_url = $1 WHERE id = $2",
+        [voiceUrl, row.id]
+      );
+    }
+
     return {
       id: row.id,
       recordingId: row.recording_id,
@@ -458,8 +411,17 @@ export class HybridStorage implements IStorage {
       username: row.username,
       text: row.text,
       createdAt: (row.created_at as Date).toISOString(),
-      voiceUrl: row.voice_url,
+      voiceUrl: voiceData ? voiceUrl : row.voice_url,
     };
+  }
+
+  async getCommentVoice(commentId: string): Promise<string | null> {
+    const res = await pgPool.query(
+      "SELECT voice_data FROM recording_comments WHERE id = $1",
+      [commentId]
+    );
+    if (res.rows.length === 0) return null;
+    return res.rows[0].voice_data ?? null;
   }
 
   async getInteractions(recordingId: string, viewerUserId?: string): Promise<{ likeCount: number; isLiked: boolean; comments: RecordingComment[] }> {
