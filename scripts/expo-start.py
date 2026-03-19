@@ -76,7 +76,7 @@ def main():
         os.execvpe('npx', ['npx', 'expo', 'start', '--go', '--tunnel'], env)
     else:
         os.close(slave_fd)
-        anon_answered = False
+        last_anon_answer = 0.0
         buffer = b''
 
         while True:
@@ -96,14 +96,16 @@ def main():
 
                         buf_str = buffer.decode('utf-8', errors='ignore')
 
-                        # Auto-answer "Proceed anonymously" prompt
-                        if not anon_answered and ('Proceed anonymously' in buf_str or 'recommended to log in' in buf_str):
-                            time.sleep(0.3)
-                            os.write(master_fd, b'\x1b[B\r')
-                            anon_answered = True
-                            buffer = b''
-                            sys.stdout.write('\n[auto-selected: Proceed anonymously]\n')
-                            sys.stdout.flush()
+                        # Auto-answer "Proceed anonymously" prompt (can repeat multiple times)
+                        if ('Proceed anonymously' in buf_str or 'recommended to log in' in buf_str):
+                            now = time.time()
+                            if now - last_anon_answer > 3.0:
+                                time.sleep(0.3)
+                                os.write(master_fd, b'\x1b[B\r')
+                                last_anon_answer = now
+                                buffer = b''
+                                sys.stdout.write('\n[auto-selected: Proceed anonymously]\n')
+                                sys.stdout.flush()
 
                         # Auto-answer port-in-use prompt with Y (use next port)
                         elif 'Use port' in buf_str and 'instead?' in buf_str:
