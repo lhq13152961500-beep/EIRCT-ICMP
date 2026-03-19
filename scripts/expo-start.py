@@ -6,30 +6,62 @@ import select
 import time
 import subprocess
 
-def kill_port(port):
+def kill_port_8081():
+    """Kill any process using port 8081 via /proc/net/tcp on Linux."""
     try:
-        result = subprocess.run(
-            ["lsof", "-ti", f":{port}"],
-            capture_output=True, text=True
-        )
-        pids = result.stdout.strip().split()
-        for pid in pids:
-            if pid:
-                subprocess.run(["kill", "-9", pid], capture_output=True)
-                sys.stdout.write(f"[killed PID {pid} using port {port}]\n")
-                sys.stdout.flush()
-        if pids:
+        # Try fuser first
+        result = subprocess.run(["fuser", "-k", "8081/tcp"], capture_output=True)
+        if result.returncode == 0:
+            sys.stdout.write("[killed process on port 8081 via fuser]\n")
+            time.sleep(1.0)
+            return
+    except FileNotFoundError:
+        pass
+
+    try:
+        # Fallback: parse /proc/net/tcp to find PID
+        target_hex = format(8081, '04X')
+        with open("/proc/net/tcp") as f:
+            lines = f.readlines()[1:]
+        pids_to_kill = set()
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            local_addr = parts[1]
+            port_hex = local_addr.split(":")[1] if ":" in local_addr else ""
+            if port_hex.upper() == target_hex:
+                inode = parts[9]
+                # Find PID via /proc/*/fd -> socket inode
+                for pid_dir in os.listdir("/proc"):
+                    if not pid_dir.isdigit():
+                        continue
+                    fd_dir = f"/proc/{pid_dir}/fd"
+                    try:
+                        for fd in os.listdir(fd_dir):
+                            link = os.readlink(f"{fd_dir}/{fd}")
+                            if f"socket:[{inode}]" in link:
+                                pids_to_kill.add(pid_dir)
+                    except (PermissionError, FileNotFoundError):
+                        pass
+        for pid in pids_to_kill:
+            try:
+                os.kill(int(pid), 9)
+                sys.stdout.write(f"[killed PID {pid} on port 8081]\n")
+            except (ProcessLookupError, PermissionError):
+                pass
+        if pids_to_kill:
             time.sleep(1.0)
     except Exception as e:
-        sys.stdout.write(f"[port cleanup warning: {e}]\n")
+        sys.stdout.write(f"[port 8081 cleanup skipped: {e}]\n")
 
 def main():
-    kill_port(8081)
+    kill_port_8081()
 
     env = os.environ.copy()
-    
+
     master_fd, slave_fd = pty.openpty()
-    
+
     pid = os.fork()
     if pid == 0:
         os.close(master_fd)
@@ -46,7 +78,7 @@ def main():
         os.close(slave_fd)
         anon_answered = False
         buffer = b''
-        
+
         while True:
             try:
                 r, _, _ = select.select([master_fd, sys.stdin.fileno()], [], [], 0.5)
@@ -61,7 +93,7 @@ def main():
                         sys.stdout.buffer.write(data)
                         sys.stdout.buffer.flush()
                         buffer += data
-                        
+
                         buf_str = buffer.decode('utf-8', errors='ignore')
 
                         # Auto-answer "Proceed anonymously" prompt
@@ -93,7 +125,7 @@ def main():
                 sys.exit(0)
             except OSError:
                 sys.exit(0)
-        
+
         os.waitpid(pid, 0)
 
 if __name__ == '__main__':
