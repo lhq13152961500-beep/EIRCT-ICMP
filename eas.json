@@ -4,7 +4,20 @@
     "appVersionSource": "local"
   },
   "build": {
+    "development": {
+      "extends": "preview",
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug" 
+      },
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "EIRCT-ICMP.replit.app"
+      }
+    },
     "preview": {
+      "distribution": "internal",
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
