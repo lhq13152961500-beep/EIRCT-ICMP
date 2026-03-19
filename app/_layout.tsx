@@ -56,6 +56,7 @@ function RootLayoutNav() {
       <Stack.Screen name="profile-edit"      options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="account-switch"   options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="account-security" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="map-guide" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="(tabs)"   options={{ headerShown: false }} />
     </Stack>
   );

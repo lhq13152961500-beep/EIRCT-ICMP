@@ -304,11 +304,7 @@ export default function MapGuideScreen() {
           </View>
         </Pressable>
         <Text style={styles.headerTitle}>地图导览</Text>
-        <Pressable style={styles.backBtn}>
-          <View style={styles.backCircle}>
-            <Ionicons name="layers-outline" size={18} color={Colors.light.text} />
-          </View>
-        </Pressable>
+        <View style={styles.backBtn} />
       </View>
 
       {/* ── Filter row ── */}
@@ -407,28 +403,20 @@ export default function MapGuideScreen() {
 
       {/* ── Route button ── */}
       <View style={[styles.routeBtnArea, { paddingBottom: bottomPad + 12 }]}>
-        <View style={styles.routeBtnRow}>
-          <Pressable
-            style={styles.routeBtn}
-            onPress={openSheet}
+        <Pressable style={styles.routeBtn} onPress={openSheet}>
+          <LinearGradient
+            colors={["#8B5E3C", "#6B4228"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.routeBtnGradient}
           >
-            <LinearGradient
-              colors={["#8B5E3C", "#6B4228"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.routeBtnGradient}
-            >
-              <MaterialCommunityIcons name="map-marker-path" size={20} color="#fff" />
-              <Text style={styles.routeBtnText}>游览路线</Text>
-              <View style={styles.routeBtnBadge}>
-                <Text style={styles.routeBtnBadgeText}>{ROUTES.length}</Text>
-              </View>
-            </LinearGradient>
-          </Pressable>
-          <Pressable style={styles.compassBtn} onPress={() => haptic()}>
-            <Ionicons name="compass" size={22} color={Colors.light.primary} />
-          </Pressable>
-        </View>
+            <MaterialCommunityIcons name="map-marker-path" size={20} color="#fff" />
+            <Text style={styles.routeBtnText}>游览路线</Text>
+            <View style={styles.routeBtnBadge}>
+              <Text style={styles.routeBtnBadgeText}>{ROUTES.length}</Text>
+            </View>
+          </LinearGradient>
+        </Pressable>
       </View>
 
       {/* ── Route Bottom Sheet ── */}
@@ -732,8 +720,7 @@ const styles = StyleSheet.create({
     position: "absolute", bottom: 0, left: 0, right: 0,
     paddingHorizontal: 16, paddingTop: 8,
   },
-  routeBtnRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  routeBtn: { flex: 1, borderRadius: 28, overflow: "hidden", shadowColor: "#8B5E3C", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
+  routeBtn: { borderRadius: 28, overflow: "hidden", shadowColor: "#8B5E3C", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
   routeBtnGradient: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 15 },
   routeBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
   routeBtnBadge: {
@@ -741,12 +728,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.25)", alignItems: "center", justifyContent: "center",
   },
   routeBtnBadgeText: { fontSize: 11, fontWeight: "700", color: "#fff" },
-  compassBtn: {
-    width: 50, height: 50, borderRadius: 25,
-    backgroundColor: "#fff", alignItems: "center", justifyContent: "center",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 4,
-  },
-
   // Sheet
   sheetOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)" },
   sheet: {
