@@ -11,6 +11,7 @@ import {
   Modal,
   TextInput,
   StatusBar,
+  LayoutChangeEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -134,12 +135,12 @@ function PoiMarker({
       style={[styles.poiWrap, { left: item.x * mapW - 24, top: item.y * mapH - 48 }]}
       onPress={() => { haptic(); onPress(item); }}
     >
-      <Animated.View style={[
+      <View style={[
         styles.poiBubble,
         { backgroundColor: isActive ? colors.dot : "#fff", shadowColor: colors.dot },
       ]}>
         <Text style={styles.poiEmoji}>{item.emoji}</Text>
-      </Animated.View>
+      </View>
       <View style={[styles.poiTag, { backgroundColor: isActive ? colors.dot : "rgba(255,255,255,0.92)" }]}>
         <Text style={[styles.poiTagText, { color: isActive ? "#fff" : colors.text }]} numberOfLines={1}>
           {item.label}
@@ -161,19 +162,12 @@ function IllustratedMap({
 
   return (
     <View style={{ width: mapW, height: mapH }}>
-      {/* Sky gradient base */}
       <LinearGradient
         colors={["#4ECDC4", "#2BAB9E", "#1A9688"]}
         style={StyleSheet.absoluteFill}
       />
-
-      {/* Island blob */}
       <View style={[styles.islandBlob, { width: mapW * 0.88, height: mapH * 0.9, left: mapW * 0.06, top: mapH * 0.04 }]} />
-
-      {/* Inner island detail */}
       <View style={[styles.islandInner, { width: mapW * 0.75, height: mapH * 0.76, left: mapW * 0.12, top: mapH * 0.11 }]} />
-
-      {/* Roads */}
       {[
         { t: "27%", l: "8%",  w: "58%", h: 10, r: "-7deg" },
         { t: "42%", l: "28%", w: "52%", h: 10, r: "6deg" },
@@ -181,10 +175,8 @@ function IllustratedMap({
         { t: "17%", l: "38%", w: 10, h: "50%", r: "7deg" },
         { t: "32%", l: "63%", w: 10, h: "32%", r: "-6deg" },
       ].map((r, i) => (
-        <View key={i} style={[styles.road, { top: r.t as any, left: r.l as any, width: r.w as any, height: r.h as any, transform: [{ rotate: r.r }] }]} />
+        <View key={`road-${i}`} style={[styles.road, { top: r.t as any, left: r.l as any, width: r.w as any, height: r.h as any, transform: [{ rotate: r.r }] }]} />
       ))}
-
-      {/* Road outlines */}
       {[
         { t: "27%", l: "8%",  w: "58%", h: 14, r: "-7deg" },
         { t: "42%", l: "28%", w: "52%", h: 14, r: "6deg" },
@@ -194,23 +186,17 @@ function IllustratedMap({
       ].map((r, i) => (
         <View key={`border-${i}`} style={[styles.roadBorder, { top: r.t as any, left: r.l as any, width: r.w as any, height: r.h as any, transform: [{ rotate: r.r }] }]} />
       ))}
-
-      {/* Decorative trees */}
       {[
         [0.08, 0.06], [0.24, 0.04], [0.44, 0.03], [0.78, 0.09],
         [0.88, 0.18], [0.92, 0.48], [0.85, 0.72], [0.64, 0.88],
         [0.38, 0.90], [0.14, 0.80], [0.04, 0.60], [0.04, 0.32],
         [0.55, 0.33], [0.30, 0.30],
       ].map(([x, y], i) => (
-        <Text key={i} style={[styles.treeEmoji, { left: x * mapW - 10, top: y * mapH - 10 }]}>
+        <Text key={i} style={[styles.treeEmoji, { left: x! * mapW - 10, top: y! * mapH - 10 }]}>
           {i % 3 === 0 ? "🌲" : i % 3 === 1 ? "🌳" : "🌴"}
         </Text>
       ))}
-
-      {/* Small pond decoration */}
       <View style={[styles.pond, { left: mapW * 0.46, top: mapH * 0.43, width: 28, height: 20 }]} />
-
-      {/* POI Markers */}
       {visiblePois.map((poi) => (
         <PoiMarker
           key={poi.id}
@@ -221,8 +207,6 @@ function IllustratedMap({
           onPress={onPoiPress}
         />
       ))}
-
-      {/* My location dot */}
       <View style={[styles.myLocWrap, { left: mapW * 0.35, top: mapH * 0.68 }]}>
         <View style={styles.myLocPulse} />
         <View style={styles.myLocDot} />
@@ -243,11 +227,14 @@ export default function MapGuideScreen() {
   const [aiQuery, setAiQuery] = useState("");
   const [aiResponse, setAiResponse] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [mapAreaHeight, setMapAreaHeight] = useState(SCREEN_HEIGHT * 0.62);
 
   const sheetAnim = useRef(new Animated.Value(0)).current;
 
   const mapW = SCREEN_WIDTH;
-  const mapH = SCREEN_HEIGHT * 0.6;
+  const mapH = mapAreaHeight;
+
+  const routeBtnH = 56 + bottomPad + 12;
 
   const openSheet = useCallback(() => {
     haptic("medium");
@@ -292,18 +279,33 @@ export default function MapGuideScreen() {
     }, 1500);
   };
 
+  const onMapAreaLayout = useCallback((e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    if (h > 100) setMapAreaHeight(h);
+  }, []);
+
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
       <StatusBar barStyle="dark-content" />
 
       {/* ── Header ── */}
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => { haptic(); if (router.canGoBack()) { router.back(); } else { router.replace("/"); } }}>
+        <Pressable
+          style={styles.backBtn}
+          onPress={() => { haptic(); if (router.canGoBack()) { router.back(); } else { router.replace("/"); } }}
+        >
           <View style={styles.backCircle}>
             <Ionicons name="chevron-back" size={20} color={Colors.light.text} />
           </View>
         </Pressable>
-        <Text style={styles.headerTitle}>地图导览</Text>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>地图导览</Text>
+          <View style={styles.locationPill}>
+            <View style={styles.locationDot} />
+            <Text style={styles.locationPillText}>香花村口</Text>
+            <Text style={styles.locationAccuracy}>  ±30m</Text>
+          </View>
+        </View>
         <View style={styles.backBtn} />
       </View>
 
@@ -338,22 +340,15 @@ export default function MapGuideScreen() {
         </ScrollView>
       </View>
 
-      {/* ── Location bar ── */}
-      <View style={styles.locationBar}>
-        <View style={styles.locationLeft}>
-          <View style={styles.locationDot} />
-          <Text style={styles.locationText}>当前位置：</Text>
-          <Text style={styles.locationName}>香花村口</Text>
-        </View>
-        <View style={styles.locationRight}>
-          <Ionicons name="navigate" size={12} color={Colors.light.primary} />
-          <Text style={styles.locationAccuracy}>定位精度 ±30m</Text>
-        </View>
-      </View>
-
-      {/* ── Map ── */}
-      <View style={styles.mapContainer}>
-        <ScrollView scrollEnabled showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false}>
+      {/* ── Map area (flex:1 — takes all remaining space) ── */}
+      <View style={styles.mapOuter} onLayout={onMapAreaLayout}>
+        <ScrollView
+          scrollEnabled
+          showsVerticalScrollIndicator={false}
+          showsHorizontalScrollIndicator={false}
+          style={StyleSheet.absoluteFill}
+          contentContainerStyle={{ minHeight: mapH }}
+        >
           <IllustratedMap
             activeFilter={activeFilter}
             mapW={mapW}
@@ -363,8 +358,15 @@ export default function MapGuideScreen() {
           />
         </ScrollView>
 
-        {/* Zoom */}
-        <View style={styles.zoomBox}>
+        {/* Bottom gradient overlay */}
+        <LinearGradient
+          colors={["transparent", "rgba(0,0,0,0.18)"]}
+          style={[styles.mapBottomGradient, { height: routeBtnH + 40 }]}
+          pointerEvents="none"
+        />
+
+        {/* Zoom buttons */}
+        <View style={[styles.zoomBox, { bottom: routeBtnH + 12 }]}>
           <Pressable style={styles.zoomBtn} onPress={() => haptic()}>
             <Ionicons name="add" size={20} color={Colors.light.text} />
           </Pressable>
@@ -374,9 +376,12 @@ export default function MapGuideScreen() {
           </Pressable>
         </View>
 
-        {/* POI popup */}
+        {/* POI popup — positioned above route button */}
         {selectedPoi && (
-          <Pressable style={styles.poiPopupOuter} onPress={() => setSelectedPoi(null)}>
+          <Pressable
+            style={[styles.poiPopupOuter, { bottom: routeBtnH + 12 }]}
+            onPress={() => setSelectedPoi(null)}
+          >
             <View style={styles.poiPopup} onStartShouldSetResponder={() => true}>
               <View style={[styles.poiPopupIcon, { backgroundColor: CATEGORY_COLORS[selectedPoi.category].bg }]}>
                 <Text style={{ fontSize: 22 }}>{selectedPoi.emoji}</Text>
@@ -391,7 +396,7 @@ export default function MapGuideScreen() {
                 </View>
               </View>
               <Pressable
-                style={styles.poiPopupNav}
+                style={[styles.poiPopupNav, { backgroundColor: CATEGORY_COLORS[selectedPoi.category].dot }]}
                 onPress={() => { haptic(); setSelectedPoi(null); }}
               >
                 <Ionicons name="navigate" size={16} color="#fff" />
@@ -399,24 +404,24 @@ export default function MapGuideScreen() {
             </View>
           </Pressable>
         )}
-      </View>
 
-      {/* ── Route button ── */}
-      <View style={[styles.routeBtnArea, { paddingBottom: bottomPad + 12 }]}>
-        <Pressable style={styles.routeBtn} onPress={openSheet}>
-          <LinearGradient
-            colors={["#8B5E3C", "#6B4228"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.routeBtnGradient}
-          >
-            <MaterialCommunityIcons name="map-marker-path" size={20} color="#fff" />
-            <Text style={styles.routeBtnText}>游览路线</Text>
-            <View style={styles.routeBtnBadge}>
-              <Text style={styles.routeBtnBadgeText}>{ROUTES.length}</Text>
-            </View>
-          </LinearGradient>
-        </Pressable>
+        {/* Route button — floating above bottom inset */}
+        <View style={[styles.routeBtnArea, { paddingBottom: bottomPad + 12 }]}>
+          <Pressable style={styles.routeBtn} onPress={openSheet}>
+            <LinearGradient
+              colors={["#8B5E3C", "#6B4228"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.routeBtnGradient}
+            >
+              <MaterialCommunityIcons name="map-marker-path" size={20} color="#fff" />
+              <Text style={styles.routeBtnText}>游览路线</Text>
+              <View style={styles.routeBtnBadge}>
+                <Text style={styles.routeBtnBadgeText}>{ROUTES.length}</Text>
+              </View>
+            </LinearGradient>
+          </Pressable>
+        </View>
       </View>
 
       {/* ── Route Bottom Sheet ── */}
@@ -426,7 +431,6 @@ export default function MapGuideScreen() {
           <Animated.View
             style={[styles.sheet, { transform: [{ translateY: sheetTranslateY }] }]}
           >
-            {/* Sheet header gradient */}
             <LinearGradient
               colors={["#8B5E3C", "#6B4228"]}
               start={{ x: 0, y: 0 }}
@@ -503,7 +507,6 @@ export default function MapGuideScreen() {
               ))}
             </ScrollView>
 
-            {/* Sheet footer */}
             <View style={[styles.sheetFooter, { paddingBottom: bottomPad + 16 }]}>
               <Text style={styles.sheetFooterLabel}>没有合适的路线？</Text>
               <View style={styles.sheetFooterBtns}>
@@ -532,7 +535,12 @@ export default function MapGuideScreen() {
       )}
 
       {/* ── AI Modal ── */}
-      <Modal visible={aiModalVisible} transparent animationType="slide" onRequestClose={() => { setAiModalVisible(false); setAiResponse(""); setAiQuery(""); }}>
+      <Modal
+        visible={aiModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => { setAiModalVisible(false); setAiResponse(""); setAiQuery(""); }}
+      >
         <View style={styles.aiOverlay}>
           <View style={[styles.aiModal, { paddingBottom: bottomPad + 20 }]}>
             <LinearGradient colors={[Colors.light.primary, "#2D8A55"]} style={styles.aiModalHeader}>
@@ -572,15 +580,17 @@ export default function MapGuideScreen() {
               {aiResponse ? (
                 <View style={styles.aiResult}>
                   <View style={styles.aiResultHeader}>
-                    <Text style={styles.aiResultTitle}>🎉 已为您规划路线</Text>
+                    <Text style={styles.aiResultTitle}>🗺️ 专属路线已生成</Text>
                   </View>
-                  <Text style={styles.aiResultText}>{aiResponse}</Text>
+                  <ScrollView style={{ maxHeight: 180 }}>
+                    <Text style={styles.aiResultText}>{aiResponse}</Text>
+                  </ScrollView>
                   <Pressable
                     style={styles.aiUseBtn}
                     onPress={() => { haptic("medium"); setAiModalVisible(false); setAiResponse(""); setAiQuery(""); }}
                   >
-                    <Text style={styles.aiUseBtnText}>使用此路线出发</Text>
-                    <Ionicons name="arrow-forward-circle" size={18} color="#fff" />
+                    <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                    <Text style={styles.aiUseBtnText}>开始使用此路线</Text>
                   </Pressable>
                 </View>
               ) : null}
@@ -593,12 +603,12 @@ export default function MapGuideScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F5F0E8" },
+  container: { flex: 1, backgroundColor: "#1A9688" },
 
   // Header
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 16, paddingVertical: 10,
+    paddingHorizontal: 14, paddingVertical: 8,
     backgroundColor: "#fff",
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#EAEAEA",
   },
@@ -607,35 +617,38 @@ const styles = StyleSheet.create({
     width: 34, height: 34, borderRadius: 17, backgroundColor: "#F5F5F5",
     alignItems: "center", justifyContent: "center",
   },
-  headerTitle: { fontSize: 17, fontWeight: "700", color: Colors.light.text },
+  headerCenter: { flex: 1, alignItems: "center", gap: 3 },
+  headerTitle: { fontSize: 16, fontWeight: "700", color: Colors.light.text },
+  locationPill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "#F2F9F6", borderRadius: 12,
+    paddingHorizontal: 10, paddingVertical: 3,
+  },
+  locationDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: Colors.light.primary },
+  locationPillText: { fontSize: 11, fontWeight: "600", color: Colors.light.text },
+  locationAccuracy: { fontSize: 10, color: Colors.light.textSecondary },
 
   // Filter
   filterWrap: { backgroundColor: "#fff", paddingBottom: 2 },
-  filterRow: { paddingHorizontal: 14, paddingVertical: 10, gap: 8 },
+  filterRow: { paddingHorizontal: 12, paddingVertical: 8, gap: 7 },
   filterChip: {
     flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+    paddingHorizontal: 13, paddingVertical: 6, borderRadius: 20,
     backgroundColor: "#F2F2F5", borderWidth: 1.5, borderColor: "transparent",
   },
-  filterEmoji: { fontSize: 13 },
-  filterText: { fontSize: 13, fontWeight: "500", color: Colors.light.textSecondary },
+  filterEmoji: { fontSize: 12 },
+  filterText: { fontSize: 12, fontWeight: "500", color: Colors.light.textSecondary },
   filterTextActive: { color: "#fff", fontWeight: "700" },
 
-  // Location bar
-  locationBar: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 16, paddingVertical: 8,
-    backgroundColor: "#fff", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#EAEAEA",
-  },
-  locationLeft: { flexDirection: "row", alignItems: "center", gap: 6 },
-  locationDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.light.primary },
-  locationText: { fontSize: 12, color: Colors.light.textSecondary },
-  locationName: { fontSize: 13, fontWeight: "600", color: Colors.light.text },
-  locationRight: { flexDirection: "row", alignItems: "center", gap: 3 },
-  locationAccuracy: { fontSize: 11, color: Colors.light.textSecondary },
+  // Map outer: fills remaining space
+  mapOuter: { flex: 1, overflow: "hidden", position: "relative" },
 
-  // Map
-  mapContainer: { flex: 1, overflow: "hidden" },
+  // Map bottom gradient
+  mapBottomGradient: {
+    position: "absolute", bottom: 0, left: 0, right: 0,
+  },
+
+  // Map elements
   islandBlob: {
     position: "absolute", backgroundColor: "#58C4B8", borderRadius: 999,
   },
@@ -657,7 +670,7 @@ const styles = StyleSheet.create({
     borderRadius: 999, opacity: 0.6, zIndex: 2,
   },
 
-  // POI
+  // POI markers
   poiWrap: { position: "absolute", alignItems: "center", zIndex: 10 },
   poiBubble: {
     width: 40, height: 40, borderRadius: 20,
@@ -686,20 +699,20 @@ const styles = StyleSheet.create({
 
   // Zoom
   zoomBox: {
-    position: "absolute", right: 14, bottom: 90,
+    position: "absolute", right: 14,
     backgroundColor: "#fff", borderRadius: 14,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 10, elevation: 5,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.15, shadowRadius: 10, elevation: 5,
     overflow: "hidden",
   },
   zoomBtn: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
   zoomLine: { height: StyleSheet.hairlineWidth, backgroundColor: "#E0E0E0", marginHorizontal: 8 },
 
   // POI popup
-  poiPopupOuter: { position: "absolute", bottom: 16, left: 16, right: 16 },
+  poiPopupOuter: { position: "absolute", left: 14, right: 14 },
   poiPopup: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: "#fff", borderRadius: 20, padding: 14, gap: 12,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 10,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.18, shadowRadius: 16, elevation: 12,
   },
   poiPopupIcon: {
     width: 52, height: 52, borderRadius: 16,
@@ -712,22 +725,26 @@ const styles = StyleSheet.create({
   poiPopupTagText: { fontSize: 11, fontWeight: "600" },
   poiPopupNav: {
     width: 40, height: 40, borderRadius: 12,
-    backgroundColor: Colors.light.primary, alignItems: "center", justifyContent: "center",
+    alignItems: "center", justifyContent: "center",
   },
 
-  // Route button area
+  // Route button (inside mapOuter, absolute bottom)
   routeBtnArea: {
     position: "absolute", bottom: 0, left: 0, right: 0,
     paddingHorizontal: 16, paddingTop: 8,
   },
-  routeBtn: { borderRadius: 28, overflow: "hidden", shadowColor: "#8B5E3C", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
-  routeBtnGradient: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 15 },
+  routeBtn: {
+    borderRadius: 28, overflow: "hidden",
+    shadowColor: "#5C3D1E", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 14, elevation: 10,
+  },
+  routeBtnGradient: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 16 },
   routeBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
   routeBtnBadge: {
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.25)", alignItems: "center", justifyContent: "center",
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: "rgba(255,255,255,0.28)", alignItems: "center", justifyContent: "center",
   },
-  routeBtnBadgeText: { fontSize: 11, fontWeight: "700", color: "#fff" },
+  routeBtnBadgeText: { fontSize: 12, fontWeight: "700", color: "#fff" },
+
   // Sheet
   sheetOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)" },
   sheet: {
