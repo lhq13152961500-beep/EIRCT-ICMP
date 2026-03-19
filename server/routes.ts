@@ -276,9 +276,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!lat || !lng) {
         return res.status(400).json({ error: "lat and lng are required" });
       }
-      const amapKey = process.env.AMAP_API_KEY;
+      const amapKey = process.env.AMAP_SERVER_KEY || process.env.AMAP_API_KEY;
       if (!amapKey) {
-        return res.status(500).json({ error: "AMAP_API_KEY not configured" });
+        return res.status(500).json({ error: "AMAP_SERVER_KEY not configured" });
       }
       const location = `${lng},${lat}`;
       const amapRes = await fetch(
@@ -311,9 +311,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/geocode/ip", async (req, res) => {
     try {
-      const amapKey = process.env.AMAP_API_KEY;
+      const amapKey = process.env.AMAP_SERVER_KEY || process.env.AMAP_API_KEY;
       if (!amapKey) {
-        return res.status(500).json({ error: "AMAP_API_KEY not configured" });
+        return res.status(500).json({ error: "AMAP_SERVER_KEY not configured" });
       }
       const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip;
       const amapRes = await fetch(
