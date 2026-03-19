@@ -1,4 +1,4 @@
-# 乡音伴路 (Xiangyin Banlu)
+# 乡音伴旅 (Xiangyin Banlv)
 
 一款记录和分享地方声音与方言的文化旅行社交 App，基于 Expo (React Native) + Express + PostgreSQL 构建。
 
