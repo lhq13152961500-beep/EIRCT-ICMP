@@ -2259,7 +2259,7 @@ function DiscoverOthersTab() {
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchNearby = useCallback(async () => {
-    const RADIUS_METERS = 5000;
+    const RADIUS_METERS = 100;
 
     const doFetch = async (lat: number, lng: number) => {
       try {
