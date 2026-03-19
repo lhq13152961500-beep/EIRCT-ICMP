@@ -13,7 +13,7 @@ import {
   StatusBar,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
@@ -298,7 +298,7 @@ export default function MapGuideScreen() {
 
       {/* ── Header ── */}
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => { haptic(); router.back(); }}>
+        <Pressable style={styles.backBtn} onPress={() => { haptic(); if (router.canGoBack()) { router.back(); } else { router.replace("/"); } }}>
           <View style={styles.backCircle}>
             <Ionicons name="chevron-back" size={20} color={Colors.light.text} />
           </View>
