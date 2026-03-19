@@ -2259,15 +2259,14 @@ function DiscoverOthersTab() {
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchNearby = useCallback(async () => {
-    const fallbackLat = deviceLocation?.lat ?? DISCOVER_FALLBACK_LAT;
-    const fallbackLng = deviceLocation?.lng ?? DISCOVER_FALLBACK_LNG;
+    const RADIUS_METERS = 5000;
 
     const doFetch = async (lat: number, lng: number) => {
       try {
         const url = new URL("/api/recordings/nearby", getApiUrl());
         url.searchParams.set("lat", String(lat));
         url.searchParams.set("lng", String(lng));
-        url.searchParams.set("radius", "100");
+        url.searchParams.set("radius", String(RADIUS_METERS));
         if (user && user.id !== "guest") {
           url.searchParams.set("viewerUserId", user.id);
         }
@@ -2282,35 +2281,35 @@ function DiscoverOthersTab() {
       }
     };
 
+    // Amap GCJ-02 coordinates must be used because recordings are stored with GCJ-02.
+    // expo-location returns WGS84 which is offset ~300-500m in China — too much for nearby search.
+    if (deviceLocation?.lat && deviceLocation?.lng) {
+      await doFetch(deviceLocation.lat, deviceLocation.lng);
+      return;
+    }
+
+    // Fallback: try platform GPS only when Amap location is unavailable
     if (Platform.OS === "web") {
       if (typeof navigator !== "undefined" && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => doFetch(pos.coords.latitude, pos.coords.longitude),
-          () => doFetch(fallbackLat, fallbackLng)
+          () => doFetch(DISCOVER_FALLBACK_LAT, DISCOVER_FALLBACK_LNG)
         );
       } else {
-        await doFetch(fallbackLat, fallbackLng);
+        await doFetch(DISCOVER_FALLBACK_LAT, DISCOVER_FALLBACK_LNG);
       }
     } else {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === "granted") {
-        try {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === "granted") {
           const last = await Location.getLastKnownPositionAsync({});
-          if (last) {
-            await doFetch(last.coords.latitude, last.coords.longitude);
-            return;
-          }
-        } catch { /* fall through */ }
-        try {
-          const pos = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-            timeInterval: 10000,
-          } as Location.LocationOptions);
+          if (last) { await doFetch(last.coords.latitude, last.coords.longitude); return; }
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced } as Location.LocationOptions);
           await doFetch(pos.coords.latitude, pos.coords.longitude);
           return;
-        } catch { /* fall through to shared fallback */ }
-      }
-      await doFetch(fallbackLat, fallbackLng);
+        }
+      } catch { /* fall through */ }
+      await doFetch(DISCOVER_FALLBACK_LAT, DISCOVER_FALLBACK_LNG);
     }
   }, [deviceLocation, user]);
 
