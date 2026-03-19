@@ -102,7 +102,11 @@ export function RecordingsProvider({ children }: { children: React.ReactNode }) 
           cb[r.id] = ((r.comments ?? []) as any[]).map((c: any) => {
             const d = new Date(c.createdAt);
             const time = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-            return { ...c, time, voiceUri: c.voiceUrl || c.voiceUri || null } as RecordingComment;
+            const rawVoiceUrl = c.voiceUrl || c.voiceUri || null;
+            const voiceUri = rawVoiceUrl
+              ? (rawVoiceUrl.startsWith("http") ? rawVoiceUrl : `${getApiUrl().replace(/\/$/, "")}${rawVoiceUrl}`)
+              : null;
+            return { ...c, time, voiceUri } as RecordingComment;
           });
         }
         setLikeCounts(lc);

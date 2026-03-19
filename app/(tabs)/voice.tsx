@@ -1803,7 +1803,11 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
   const mapComments = (cs: ServerComment[]): NearbyComment[] =>
     cs.map((c) => {
       const d = new Date(c.createdAt);
-      return { id: c.id, username: c.username, time: `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`, text: c.text, voiceUri: c.voiceUrl || null };
+      const rawVoice = c.voiceUrl || null;
+      const resolvedVoice = rawVoice
+        ? (rawVoice.startsWith("http") ? rawVoice : `${getApiUrl().replace(/\/$/, "")}${rawVoice}`)
+        : null;
+      return { id: c.id, username: c.username, time: `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`, text: c.text, voiceUri: resolvedVoice };
     });
   const [isLiked, setIsLiked] = useState(rec.isLiked ?? false);
   const [likeCount, setLikeCount] = useState(rec.likeCount ?? 0);
@@ -1993,7 +1997,9 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
       const voiceData = await readAudioBase64(uri);
       const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: displayName, text: voiceText, voiceData });
       const comment = await commentResp.json();
-      setComments((prev) => prev.map((c) => c.id === tempId ? { ...c, id: comment.id, voiceUri: comment.voiceUrl || c.voiceUri } : c));
+      const rv = comment.voiceUrl;
+      const resolvedRv = rv ? (rv.startsWith("http") ? rv : `${getApiUrl().replace(/\/$/, "")}${rv}`) : null;
+      setComments((prev) => prev.map((c) => c.id === tempId ? { ...c, id: comment.id, voiceUri: resolvedRv || c.voiceUri } : c));
       refreshMyRecordings();
     } catch (e) { console.warn("Voice comment failed:", e); }
   };
@@ -2018,7 +2024,9 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
       const voiceData = capturedUri ? await readAudioBase64(capturedUri) : undefined;
       const commentResp = await apiRequest("POST", `/api/recordings/${rec.id}/comment`, { userId: user.id, username: displayName, text: combinedText, voiceData });
       const comment = await commentResp.json();
-      setComments((prev) => prev.map((c) => c.id === tempId ? { ...c, id: comment.id, voiceUri: comment.voiceUrl || c.voiceUri } : c));
+      const rv2 = comment.voiceUrl;
+      const resolvedRv2 = rv2 ? (rv2.startsWith("http") ? rv2 : `${getApiUrl().replace(/\/$/, "")}${rv2}`) : null;
+      setComments((prev) => prev.map((c) => c.id === tempId ? { ...c, id: comment.id, voiceUri: resolvedRv2 || c.voiceUri } : c));
       refreshMyRecordings();
     } catch (e) {
       console.warn("Comment failed:", e);
