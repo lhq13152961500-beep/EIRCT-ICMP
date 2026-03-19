@@ -20,6 +20,7 @@ import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "@/contexts/LocationContext";
+import { router } from "expo-router";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TAB_BAR_HEIGHT = 80;
@@ -245,7 +246,7 @@ export default function HomeScreen() {
             <Text style={styles.featureTitle}>语伴导游</Text>
             <Text style={styles.featureSub}>方言导游 旅游不孤单</Text>
           </Pressable>
-          <Pressable style={[styles.featureCard, { marginLeft: CARD_GAP / 2 }]} onPress={haptic}>
+          <Pressable style={[styles.featureCard, { marginLeft: CARD_GAP / 2 }]} onPress={() => { haptic(); router.push("/map-guide"); }}>
             <View style={[styles.featureIconWrap, { backgroundColor: "#C5D8FF" }]}>
               <Ionicons name="map-outline" size={30} color="#3A68D8" />
             </View>
