@@ -8,6 +8,109 @@
 
 ### 第一步：克隆项目
 
+#### 一、前置准备
+
+##### 1. 环境要求
+
+- 安装 Git（[下载地址](https://git-scm.com/downloads)），安装后在终端执行 `git --version` 验证是否安装成功；
+- 目标电脑已联网，且能访问 GitHub；
+- 拥有 GitHub 账号（与仓库所属账号一致），并生成过带 `repo` 权限的个人访问令牌（PAT）。
+
+##### 2. 配置 Git 全局信息（首次使用必做）
+
+打开终端 / 命令提示符，执行以下命令（替换为你的 GitHub 用户名和邮箱）：
+
+```bash
+git config --global user.name "你的GitHub用户名"
+git config --global user.email "你的GitHub绑定邮箱"
+```
+
+#### 二、核心操作流程
+
+##### 步骤 1：克隆 GitHub 仓库到本地
+
+1. 打开 GitHub 仓库页面（如 `https://github.com/lhq13152961500-beep/EIRCT-ICMP`）；
+2. 点击右上角「Code」→ 复制「HTTPS」地址（`https://github.com/lhq13152961500-beep/EIRCT-ICMP.git`）；
+3. 在本地选择一个空文件夹（如 `D:\my-project`），右键打开「Git Bash Here」（Windows）/ 终端（Mac/Linux），执行克隆命令：
+
+```bash
+git clone https://github.com/lhq13152961500-beep/EIRCT-ICMP.git
+```
+
+1. 克隆完成后，进入仓库目录：
+
+```bash
+cd EIRCT-ICMP
+```
+
+##### 步骤 2：本地修改代码
+
+- 用编辑器（VS Code/Replit 等）打开克隆后的文件夹，按需修改代码（新增功能、修复 bug 等）；
+- 建议修改后先本地测试，确保功能正常。
+
+##### 步骤 3：提交本地修改到 Git 仓库
+
+1. 查看修改的文件（确认要提交的内容）：
+
+```bash
+git status
+```
+
+2. 暂存所有修改的文件（`.` 表示所有文件，也可指定单个文件如 `git add App.js`）：
+
+```bash
+git add .
+```
+
+3. 提交暂存的修改（必须填写有意义的提交说明）：
+
+```bash
+git commit -m "修改说明：比如修复数据库API调用问题、新增XX功能 2026.XX.XX"
+```
+
+##### 步骤 4：拉取远程最新代码（避免冲突）
+
+在推送前，先拉取 GitHub 仓库的最新代码（防止多人协作时冲突）：
+
+```bash
+git pull origin main
+```
+
+- 若主分支是 `master`，替换为 `git pull origin master`。
+
+##### 步骤 5：推送到 GitHub 仓库
+
+###### 方式 1：使用 PAT 令牌推送（推荐）
+
+执行推送命令后，终端会提示输入用户名和密码：
+
+```bash
+git push origin main
+```
+
+- `Username`：输入你的 GitHub 用户名（如 `lhq13152961500-beep`）；
+
+- `Password`：输入你的 GitHub 个人访问令牌（PAT，以 `ghp_` 开头，不是登录密码）。
+
+###### 方式 2：绑定 PAT 到远程地址（免重复输入）
+
+若想后续推送无需重复输入令牌，先执行以下命令绑定（替换为你的 PAT）：
+
+```bash
+git remote set-url origin https://你的GitHub用户名:你的PAT令牌@github.com/lhq13152961500-beep/EIRCT-ICMP.git
+```
+
+绑定后直接执行推送即可：
+
+```bash
+git push origin main
+```
+
+#### 三、验证推送结果
+
+1. 打开 GitHub 仓库页面，刷新后查看「Commits」记录，能看到你刚提交的修改说明；
+
+2. 查看仓库文件列表，确认修改后的代码已同步。
 ```bash
 git clone https://github.com/你的用户名/你的仓库名.git
 cd 你的仓库名
