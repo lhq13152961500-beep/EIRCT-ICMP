@@ -207,9 +207,13 @@ function IllustratedMap({
           onPress={onPoiPress}
         />
       ))}
-      <View style={[styles.myLocWrap, { left: mapW * 0.35, top: mapH * 0.68 }]}>
-        <View style={styles.myLocPulse} />
-        <View style={styles.myLocDot} />
+      {/* Orange pin location marker */}
+      <View style={[styles.myLocWrap, { left: mapW * 0.35 - 18, top: mapH * 0.68 - 46 }]}>
+        <View style={styles.myLocPinPulse} />
+        <View style={styles.myLocPin}>
+          <View style={styles.myLocPinDot} />
+        </View>
+        <View style={styles.myLocPinTail} />
       </View>
     </View>
   );
@@ -286,30 +290,28 @@ export default function MapGuideScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="light-content" />
 
-      {/* ── Header ── */}
+      {/* ── Header (teal, no white) ── */}
       <View style={styles.header}>
         <Pressable
           style={styles.backBtn}
           onPress={() => { haptic(); if (router.canGoBack()) { router.back(); } else { router.replace("/"); } }}
         >
-          <View style={styles.backCircle}>
-            <Ionicons name="chevron-back" size={20} color={Colors.light.text} />
-          </View>
+          <Ionicons name="chevron-back" size={24} color="#fff" />
         </Pressable>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>地图导览</Text>
           <View style={styles.locationPill}>
-            <View style={styles.locationDot} />
+            <Ionicons name="location" size={12} color="#FF8C42" />
             <Text style={styles.locationPillText}>香花村口</Text>
-            <Text style={styles.locationAccuracy}>  ±30m</Text>
+            <Text style={styles.locationAccuracy}>±30m</Text>
           </View>
         </View>
         <View style={styles.backBtn} />
       </View>
 
-      {/* ── Filter row ── */}
+      {/* ── Filter row (transparent on teal) ── */}
       <View style={styles.filterWrap}>
         <ScrollView
           horizontal
@@ -318,13 +320,15 @@ export default function MapGuideScreen() {
         >
           {FILTER_TABS.map((key) => {
             const isActive = activeFilter === key;
-            const catColor = key !== "全部" ? CATEGORY_COLORS[key as Exclude<FilterKey, "全部">].dot : Colors.light.primary;
+            const catColor = key !== "全部" ? CATEGORY_COLORS[key as Exclude<FilterKey, "全部">].dot : "#FF8C42";
             return (
               <Pressable
                 key={key}
                 style={[
                   styles.filterChip,
-                  isActive && { backgroundColor: catColor, borderColor: catColor },
+                  isActive
+                    ? { backgroundColor: catColor, borderColor: catColor }
+                    : { backgroundColor: "rgba(255,255,255,0.2)", borderColor: "rgba(255,255,255,0.35)" },
                 ]}
                 onPress={() => { haptic(); setActiveFilter(key); setSelectedPoi(null); }}
               >
@@ -365,8 +369,8 @@ export default function MapGuideScreen() {
           pointerEvents="none"
         />
 
-        {/* Zoom buttons */}
-        <View style={[styles.zoomBox, { bottom: routeBtnH + 12 }]}>
+        {/* Zoom buttons — move up when POI popup is visible */}
+        <View style={[styles.zoomBox, { bottom: selectedPoi ? routeBtnH + 108 : routeBtnH + 12 }]}>
           <Pressable style={styles.zoomBtn} onPress={() => haptic()}>
             <Ionicons name="add" size={20} color={Colors.light.text} />
           </Pressable>
@@ -605,39 +609,33 @@ export default function MapGuideScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#1A9688" },
 
-  // Header
+  // Header — teal, no white
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 14, paddingVertical: 8,
-    backgroundColor: "#fff",
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#EAEAEA",
+    paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: "#1A9688",
   },
   backBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  backCircle: {
-    width: 34, height: 34, borderRadius: 17, backgroundColor: "#F5F5F5",
-    alignItems: "center", justifyContent: "center",
-  },
-  headerCenter: { flex: 1, alignItems: "center", gap: 3 },
-  headerTitle: { fontSize: 16, fontWeight: "700", color: Colors.light.text },
+  headerCenter: { flex: 1, alignItems: "center", gap: 4 },
+  headerTitle: { fontSize: 17, fontWeight: "700", color: "#fff" },
   locationPill: {
     flexDirection: "row", alignItems: "center", gap: 4,
-    backgroundColor: "#F2F9F6", borderRadius: 12,
-    paddingHorizontal: 10, paddingVertical: 3,
+    backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 12,
+    paddingHorizontal: 9, paddingVertical: 3,
   },
-  locationDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: Colors.light.primary },
-  locationPillText: { fontSize: 11, fontWeight: "600", color: Colors.light.text },
-  locationAccuracy: { fontSize: 10, color: Colors.light.textSecondary },
+  locationPillText: { fontSize: 11, fontWeight: "600", color: "#fff" },
+  locationAccuracy: { fontSize: 10, color: "rgba(255,255,255,0.7)" },
 
-  // Filter
-  filterWrap: { backgroundColor: "#fff", paddingBottom: 2 },
-  filterRow: { paddingHorizontal: 12, paddingVertical: 8, gap: 7 },
+  // Filter — transparent on teal
+  filterWrap: { backgroundColor: "#1A9688", paddingBottom: 10 },
+  filterRow: { paddingHorizontal: 12, paddingTop: 4, gap: 7 },
   filterChip: {
     flexDirection: "row", alignItems: "center", gap: 4,
     paddingHorizontal: 13, paddingVertical: 6, borderRadius: 20,
-    backgroundColor: "#F2F2F5", borderWidth: 1.5, borderColor: "transparent",
+    borderWidth: 1.5,
   },
   filterEmoji: { fontSize: 12 },
-  filterText: { fontSize: 12, fontWeight: "500", color: Colors.light.textSecondary },
+  filterText: { fontSize: 12, fontWeight: "600", color: "rgba(255,255,255,0.9)" },
   filterTextActive: { color: "#fff", fontWeight: "700" },
 
   // Map outer: fills remaining space
@@ -685,16 +683,27 @@ const styles = StyleSheet.create({
   poiTagText: { fontSize: 9.5, fontWeight: "600" },
   poiPin: { width: 5, height: 5, borderRadius: 2.5, marginTop: 2 },
 
-  // My location
-  myLocWrap: { position: "absolute", zIndex: 12, alignItems: "center", justifyContent: "center" },
-  myLocPulse: {
-    position: "absolute", width: 32, height: 32, borderRadius: 16,
-    backgroundColor: "rgba(61, 170, 111, 0.25)", borderWidth: 1.5, borderColor: "rgba(61,170,111,0.5)",
+  // My location — orange pin
+  myLocWrap: { position: "absolute", zIndex: 12, alignItems: "center" },
+  myLocPinPulse: {
+    position: "absolute", top: -6, width: 48, height: 48, borderRadius: 24,
+    backgroundColor: "rgba(255,140,66,0.2)", borderWidth: 1.5, borderColor: "rgba(255,140,66,0.4)",
   },
-  myLocDot: {
-    width: 14, height: 14, borderRadius: 7,
-    backgroundColor: Colors.light.primary, borderWidth: 2.5, borderColor: "#fff",
-    shadowColor: Colors.light.primary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.5, shadowRadius: 4, elevation: 6,
+  myLocPin: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: "#FF8C42",
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 3, borderColor: "#fff",
+    shadowColor: "#FF6B00", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 8, elevation: 10,
+  },
+  myLocPinDot: {
+    width: 10, height: 10, borderRadius: 5, backgroundColor: "#fff",
+  },
+  myLocPinTail: {
+    width: 0, height: 0,
+    borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 10,
+    borderLeftColor: "transparent", borderRightColor: "transparent", borderTopColor: "#FF8C42",
+    marginTop: -1,
   },
 
   // Zoom
