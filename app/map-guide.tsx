@@ -11,6 +11,7 @@ import {
   Modal,
   TextInput,
   StatusBar,
+  ActivityIndicator,
   LayoutChangeEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,6 +20,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
+import { useLocation } from "@/contexts/LocationContext";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const SHEET_FULL = SCREEN_HEIGHT * 0.74;
@@ -223,6 +225,14 @@ export default function MapGuideScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 0 : insets.top;
   const bottomPad = Platform.OS === "web" ? 16 : insets.bottom;
+  const { locationStatus, isLocating } = useLocation();
+
+  const locationName =
+    locationStatus.state === "located" ? locationStatus.locationName : null;
+  const locationAccuracy =
+    locationStatus.state === "located" && locationStatus.accuracy != null
+      ? `±${Math.round(locationStatus.accuracy)}m`
+      : null;
 
   const [activeFilter, setActiveFilter] = useState<FilterKey>("全部");
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -303,9 +313,17 @@ export default function MapGuideScreen() {
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>地图导览</Text>
           <View style={styles.locationPill}>
-            <Ionicons name="location" size={12} color="#FF8C42" />
-            <Text style={styles.locationPillText}>香花村口</Text>
-            <Text style={styles.locationAccuracy}>±30m</Text>
+            {isLocating && !locationName ? (
+              <ActivityIndicator size="small" color="#fff" style={{ width: 12, height: 12 }} />
+            ) : (
+              <Ionicons name="location" size={12} color="#FF8C42" />
+            )}
+            <Text style={styles.locationPillText} numberOfLines={1}>
+              {locationName ?? "定位中…"}
+            </Text>
+            {locationAccuracy && (
+              <Text style={styles.locationAccuracy}>{locationAccuracy}</Text>
+            )}
           </View>
         </View>
         <View style={styles.backBtn} />
