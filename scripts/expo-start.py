@@ -55,7 +55,7 @@ def kill_port_8081():
     except Exception as e:
         sys.stdout.write(f"[port 8081 cleanup skipped: {e}]\n")
 
-def main():
+def run_expo():
     kill_port_8081()
 
     env = os.environ.copy()
@@ -87,14 +87,26 @@ def main():
                         try:
                             data = os.read(master_fd, 4096)
                         except OSError:
-                            sys.exit(0)
+                            return "ngrok_error"
                         if not data:
-                            sys.exit(0)
+                            return "exit"
                         sys.stdout.buffer.write(data)
                         sys.stdout.buffer.flush()
                         buffer += data
 
                         buf_str = buffer.decode('utf-8', errors='ignore')
+
+                        # Detect Ngrok tunnel error and signal retry
+                        if 'CommandError' in buf_str and ('body' in buf_str or 'ngrok' in buf_str.lower() or 'Ngrok' in buf_str):
+                            sys.stdout.write('\n[Ngrok tunnel error detected — will retry in 5s]\n')
+                            sys.stdout.flush()
+                            try:
+                                os.kill(pid, 9)
+                            except OSError:
+                                pass
+                            os.waitpid(pid, 0)
+                            os.close(master_fd)
+                            return "ngrok_error"
 
                         # Auto-answer "Proceed anonymously" prompt (can repeat multiple times)
                         if ('Proceed anonymously' in buf_str or 'recommended to log in' in buf_str):
@@ -123,12 +135,29 @@ def main():
                         except OSError:
                             pass
             except KeyboardInterrupt:
-                os.kill(pid, 15)
+                try:
+                    os.kill(pid, 15)
+                except OSError:
+                    pass
                 sys.exit(0)
             except OSError:
-                sys.exit(0)
+                return "exit"
 
         os.waitpid(pid, 0)
+        return "exit"
+
+def main():
+    attempt = 0
+    while True:
+        attempt += 1
+        if attempt > 1:
+            sys.stdout.write(f'\n[Retrying Expo start (attempt {attempt})...]\n')
+            sys.stdout.flush()
+        result = run_expo()
+        if result == "ngrok_error":
+            time.sleep(15)
+            continue
+        break
 
 if __name__ == '__main__':
     main()

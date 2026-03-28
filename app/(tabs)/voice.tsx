@@ -1833,6 +1833,8 @@ function DiscoverOthersTab() {
     setRefreshing(false);
   }, [fetchNearby]);
 
+  const [sort, setSort] = useState<SortState>(null);
+  const [sortOpen, setSortOpen] = useState(false);
 
   const totalFound = nearbyRecs.length;
 
