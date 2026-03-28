@@ -8,12 +8,14 @@ import {
   Image,
   Dimensions,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
+import { useLocation } from "@/contexts/LocationContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -135,6 +137,11 @@ function SoundArchiveSection() {
 
 function HeroHeader({ insets }: { insets: ReturnType<typeof useSafeAreaInsets> }) {
   const topOffset = Platform.OS === "web" ? 67 : insets.top;
+  const { locationStatus, isLocating } = useLocation();
+
+  const locationName =
+    locationStatus.state === "located" ? locationStatus.locationName : null;
+
   return (
     <View style={styles.heroContainer}>
       <Image
@@ -149,8 +156,14 @@ function HeroHeader({ insets }: { insets: ReturnType<typeof useSafeAreaInsets> }
       />
       <View style={[styles.heroTopBar, { top: topOffset + 8 }]}>
         <View style={styles.locationPill}>
-          <Ionicons name="location" size={12} color={Colors.light.primary} />
-          <Text style={styles.locationText}>浙江 · 西塘古镇</Text>
+          {isLocating && !locationName ? (
+            <ActivityIndicator size="small" color={Colors.light.primary} style={{ width: 12, height: 12 }} />
+          ) : (
+            <Ionicons name="location" size={12} color={Colors.light.primary} />
+          )}
+          <Text style={styles.locationText} numberOfLines={1}>
+            {locationName ?? "定位中…"}
+          </Text>
         </View>
         <Pressable style={styles.searchButton}>
           <Ionicons name="search" size={18} color={Colors.light.text} />
