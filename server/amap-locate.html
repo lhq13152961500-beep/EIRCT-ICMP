@@ -9,14 +9,10 @@
 <body>
 <div id="status">正在定位...</div>
 <script>
-window._AMapSecurityConfig = { securityJsCode: '__AMAP_SECURITY_KEY__' };
-var AMAP_KEY = '__AMAP_KEY__';
-var sdkLoaded = false;
-var sdkLoadTimeout = null;
-var browserWatchId = null;
-var amapGeo = null;
 var lastSentTime = 0;
 var SEND_INTERVAL = 2000;
+var watchId = null;
+var gotFix = false;
 
 function setStatus(msg) {
   var el = document.getElementById('status');
@@ -31,114 +27,57 @@ function sendToApp(data) {
   } catch(e) {}
 }
 
-function sendLocation(lat, lng, accuracy, address) {
+function sendLocation(lat, lng, accuracy) {
   var now = Date.now();
   if (now - lastSentTime < SEND_INTERVAL) return;
   lastSentTime = now;
-  sendToApp({ type: 'location', lat: lat, lng: lng, accuracy: accuracy || 50, address: address || '' });
-  setStatus((address || (lat.toFixed(5) + ',' + lng.toFixed(5))) + ' ±' + Math.round(accuracy || 50) + 'm');
+  gotFix = true;
+  sendToApp({ type: 'location', lat: lat, lng: lng, accuracy: accuracy || 50, address: '' });
+  setStatus(lat.toFixed(5) + ',' + lng.toFixed(5) + ' ±' + Math.round(accuracy || 50) + 'm');
 }
 
-function tryBrowserGeo() {
-  if (!navigator.geolocation) {
-    sendToApp({ type: 'error', message: 'Browser geolocation not available' });
-    setStatus('设备不支持定位');
-    return;
-  }
-  setStatus('正在使用系统定位...');
-  if (browserWatchId !== null) { navigator.geolocation.clearWatch(browserWatchId); }
-  browserWatchId = navigator.geolocation.watchPosition(
+sendToApp({ type: 'debug', message: 'Page init, bridge=' + (!!window.ReactNativeWebView) + ' geo=' + (!!navigator.geolocation) });
+
+if (!navigator.geolocation) {
+  sendToApp({ type: 'error', message: 'navigator.geolocation not available on this device' });
+  setStatus('设备不支持定位');
+} else {
+  setStatus('GPS定位中...');
+
+  watchId = navigator.geolocation.watchPosition(
     function(pos) {
-      sendLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+      var acc = pos.coords.accuracy;
+      sendToApp({ type: 'debug', message: 'GPS fix: acc=' + Math.round(acc) + 'm lat=' + pos.coords.latitude.toFixed(5) });
+      sendLocation(pos.coords.latitude, pos.coords.longitude, acc);
     },
     function(err) {
-      sendToApp({ type: 'error', message: 'Browser geo failed: ' + err.message });
-      setStatus('系统定位失败: ' + err.message);
+      sendToApp({ type: 'error', message: 'GPS error code=' + err.code + ': ' + err.message });
+      setStatus('定位失败: ' + err.message);
+
+      if (err.code === 1) {
+        sendToApp({ type: 'error', message: 'PERMISSION_DENIED - location permission not granted to WebView' });
+      } else if (err.code === 2) {
+        sendToApp({ type: 'error', message: 'POSITION_UNAVAILABLE - GPS hardware not available or disabled' });
+      } else if (err.code === 3) {
+        sendToApp({ type: 'error', message: 'TIMEOUT - GPS did not respond in time' });
+      }
     },
-    { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 }
+    { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
   );
+
+  setTimeout(function() {
+    if (!gotFix) {
+      sendToApp({ type: 'debug', message: 'Still waiting for GPS fix at 10s mark...' });
+    }
+  }, 10000);
+
+  setTimeout(function() {
+    if (!gotFix) {
+      sendToApp({ type: 'debug', message: 'Still waiting for GPS fix at 20s mark...' });
+      setStatus('GPS信号弱，继续等待...');
+    }
+  }, 20000);
 }
-
-function startAmapWatch() {
-  if (!amapGeo) return;
-  setInterval(function() {
-    if (!amapGeo) return;
-    amapGeo.getCurrentPosition(function(status, result) {
-      if (status === 'complete' && result.position) {
-        var lat = result.position.lat || (result.position.getLat && result.position.getLat());
-        var lng = result.position.lng || (result.position.getLng && result.position.getLng());
-        var acc = result.accuracy || 50;
-        lastSentTime = 0;
-        sendLocation(lat, lng, acc, '');
-      }
-    });
-  }, 15000);
-}
-
-function doLocate() {
-  sdkLoaded = true;
-  if (sdkLoadTimeout) { clearTimeout(sdkLoadTimeout); sdkLoadTimeout = null; }
-
-  if (!window.AMap) {
-    setStatus('SDK加载失败，使用备用定位');
-    sendToApp({ type: 'error', message: 'AMap SDK not loaded' });
-    tryBrowserGeo();
-    return;
-  }
-
-  setStatus('高德定位初始化中...');
-  try {
-    amapGeo = new AMap.Geolocation({
-      enableHighAccuracy: true,
-      timeout: 10000,
-      showButton: false,
-      showMarker: false,
-      showCircle: false,
-      panToLocation: false,
-      zoomToAccuracy: false,
-      GeoLocationFirst: true,
-      useNative: true,
-      noIpLocate: 0,
-      extensions: 'base'
-    });
-
-    amapGeo.getCurrentPosition(function(status, result) {
-      if (status === 'complete' && result.position) {
-        var lat = result.position.lat || (result.position.getLat && result.position.getLat());
-        var lng = result.position.lng || (result.position.getLng && result.position.getLng());
-        var acc = result.accuracy || 50;
-        var addr = '';
-        if (result.formattedAddress) {
-          addr = result.formattedAddress;
-        } else if (result.addressComponent) {
-          var c = result.addressComponent;
-          addr = (c.township || '') + (c.street || '') + (c.streetNumber || '');
-          if (!addr) addr = (c.district || '') + (c.city || '');
-        }
-        lastSentTime = 0;
-        sendLocation(lat, lng, acc, addr);
-        startAmapWatch();
-      } else {
-        var msg = (result && result.message) ? result.message : (status || 'unknown');
-        setStatus('高德定位失败: ' + msg + '，切换系统定位');
-        sendToApp({ type: 'error', message: 'Amap geo failed: ' + msg });
-        tryBrowserGeo();
-      }
-    });
-  } catch(e) {
-    setStatus('高德初始化异常，使用备用定位');
-    tryBrowserGeo();
-  }
-}
-
-sdkLoadTimeout = setTimeout(function() {
-  if (!sdkLoaded) {
-    setStatus('SDK加载超时，使用备用定位');
-    sendToApp({ type: 'error', message: 'Amap SDK load timeout (12s)' });
-    tryBrowserGeo();
-  }
-}, 12000);
 </script>
-<script src="https://webapi.amap.com/maps?v=2.0&key=__AMAP_KEY__&plugin=AMap.Geolocation" onload="doLocate()" onerror="sendToApp({type:'error',message:'SDK script failed'});tryBrowserGeo();"></script>
 </body>
 </html>

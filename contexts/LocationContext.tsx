@@ -275,6 +275,10 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   const handleWebViewMessage = useCallback(async (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === "debug") {
+        console.log(`[loc] WebView debug: ${data.message}`);
+        return;
+      }
       if (data.type === "location" && data.lat && data.lng) {
         console.log(`[loc] Amap WebView GPS: ${data.lat}, ${data.lng} (±${data.accuracy}m)`);
         hasGpsFixRef.current = true;
@@ -422,7 +426,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
         console.log("[loc] Running in NATIVE mode - using Amap WebView + expo-location");
 
         const baseUrl = getApiUrl();
-        const amapLocateUrl = new URL("/api/amap-locate", baseUrl).href;
+        const amapLocateUrl = new URL(`/api/amap-locate?t=${Date.now()}`, baseUrl).href;
         console.log("[loc] Loading Amap WebView:", amapLocateUrl);
         setWebViewUrl(amapLocateUrl);
         setWatchActive(true);
