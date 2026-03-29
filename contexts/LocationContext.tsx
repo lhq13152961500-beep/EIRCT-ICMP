@@ -438,9 +438,21 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
         }, 20000);
 
         try {
+          const servicesEnabled = await Location.hasServicesEnabledAsync();
+          console.log("[loc] Location services enabled:", servicesEnabled);
+          if (!servicesEnabled) {
+            console.warn("[loc] Device location services are disabled");
+            if (mounted && !hasIpFix) {
+              setLocationStatus({ state: "denied" });
+              setIsLocating(false);
+            }
+            return;
+          }
+
           const { status } = await Location.requestForegroundPermissionsAsync();
           if (!mounted) return;
 
+          console.log("[loc] expo-location permission status:", status);
           if (status === "granted") {
             try {
               const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60 * 1000, requiredAccuracy: 500 });
@@ -451,27 +463,31 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
             } catch (e) { /* ignore */ }
 
             locationSubRef.current?.remove();
-            Location.watchPositionAsync(
-              { accuracy: Location.Accuracy.Balanced, timeInterval: 2000, distanceInterval: 3 },
-              (l) => { if (mounted) setGpsLocation(l.coords.latitude, l.coords.longitude, l.coords.accuracy ?? undefined); }
-            ).then((sub) => {
-              if (mounted) { locationSubRef.current = sub; }
-              else sub.remove();
-            }).catch((e) => {
-              console.log("[loc] expo-location watch failed (expected in China):", e);
-            });
-
-            const accuracies = [Location.Accuracy.Balanced, Location.Accuracy.Low, Location.Accuracy.Lowest];
-            for (const acc of accuracies) {
-              if (hasGpsFix || hasGpsFixRef.current || !mounted) break;
+            for (const watchAcc of [Location.Accuracy.Lowest, Location.Accuracy.Low, Location.Accuracy.Balanced]) {
               try {
-                const pos = await withTimeout(Location.getCurrentPositionAsync({ accuracy: acc }), 10000);
+                const sub = await Location.watchPositionAsync(
+                  { accuracy: watchAcc, timeInterval: 3000, distanceInterval: 5 },
+                  (l) => { if (mounted) setGpsLocation(l.coords.latitude, l.coords.longitude, l.coords.accuracy ?? undefined); }
+                );
+                if (mounted) { locationSubRef.current = sub; }
+                else sub.remove();
+                console.log("[loc] expo-location watchPositionAsync started with accuracy:", watchAcc);
+                break;
+              } catch (e: any) {
+                console.log("[loc] expo-location watch failed (acc=" + watchAcc + "):", e?.message || String(e));
+              }
+            }
+
+            if (!hasGpsFix && !hasGpsFixRef.current) {
+              try {
+                const pos = await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Lowest }), 50000);
                 if (mounted && !hasGpsFixRef.current) {
+                  console.log("[loc] expo-location getCurrentPosition (Lowest) succeeded");
                   setGpsLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
                   hasGpsFix = true;
                 }
-              } catch (e) {
-                console.log("[loc] expo-location accuracy level failed (expected in China)");
+              } catch (e: any) {
+                console.log("[loc] expo-location getCurrentPosition (Lowest) failed:", e?.message || String(e));
               }
             }
           } else {
@@ -528,13 +544,14 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 const hiddenStyles = StyleSheet.create({
   container: {
     position: "absolute",
-    width: 1,
-    height: 1,
-    opacity: 0,
+    top: -400,
+    left: 0,
+    width: 300,
+    height: 300,
     overflow: "hidden",
   },
   webview: {
-    width: 1,
-    height: 1,
+    width: 300,
+    height: 300,
   },
 });
