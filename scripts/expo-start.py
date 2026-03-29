@@ -59,6 +59,8 @@ def run_expo():
     kill_port_8081()
 
     env = os.environ.copy()
+    # Limit Node.js heap size to avoid OOM kill during Metro bundling
+    env['NODE_OPTIONS'] = '--max-old-space-size=1024'
 
     master_fd, slave_fd = pty.openpty()
 
@@ -104,8 +106,32 @@ def run_expo():
                                 os.kill(pid, 9)
                             except OSError:
                                 pass
-                            os.waitpid(pid, 0)
-                            os.close(master_fd)
+                            try:
+                                os.waitpid(pid, 0)
+                            except ChildProcessError:
+                                pass
+                            try:
+                                os.close(master_fd)
+                            except OSError:
+                                pass
+                            return "ngrok_error"
+
+                        # Detect OOM kill
+                        if buf_str.strip().endswith('Killed') or '\nKilled\n' in buf_str:
+                            sys.stdout.write('\n[Process OOM-killed — will retry in 5s]\n')
+                            sys.stdout.flush()
+                            try:
+                                os.kill(pid, 9)
+                            except OSError:
+                                pass
+                            try:
+                                os.waitpid(pid, 0)
+                            except ChildProcessError:
+                                pass
+                            try:
+                                os.close(master_fd)
+                            except OSError:
+                                pass
                             return "ngrok_error"
 
                         # Auto-answer "Proceed anonymously" prompt (can repeat multiple times)
