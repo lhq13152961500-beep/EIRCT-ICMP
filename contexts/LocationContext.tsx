@@ -457,7 +457,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
               console.log("[loc] expo-location watch failed (expected in China):", e);
             });
 
-            const accuracies = [Location.Accuracy.Balanced, Location.Accuracy.Low];
+            const accuracies = [Location.Accuracy.Balanced, Location.Accuracy.Low, Location.Accuracy.Lowest];
             for (const acc of accuracies) {
               if (hasGpsFix || hasGpsFixRef.current || !mounted) break;
               try {
@@ -502,6 +502,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       {Platform.OS !== "web" && WebView && webViewUrl && (
         <View style={hiddenStyles.container} pointerEvents="none">
           <WebView
+            key={`amap-wv-${trigger}`}
             source={{ uri: webViewUrl }}
             onMessage={handleWebViewMessage}
             javaScriptEnabled

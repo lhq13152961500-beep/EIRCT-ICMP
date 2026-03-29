@@ -16,7 +16,7 @@ var sdkLoadTimeout = null;
 var browserWatchId = null;
 var amapGeo = null;
 var lastSentTime = 0;
-var SEND_INTERVAL = 10000;
+var SEND_INTERVAL = 2000;
 
 function setStatus(msg) {
   var el = document.getElementById('status');
@@ -90,7 +90,7 @@ function doLocate() {
   try {
     amapGeo = new AMap.Geolocation({
       enableHighAccuracy: true,
-      timeout: 15000,
+      timeout: 10000,
       showButton: false,
       showMarker: false,
       showCircle: false,
@@ -98,7 +98,7 @@ function doLocate() {
       zoomToAccuracy: false,
       GeoLocationFirst: true,
       useNative: true,
-      noIpLocate: 3,
+      noIpLocate: 0,
       extensions: 'base'
     });
 
