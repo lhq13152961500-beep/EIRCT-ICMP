@@ -181,7 +181,7 @@ def main():
             sys.stdout.flush()
         result = run_expo()
         if result == "ngrok_error":
-            time.sleep(15)
+            time.sleep(30)
             continue
         break
 
