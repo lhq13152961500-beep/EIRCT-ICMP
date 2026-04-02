@@ -5,11 +5,12 @@ import sys
 import select
 import time
 import subprocess
+import threading
+import urllib.request
 
 def kill_port_8081():
     """Kill any process using port 8081 via /proc/net/tcp on Linux."""
     try:
-        # Try fuser first
         result = subprocess.run(["fuser", "-k", "8081/tcp"], capture_output=True)
         if result.returncode == 0:
             sys.stdout.write("[killed process on port 8081 via fuser]\n")
@@ -19,7 +20,6 @@ def kill_port_8081():
         pass
 
     try:
-        # Fallback: parse /proc/net/tcp to find PID
         target_hex = format(8081, '04X')
         with open("/proc/net/tcp") as f:
             lines = f.readlines()[1:]
@@ -32,7 +32,6 @@ def kill_port_8081():
             port_hex = local_addr.split(":")[1] if ":" in local_addr else ""
             if port_hex.upper() == target_hex:
                 inode = parts[9]
-                # Find PID via /proc/*/fd -> socket inode
                 for pid_dir in os.listdir("/proc"):
                     if not pid_dir.isdigit():
                         continue
@@ -55,12 +54,39 @@ def kill_port_8081():
     except Exception as e:
         sys.stdout.write(f"[port 8081 cleanup skipped: {e}]\n")
 
+
+def prewarm_bundle():
+    """Hit Metro's bundle endpoint locally to pre-build the bundle cache."""
+    sys.stdout.write("[Pre-warming Metro bundle cache — this reduces OOM on first connect...]\n")
+    sys.stdout.flush()
+    bundle_url = (
+        "http://localhost:8081/node_modules/expo-router/entry.bundle"
+        "?platform=android&dev=true&minify=false&inlineSourceMap=false"
+    )
+    try:
+        req = urllib.request.Request(bundle_url, headers={"User-Agent": "prewarm"})
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            size = 0
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                size += len(chunk)
+            sys.stdout.write(f"[Bundle pre-warm complete: {size // 1024}KB cached]\n")
+            sys.stdout.flush()
+    except Exception as e:
+        sys.stdout.write(f"[Bundle pre-warm error (non-fatal): {e}]\n")
+        sys.stdout.flush()
+
+
 def run_expo():
     kill_port_8081()
 
     env = os.environ.copy()
-    # Limit Node.js heap size to avoid OOM kill during Metro bundling
-    env['NODE_OPTIONS'] = '--max-old-space-size=1024'
+    env['NODE_OPTIONS'] = '--max-old-space-size=800'
+    # Disable inline source maps to reduce bundle memory footprint
+    env['EXPO_NO_INLINE_SOURCEMAPS'] = '1'
+    env['REACT_NATIVE_PACKAGER_HOSTNAME'] = 'localhost'
 
     master_fd, slave_fd = pty.openpty()
 
@@ -80,6 +106,8 @@ def run_expo():
         os.close(slave_fd)
         last_anon_answer = 0.0
         buffer = b''
+        tunnel_ready = False
+        prewarm_done = False
 
         while True:
             try:
@@ -134,7 +162,7 @@ def run_expo():
                                 pass
                             return "ngrok_error"
 
-                        # Auto-answer "Proceed anonymously" prompt (can repeat multiple times)
+                        # Auto-answer "Proceed anonymously" prompt
                         if ('Proceed anonymously' in buf_str or 'recommended to log in' in buf_str):
                             now = time.time()
                             if now - last_anon_answer > 3.0:
@@ -145,13 +173,25 @@ def run_expo():
                                 sys.stdout.write('\n[auto-selected: Proceed anonymously]\n')
                                 sys.stdout.flush()
 
-                        # Auto-answer port-in-use prompt with Y (use next port)
+                        # Auto-answer port-in-use prompt with Y
                         elif 'Use port' in buf_str and 'instead?' in buf_str:
                             time.sleep(0.2)
                             os.write(master_fd, b'y\r')
                             buffer = b''
                             sys.stdout.write('\n[auto-selected: Yes, use next port]\n')
                             sys.stdout.flush()
+
+                        # Pre-warm bundle once tunnel is ready (with delay so Metro fully inits)
+                        if not tunnel_ready and 'Tunnel ready' in buf_str:
+                            tunnel_ready = True
+
+                        if tunnel_ready and not prewarm_done:
+                            prewarm_done = True
+                            def _delayed_prewarm():
+                                time.sleep(15)  # Let Metro fully initialize first
+                                prewarm_bundle()
+                            t = threading.Thread(target=_delayed_prewarm, daemon=True)
+                            t.start()
 
                     elif fd == sys.stdin.fileno():
                         try:
@@ -172,6 +212,7 @@ def run_expo():
         os.waitpid(pid, 0)
         return "exit"
 
+
 def main():
     attempt = 0
     while True:
@@ -181,7 +222,7 @@ def main():
             sys.stdout.flush()
         result = run_expo()
         if result == "ngrok_error":
-            time.sleep(30)
+            time.sleep(60)
             continue
         break
 

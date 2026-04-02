@@ -18,4 +18,15 @@ const existingList = Array.isArray(existingBlockList)
 
 config.resolver.blockList = [...existingList, localBlockPattern];
 
+// Limit worker processes to reduce peak memory during bundling
+config.maxWorkers = 1;
+
+// Reduce transformer memory footprint
+config.transformer = {
+  ...config.transformer,
+  minifierConfig: {
+    ...((config.transformer && config.transformer.minifierConfig) || {}),
+  },
+};
+
 module.exports = config;
