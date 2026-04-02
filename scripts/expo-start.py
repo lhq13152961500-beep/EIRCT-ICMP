@@ -6,7 +6,7 @@ import select
 import time
 import subprocess
 import threading
-import urllib.request
+
 
 def kill_port_8081():
     """Kill any process using port 8081 via /proc/net/tcp on Linux."""
@@ -55,36 +55,11 @@ def kill_port_8081():
         sys.stdout.write(f"[port 8081 cleanup skipped: {e}]\n")
 
 
-def prewarm_bundle():
-    """Hit Metro's bundle endpoint locally to pre-build the bundle cache."""
-    sys.stdout.write("[Pre-warming Metro bundle cache — this reduces OOM on first connect...]\n")
-    sys.stdout.flush()
-    bundle_url = (
-        "http://localhost:8081/node_modules/expo-router/entry.bundle"
-        "?platform=android&dev=true&minify=false&inlineSourceMap=false"
-    )
-    try:
-        req = urllib.request.Request(bundle_url, headers={"User-Agent": "prewarm"})
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            size = 0
-            while True:
-                chunk = resp.read(65536)
-                if not chunk:
-                    break
-                size += len(chunk)
-            sys.stdout.write(f"[Bundle pre-warm complete: {size // 1024}KB cached]\n")
-            sys.stdout.flush()
-    except Exception as e:
-        sys.stdout.write(f"[Bundle pre-warm error (non-fatal): {e}]\n")
-        sys.stdout.flush()
-
-
 def run_expo():
     kill_port_8081()
 
     env = os.environ.copy()
     env['NODE_OPTIONS'] = '--max-old-space-size=800'
-    # Disable inline source maps to reduce bundle memory footprint
     env['EXPO_NO_INLINE_SOURCEMAPS'] = '1'
     env['REACT_NATIVE_PACKAGER_HOSTNAME'] = 'localhost'
 
@@ -106,8 +81,6 @@ def run_expo():
         os.close(slave_fd)
         last_anon_answer = 0.0
         buffer = b''
-        tunnel_ready = False
-        prewarm_done = False
 
         while True:
             try:
@@ -128,7 +101,7 @@ def run_expo():
 
                         # Detect Ngrok tunnel error and signal retry
                         if 'CommandError' in buf_str and ('body' in buf_str or 'ngrok' in buf_str.lower() or 'Ngrok' in buf_str):
-                            sys.stdout.write('\n[Ngrok tunnel error detected — will retry in 5s]\n')
+                            sys.stdout.write('\n[Ngrok rate-limited — will wait before retry]\n')
                             sys.stdout.flush()
                             try:
                                 os.kill(pid, 9)
@@ -144,9 +117,9 @@ def run_expo():
                                 pass
                             return "ngrok_error"
 
-                        # Detect OOM kill
+                        # Detect OOM kill — Metro served the bundle and died; restart quietly
                         if buf_str.strip().endswith('Killed') or '\nKilled\n' in buf_str:
-                            sys.stdout.write('\n[Process OOM-killed — will retry in 5s]\n')
+                            sys.stdout.write('\n[Metro OOM after bundle served — restarting...]\n')
                             sys.stdout.flush()
                             try:
                                 os.kill(pid, 9)
@@ -160,7 +133,7 @@ def run_expo():
                                 os.close(master_fd)
                             except OSError:
                                 pass
-                            return "ngrok_error"
+                            return "oom"
 
                         # Auto-answer "Proceed anonymously" prompt
                         if ('Proceed anonymously' in buf_str or 'recommended to log in' in buf_str):
@@ -180,18 +153,6 @@ def run_expo():
                             buffer = b''
                             sys.stdout.write('\n[auto-selected: Yes, use next port]\n')
                             sys.stdout.flush()
-
-                        # Pre-warm bundle once tunnel is ready (with delay so Metro fully inits)
-                        if not tunnel_ready and 'Tunnel ready' in buf_str:
-                            tunnel_ready = True
-
-                        if tunnel_ready and not prewarm_done:
-                            prewarm_done = True
-                            def _delayed_prewarm():
-                                time.sleep(15)  # Let Metro fully initialize first
-                                prewarm_bundle()
-                            t = threading.Thread(target=_delayed_prewarm, daemon=True)
-                            t.start()
 
                     elif fd == sys.stdin.fileno():
                         try:
@@ -215,6 +176,7 @@ def run_expo():
 
 def main():
     attempt = 0
+    ngrok_fails = 0
     while True:
         attempt += 1
         if attempt > 1:
@@ -222,9 +184,22 @@ def main():
             sys.stdout.flush()
         result = run_expo()
         if result == "ngrok_error":
-            time.sleep(60)
+            ngrok_fails += 1
+            # Exponential back-off: 3min, 5min, 10min, 15min cap
+            wait = min(180 * (2 ** (ngrok_fails - 1)), 900)
+            sys.stdout.write(f'[Waiting {wait}s for Ngrok rate-limit to reset (fail #{ngrok_fails})...]\n')
+            sys.stdout.flush()
+            time.sleep(wait)
+            continue
+        if result == "oom":
+            # OOM = bundle was served; restart quickly so the tunnel stays warm
+            ngrok_fails = 0  # successful connection, reset fail count
+            sys.stdout.write('[Waiting 10s then restarting Metro...]\n')
+            sys.stdout.flush()
+            time.sleep(10)
             continue
         break
+
 
 if __name__ == '__main__':
     main()
