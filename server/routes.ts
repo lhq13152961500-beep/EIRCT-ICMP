@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { createHash } from "crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { storage, type InsertRecording } from "./storage";
 
@@ -259,7 +259,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const securityKey = process.env.AMAP_SECURITY_KEY || "";
     if (!key) return res.status(500).send("AMAP_API_KEY not configured");
     try {
-      const html = readFileSync(join(__dirname, "amap-locate.html"), "utf-8");
+      const candidates = [
+        join(process.cwd(), "server_dist", "amap-locate.html"),
+        join(process.cwd(), "server", "amap-locate.html"),
+      ];
+      const htmlPath = candidates.find(p => existsSync(p));
+      if (!htmlPath) return res.status(500).send("amap-locate.html not found");
+      const html = readFileSync(htmlPath, "utf-8");
       const page = html
         .replace(/__AMAP_KEY__/g, key)
         .replace(/__AMAP_SECURITY_KEY__/g, securityKey);

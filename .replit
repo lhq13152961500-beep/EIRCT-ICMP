@@ -12,10 +12,7 @@ run = ["npm", "run", "server:prod"]
 
 [[ports]]
 localPort = 5000
-
-[[ports]]
-localPort = 8081
-externalPort = 8081
+externalPort = 80
 
 [[ports]]
 localPort = 8082
@@ -66,13 +63,13 @@ name = "Start Backend"
 author = "agent"
 mode = "sequential"
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "npm run server:build && NODE_ENV=development NODE_OPTIONS='--max-old-space-size=256' node server_dist/index.js"
 waitForPort = 5000
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [[workflows.workflow]]
 name = "Start Frontend"

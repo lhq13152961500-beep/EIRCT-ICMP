@@ -544,14 +544,16 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 const hiddenStyles = StyleSheet.create({
   container: {
     position: "absolute",
-    top: -400,
+    top: 0,
     left: 0,
-    width: 300,
-    height: 300,
+    width: 1,
+    height: 1,
+    opacity: 0,
     overflow: "hidden",
+    zIndex: -9999,
   },
   webview: {
-    width: 300,
-    height: 300,
+    width: 1,
+    height: 1,
   },
 });

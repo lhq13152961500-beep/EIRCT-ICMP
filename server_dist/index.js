@@ -4,7 +4,7 @@ import express from "express";
 // server/routes.ts
 import { createServer } from "node:http";
 import { createHash } from "crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 // server/storage.ts
@@ -584,7 +584,13 @@ async function registerRoutes(app2) {
     const securityKey = process.env.AMAP_SECURITY_KEY || "";
     if (!key) return res.status(500).send("AMAP_API_KEY not configured");
     try {
-      const html = readFileSync(join(__dirname, "amap-locate.html"), "utf-8");
+      const candidates = [
+        join(process.cwd(), "server_dist", "amap-locate.html"),
+        join(process.cwd(), "server", "amap-locate.html")
+      ];
+      const htmlPath = candidates.find((p) => existsSync(p));
+      if (!htmlPath) return res.status(500).send("amap-locate.html not found");
+      const html = readFileSync(htmlPath, "utf-8");
       const page = html.replace(/__AMAP_KEY__/g, key).replace(/__AMAP_SECURITY_KEY__/g, securityKey);
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");

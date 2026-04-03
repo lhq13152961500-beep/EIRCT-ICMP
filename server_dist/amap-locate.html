@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>定位</title>
+<style>body{margin:0;background:#f5f5f5;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#666}#status{text-align:center;font-size:14px;padding:12px}</style>
+</head>
+<body>
+<div id="status">高德定位中...</div>
+<script>
+window._AMapSecurityConfig = { securityJsCode: '__AMAP_SECURITY_KEY__' };
+var AMAP_KEY = '__AMAP_KEY__';
+var lastSentTime = 0;
+var SEND_INTERVAL = 2000;
+var amapGeo = null;
+var sdkLoaded = false;
+var sdkLoadTimer = null;
+var gotFix = false;
+var browserWatchId = null;
+
+function setStatus(msg) {
+  var el = document.getElementById('status');
+  if (el) el.textContent = msg;
+}
+
+function sendToApp(data) {
+  try {
+    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      window.ReactNativeWebView.postMessage(JSON.stringify(data));
+    }
+  } catch(e) {}
+}
+
+function sendLocation(lat, lng, accuracy, address) {
+  var now = Date.now();
+  if (now - lastSentTime < SEND_INTERVAL) return;
+  lastSentTime = now;
+  gotFix = true;
+  sendToApp({ type: 'location', lat: lat, lng: lng, accuracy: accuracy || 50, address: address || '' });
+  setStatus((address || (lat.toFixed(5) + ',' + lng.toFixed(5))) + ' ±' + Math.round(accuracy || 50) + 'm');
+}
+
+function startBrowserGeoFallback() {
+  if (!navigator.geolocation) return;
+  sendToApp({ type: 'debug', message: 'Starting browser geolocation fallback' });
+  if (browserWatchId !== null) navigator.geolocation.clearWatch(browserWatchId);
+  browserWatchId = navigator.geolocation.watchPosition(
+    function(pos) {
+      sendToApp({ type: 'debug', message: 'Browser geo success: acc=' + Math.round(pos.coords.accuracy) + 'm' });
+      sendLocation(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+    },
+    function(err) {
+      sendToApp({ type: 'error', message: 'Browser geo error code=' + err.code + ': ' + err.message });
+    },
+    { enableHighAccuracy: true, timeout: 60000, maximumAge: 30000 }
+  );
+}
+
+function startAmapWatch() {
+  if (!amapGeo) return;
+  setInterval(function() {
+    if (!amapGeo) return;
+    amapGeo.getCurrentPosition(function(status, result) {
+      if (status === 'complete' && result.position) {
+        var lat = result.position.lat || (result.position.getLat && result.position.getLat());
+        var lng = result.position.lng || (result.position.getLng && result.position.getLng());
+        lastSentTime = 0;
+        sendLocation(lat, lng, result.accuracy || 50, '');
+      }
+    });
+  }, 15000);
+}
+
+function doLocate() {
+  sdkLoaded = true;
+  if (sdkLoadTimer) { clearTimeout(sdkLoadTimer); sdkLoadTimer = null; }
+
+  sendToApp({ type: 'debug', message: 'Amap SDK loaded: AMap=' + (!!window.AMap) + ' Geo=' + (!!(window.AMap && window.AMap.Geolocation)) });
+
+  if (!window.AMap || !window.AMap.Geolocation) {
+    sendToApp({ type: 'error', message: 'AMap or Geolocation plugin not loaded' });
+    startBrowserGeoFallback();
+    return;
+  }
+
+  setStatus('高德定位中...');
+  try {
+    amapGeo = new AMap.Geolocation({
+      enableHighAccuracy: true,
+      timeout: 15000,
+      showButton: false,
+      showMarker: false,
+      showCircle: false,
+      panToLocation: false,
+      zoomToAccuracy: false,
+      GeoLocationFirst: true,
+      useNative: true,
+      noIpLocate: 3,
+      extensions: 'base'
+    });
+
+    sendToApp({ type: 'debug', message: 'Calling getCurrentPosition (useNative=true, GeoLocationFirst=true)' });
+
+    amapGeo.getCurrentPosition(function(status, result) {
+      var msg = (result && result.message) ? result.message : status;
+      sendToApp({ type: 'debug', message: 'Amap callback: status=' + status + ' msg=' + msg });
+
+      if (status === 'complete' && result.position) {
+        var lat = result.position.lat || (result.position.getLat && result.position.getLat());
+        var lng = result.position.lng || (result.position.getLng && result.position.getLng());
+        var acc = result.accuracy || 50;
+        var addr = '';
+        if (result.formattedAddress) {
+          addr = result.formattedAddress;
+        } else if (result.addressComponent) {
+          var c = result.addressComponent;
+          addr = (c.township || '') + (c.street || '') + (c.streetNumber || '');
+          if (!addr) addr = (c.district || '') + (c.city || '');
+        }
+        lastSentTime = 0;
+        sendLocation(lat, lng, acc, addr);
+        startAmapWatch();
+      } else {
+        setStatus('高德失败: ' + msg);
+        sendToApp({ type: 'error', message: 'Amap failed: ' + msg });
+        startBrowserGeoFallback();
+      }
+    });
+  } catch(e) {
+    sendToApp({ type: 'error', message: 'Amap init exception: ' + String(e) });
+    startBrowserGeoFallback();
+  }
+}
+
+sdkLoadTimer = setTimeout(function() {
+  if (!sdkLoaded) {
+    sendToApp({ type: 'error', message: 'Amap SDK load timeout (12s)' });
+    startBrowserGeoFallback();
+  }
+}, 12000);
+
+sendToApp({ type: 'debug', message: 'Page init: bridge=' + (!!window.ReactNativeWebView) + ' geo=' + (!!navigator.geolocation) + ' key=' + (AMAP_KEY ? AMAP_KEY.substring(0,4)+'...' : 'EMPTY') + ' sec=' + ('__AMAP_SECURITY_KEY__' ? '__AMAP_SECURITY_KEY__'.substring(0,4)+'...' : 'EMPTY') });
+</script>
+<script src="https://webapi.amap.com/maps?v=2.0&key=__AMAP_KEY__&plugin=AMap.Geolocation" onload="doLocate()" onerror="sendToApp({type:'error',message:'Amap SDK script load failed'});startBrowserGeoFallback();"></script>
+</body>
+</html>
