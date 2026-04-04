@@ -31,7 +31,7 @@ const CORAL_ICON = "#E05A3A";
 const ORANGE_BG = "#FFE4CC";
 const ORANGE_ICON = "#E07830";
 
-const SCAN_DURATION = 30000;
+const SCAN_DURATION = 15000;
 const RADAR_R = 90;
 const ORBIT_R = RADAR_R + 72;
 const ICON_SIZE = 52;
@@ -48,11 +48,21 @@ type Device = {
   angleDeg: number;
 };
 
+const XIAOXI_PURPLE_BG = "#EDE7F6";
+const XIAOXI_PURPLE = "#7C4DFF";
+
 const DEVICE_POOL: Device[] = [
-  { id: "1", name: "乡村广播站·南村", type: "广播终端", location: "河马泉街道 南村路 12号", icon: "radio-outline", bg: GREEN_BG, color: PRIMARY, appearAt: 4000, angleDeg: 45 },
-  { id: "2", name: "民俗文化馆·展示屏", type: "展示终端", location: "水磨沟区 文化路 88号", icon: "tv-outline", bg: BLUE_BG, color: BLUE_ICON, appearAt: 10000, angleDeg: 150 },
-  { id: "3", name: "古镇入口·导览亭", type: "导览终端", location: "沙依巴克区 古镇入口", icon: "information-circle-outline", bg: ORANGE_BG, color: ORANGE_ICON, appearAt: 18000, angleDeg: 230 },
-  { id: "4", name: "非遗传承中心", type: "互动终端", location: "天山区 非遗街 3号", icon: "musical-notes-outline", bg: CORAL_BG, color: CORAL_ICON, appearAt: 25000, angleDeg: 320 },
+  {
+    id: "xiaoxi-1",
+    name: "「小乡」陪伴助手",
+    type: "智能音箱",
+    location: "当前区域",
+    icon: "musical-notes-outline",
+    bg: XIAOXI_PURPLE_BG,
+    color: XIAOXI_PURPLE,
+    appearAt: 6000,
+    angleDeg: 270,
+  },
 ];
 
 function toRad(deg: number) { return (deg * Math.PI) / 180; }
@@ -139,25 +149,43 @@ function DeviceNode({ device, connected, onPress }: DeviceNodeProps) {
   }, []);
 
   const { x, y } = devicePos(device.angleDeg);
+  const shortName = device.name.includes("」")
+    ? device.name.split("」")[0].replace("「", "") + ""
+    : device.name.split("·")[0];
+
   return (
     <Animated.View style={[styles.deviceNode, { transform: [{ translateX: x }, { translateY: y }, { scale: appear.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] }) }], opacity: appear }]}>
       <Pressable onPress={onPress} style={styles.deviceNodeInner}>
+        {/* Outer glow ring */}
+        <Animated.View style={[
+          styles.deviceGlow,
+          { borderColor: connected ? PRIMARY : device.color, transform: [{ scale: pulse }] },
+        ]} />
         <Animated.View style={[
           styles.deviceCircle,
-          { backgroundColor: connected ? PRIMARY : device.bg },
-          connected && { shadowColor: PRIMARY, shadowOpacity: 0.4, shadowRadius: 10, elevation: 8 },
+          { backgroundColor: connected ? PRIMARY : device.bg, width: 62, height: 62, borderRadius: 31 },
+          connected && { shadowColor: PRIMARY, shadowOpacity: 0.5, shadowRadius: 12, elevation: 10 },
           { transform: [{ scale: pulse }] },
         ]}>
-          <Ionicons name={device.icon} size={22} color={connected ? "#fff" : device.color} />
+          {/* Sound wave bars inside circle */}
+          {!connected && (
+            <View style={styles.speakerBars}>
+              {[10, 16, 22, 16, 10].map((h, i) => (
+                <View key={i} style={[styles.speakerBar, { height: h, backgroundColor: device.color }]} />
+              ))}
+            </View>
+          )}
+          {connected && <Ionicons name="musical-notes-outline" size={24} color="#fff" />}
           {connected && (
             <View style={styles.connectedBadge}>
               <Ionicons name="checkmark" size={9} color={PRIMARY} />
             </View>
           )}
         </Animated.View>
-        <Text style={[styles.deviceLabel, connected && { color: PRIMARY, fontWeight: "700" }]} numberOfLines={1}>
-          {device.name.split("·")[0]}
+        <Text style={[styles.deviceLabel, { color: connected ? PRIMARY : Colors.light.text, fontWeight: "700" }]} numberOfLines={1}>
+          {shortName}
         </Text>
+        <Text style={[styles.deviceSub]} numberOfLines={1}>{device.type}</Text>
       </Pressable>
     </Animated.View>
   );
@@ -256,7 +284,12 @@ export default function TerminalScreen() {
 
   const handleConfirm = () => {
     if (!confirmDevice) return;
-    connectDevice(confirmDevice.id);
+    connectDevice({
+      id: confirmDevice.id,
+      name: confirmDevice.name,
+      type: confirmDevice.type,
+      location: confirmDevice.location,
+    });
     setConfirmDevice(null);
   };
 
@@ -404,11 +437,20 @@ const styles = StyleSheet.create({
   centerCircle: { backgroundColor: "#fff", alignItems: "center", justifyContent: "center", shadowColor: PRIMARY, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 16, elevation: 8, overflow: "hidden" },
   sweepWrap: { position: "absolute", top: "50%", left: "50%", width: 2, marginLeft: -1, alignItems: "center" },
   sweepLine: { width: 2, backgroundColor: PRIMARY, opacity: 0.25, borderRadius: 1, position: "absolute", bottom: 0 },
-  deviceNode: { position: "absolute", alignItems: "center", justifyContent: "center", width: ICON_SIZE + 24, height: ICON_SIZE + 28, marginLeft: -(ICON_SIZE + 24) / 2, marginTop: -(ICON_SIZE + 28) / 2 },
+  deviceNode: { position: "absolute", alignItems: "center", justifyContent: "center", width: 100, height: 110, marginLeft: -50, marginTop: -55 },
   deviceNodeInner: { alignItems: "center", gap: 4 },
+  deviceGlow: {
+    position: "absolute",
+    width: 78, height: 78, borderRadius: 39,
+    borderWidth: 1.5, borderColor: XIAOXI_PURPLE,
+    opacity: 0.35,
+  },
   deviceCircle: { width: ICON_SIZE, height: ICON_SIZE, borderRadius: ICON_SIZE / 2, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 4 },
   connectedBadge: { position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: 8, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
-  deviceLabel: { fontSize: 10, fontWeight: "600", color: Colors.light.text, maxWidth: ICON_SIZE + 20, textAlign: "center" },
+  speakerBars: { flexDirection: "row", alignItems: "center", gap: 3 },
+  speakerBar: { width: 4, borderRadius: 2 },
+  deviceLabel: { fontSize: 11, fontWeight: "700", color: Colors.light.text, maxWidth: ICON_SIZE + 28, textAlign: "center", marginTop: 2 },
+  deviceSub: { fontSize: 9, color: Colors.light.textSecondary, textAlign: "center" },
   statusBlock: { alignItems: "center", gap: 6 },
   statusTitle: { fontSize: 15, fontWeight: "600", color: Colors.light.text, textAlign: "center" },
   statusSub: { fontSize: 12, color: Colors.light.textSecondary, textAlign: "center" },

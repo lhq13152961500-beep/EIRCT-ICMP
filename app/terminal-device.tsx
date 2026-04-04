@@ -58,8 +58,8 @@ export default function TerminalDeviceScreen() {
       >
         {/* Device info card */}
         <View style={styles.deviceCard}>
-          <View style={styles.deviceIconWrap}>
-            <Ionicons name="radio-outline" size={28} color={PRIMARY} />
+          <View style={[styles.deviceIconWrap, { backgroundColor: "#EDE7F6" }]}>
+            <Ionicons name="musical-notes-outline" size={28} color="#7C4DFF" />
           </View>
           <View style={styles.deviceInfo}>
             <View style={styles.onlineDot} />
