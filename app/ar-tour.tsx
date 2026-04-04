@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Path, Line as SvgLine, Circle } from "react-native-svg";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import Colors from "@/constants/colors";
@@ -240,32 +241,9 @@ export default function ArTourScreen() {
     setPhase("scanning");
   };
 
-  /* ── Capture → result ── */
-  const handleCapture = async () => {
-    if (capturing) return;
-    setCapturing(true);
-
-    // Shutter bounce
-    Animated.sequence([
-      Animated.timing(shutterScale, { toValue:0.75, duration:85, useNativeDriver:true }),
-      Animated.timing(shutterScale, { toValue:1,    duration:130, easing:Easing.out(Easing.back(3)), useNativeDriver:true }),
-    ]).start();
-
-    // Take photo
-    let uri: string | null = null;
-    try {
-      const photo = await cameraRef.current?.takePictureAsync({ quality:0.85, skipProcessing:true });
-      if (photo?.uri) uri = photo.uri;
-    } catch (_) {}
+  /* ── Shared: reset anim values + run result phase sequence ── */
+  const startResultTransition = (uri: string | null) => {
     setPhotoUri(uri);
-
-    // White flash
-    Animated.sequence([
-      Animated.timing(flashAnim, { toValue:1, duration:60,  useNativeDriver:true }),
-      Animated.timing(flashAnim, { toValue:0, duration:480, easing:Easing.out(Easing.quad), useNativeDriver:true }),
-    ]).start();
-
-    // Reset all result anim values BEFORE mounting result phase
     procOpacity.setValue(1);
     procProgress.setValue(0);
     photoOpacity.setValue(0);
@@ -276,29 +254,63 @@ export default function ArTourScreen() {
     d3ModeAlpha.setValue(0);
     setViewMode("ar");
 
-    // Switch to result phase after flash peak
     setTimeout(() => {
       setPhase("result");
       setCapturing(false);
-
-      // 1. Photo bg fades in immediately
       Animated.timing(photoOpacity, { toValue:1, duration:600, easing:Easing.out(Easing.quad), useNativeDriver:true }).start();
-
-      // 2. Processing progress bar fills
       Animated.timing(procProgress, { toValue:1, duration:1700, easing:Easing.inOut(Easing.quad), useNativeDriver:false }).start();
-
-      // 3. After 1.9s: cross-fade processing out / AR content in (BOTH already mounted)
       setTimeout(() => {
         Animated.parallel([
-          // Processing overlay fades out
-          Animated.timing(procOpacity,  { toValue:0, duration:550, easing:Easing.out(Easing.quad), useNativeDriver:true }),
-          // AR content fades in (staggered)
-          Animated.timing(headerAlpha,  { toValue:1, duration:400, delay:120, useNativeDriver:true }),
-          Animated.timing(arAlpha,      { toValue:1, duration:500, delay:200, useNativeDriver:true }),
-          Animated.spring(infoPanelY,   { toValue:0, friction:9,   tension:65, useNativeDriver:true }),
+          Animated.timing(procOpacity, { toValue:0, duration:550, easing:Easing.out(Easing.quad), useNativeDriver:true }),
+          Animated.timing(headerAlpha, { toValue:1, duration:400, delay:120, useNativeDriver:true }),
+          Animated.timing(arAlpha,     { toValue:1, duration:500, delay:200, useNativeDriver:true }),
+          Animated.spring(infoPanelY,  { toValue:0, friction:9, tension:65, useNativeDriver:true }),
         ]).start();
       }, 1900);
     }, 100);
+  };
+
+  /* ── Shutter capture ── */
+  const handleCapture = async () => {
+    if (capturing) return;
+    setCapturing(true);
+
+    Animated.sequence([
+      Animated.timing(shutterScale, { toValue:0.75, duration:85, useNativeDriver:true }),
+      Animated.timing(shutterScale, { toValue:1, duration:130, easing:Easing.out(Easing.back(3)), useNativeDriver:true }),
+    ]).start();
+
+    let uri: string | null = null;
+    try {
+      const photo = await cameraRef.current?.takePictureAsync({ quality:0.85, skipProcessing:true });
+      if (photo?.uri) uri = photo.uri;
+    } catch (_) {}
+
+    Animated.sequence([
+      Animated.timing(flashAnim, { toValue:1, duration:60, useNativeDriver:true }),
+      Animated.timing(flashAnim, { toValue:0, duration:480, easing:Easing.out(Easing.quad), useNativeDriver:true }),
+    ]).start();
+
+    startResultTransition(uri);
+  };
+
+  /* ── Gallery pick ── */
+  const handleGalleryPick = async () => {
+    if (capturing) return;
+    setCapturing(true);
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") { setCapturing(false); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: "images",
+        quality: 0.85,
+        allowsEditing: false,
+      });
+      if (result.canceled || !result.assets[0]) { setCapturing(false); return; }
+      startResultTransition(result.assets[0].uri);
+    } catch (_) {
+      setCapturing(false);
+    }
   };
 
   const scanLineY = scanLineAnim.interpolate({ inputRange:[0,1], outputRange:[0, SH * 0.5] });
@@ -384,14 +396,26 @@ export default function ArTourScreen() {
           </View>
         </View>
         <View style={[styles.shutterArea,{paddingBottom:insets.bottom+36}]}>
-          <Text style={styles.shutterHint}>点击按钮进行拍摄识别</Text>
-          <Animated.View style={{transform:[{scale:shutterScale}]}}>
-            <Pressable onPress={handleCapture} disabled={capturing} style={styles.shutterOuter}>
-              <LinearGradient colors={[PRIMARY,"#2D8A55"]} style={styles.shutterInner}>
-                <Ionicons name="camera" size={30} color="#fff"/>
-              </LinearGradient>
+          <Text style={styles.shutterHint}>拍摄或上传照片开启 AR 识别</Text>
+          <View style={styles.shutterRow}>
+            {/* Gallery button */}
+            <Pressable onPress={handleGalleryPick} disabled={capturing} style={styles.galleryBtn}>
+              <Ionicons name="images-outline" size={22} color="#fff"/>
+              <Text style={styles.galleryBtnText}>相册</Text>
             </Pressable>
-          </Animated.View>
+
+            {/* Shutter button (center, larger) */}
+            <Animated.View style={{transform:[{scale:shutterScale}]}}>
+              <Pressable onPress={handleCapture} disabled={capturing} style={styles.shutterOuter}>
+                <LinearGradient colors={[PRIMARY,"#2D8A55"]} style={styles.shutterInner}>
+                  <Ionicons name="camera" size={30} color="#fff"/>
+                </LinearGradient>
+              </Pressable>
+            </Animated.View>
+
+            {/* Spacer to keep shutter centered */}
+            <View style={styles.galleryBtn}/>
+          </View>
           <Text style={styles.shutterSub}>拍摄后自动进入 AR 模式</Text>
         </View>
         <Animated.View pointerEvents="none"
@@ -558,9 +582,12 @@ const styles = StyleSheet.create({
   viewfinderText:{ fontSize:12, color:"rgba(255,255,255,0.5)", position:"absolute", bottom:10 },
   shutterArea:{ alignItems:"center", gap:14, paddingTop:8 },
   shutterHint:{ fontSize:13, color:"rgba(255,255,255,0.7)", fontWeight:"600" },
+  shutterRow:{ flexDirection:"row", alignItems:"center", justifyContent:"center", gap:32 },
   shutterOuter:{ width:80,height:80,borderRadius:40,borderWidth:3,borderColor:"rgba(255,255,255,0.28)",overflow:"hidden",shadowColor:PRIMARY,shadowOffset:{width:0,height:4},shadowOpacity:0.55,shadowRadius:14,elevation:12 },
   shutterInner:{ flex:1, alignItems:"center", justifyContent:"center" },
   shutterSub:{ fontSize:11, color:"rgba(255,255,255,0.35)" },
+  galleryBtn:{ width:56,height:56,borderRadius:28,borderWidth:2,borderColor:"rgba(255,255,255,0.25)",backgroundColor:"rgba(255,255,255,0.1)",alignItems:"center",justifyContent:"center",gap:3 },
+  galleryBtnText:{ fontSize:10, color:"rgba(255,255,255,0.8)", fontWeight:"600" },
 
   /* Processing overlay */
   procOverlay:{ backgroundColor:"rgba(4,12,7,0.9)", alignItems:"center", justifyContent:"center", zIndex:40 },
