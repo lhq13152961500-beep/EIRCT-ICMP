@@ -11,6 +11,7 @@ import {
   ScrollView,
   Platform,
   Dimensions,
+  PanResponder,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -195,6 +196,37 @@ export default function ArTourScreen() {
   const scanLineAnim  = useRef(new Animated.Value(0)).current;
   const modelRotate   = useRef(new Animated.Value(0)).current;
 
+  // Info panel drag
+  const PANEL_COLLAPSED = 0;
+  const PANEL_EXPANDED  = -(SH * 0.44);
+  const panelDragAnim  = useRef(new Animated.Value(0)).current;
+  const panelOffsetRef = useRef(0);
+  const [liked, setLiked] = useState(false);
+
+  const panelPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 6,
+      onPanResponderGrant: () => {
+        panelDragAnim.stopAnimation(v => {
+          panelOffsetRef.current = v;
+          panelDragAnim.setValue(v);
+        });
+      },
+      onPanResponderMove: (_, gs) => {
+        const next = Math.max(PANEL_EXPANDED, Math.min(PANEL_COLLAPSED, panelOffsetRef.current + gs.dy));
+        panelDragAnim.setValue(next);
+      },
+      onPanResponderRelease: (_, gs) => {
+        const finalY = Math.max(PANEL_EXPANDED, Math.min(PANEL_COLLAPSED, panelOffsetRef.current + gs.dy));
+        const mid = (PANEL_COLLAPSED + PANEL_EXPANDED) / 2;
+        const target = finalY < mid ? PANEL_EXPANDED : PANEL_COLLAPSED;
+        panelOffsetRef.current = target;
+        Animated.spring(panelDragAnim, { toValue: target, friction: 8, tension: 70, useNativeDriver: true }).start();
+      },
+    })
+  ).current;
+
   /* Scan line loop (only runs when AR result is visible) */
   useEffect(() => {
     if (phase !== "result") return;
@@ -253,6 +285,9 @@ export default function ArTourScreen() {
     arModeAlpha.setValue(1);
     d3ModeAlpha.setValue(0);
     setViewMode("ar");
+    panelDragAnim.setValue(0);
+    panelOffsetRef.current = 0;
+    setLiked(false);
 
     setTimeout(() => {
       setPhase("result");
@@ -475,8 +510,10 @@ export default function ArTourScreen() {
         </View>
       </Animated.View>
 
-      {/* Info panel slide-up */}
-      <Animated.View style={[styles.infoPanel,{paddingBottom:insets.bottom+16,transform:[{translateY:infoPanelY}]}]}>
+      {/* Info panel slide-up + draggable */}
+      <Animated.View
+        {...panelPanResponder.panHandlers}
+        style={[styles.infoPanel,{paddingBottom:insets.bottom+16,transform:[{translateY:Animated.add(infoPanelY,panelDragAnim)}]}]}>
         <View style={styles.infoPanelHandle}/>
         <View style={styles.infoPanelRow}>
           <View style={styles.infoBadge}>
@@ -498,9 +535,11 @@ export default function ArTourScreen() {
             <Ionicons name="volume-high-outline" size={18} color={PRIMARY}/>
             <Text style={styles.infoActionText}>语音讲解</Text>
           </Pressable>
-          <Pressable style={styles.infoAction}>
-            <Ionicons name="map-outline" size={18} color={PRIMARY}/>
-            <Text style={styles.infoActionText}>导航前往</Text>
+          <Pressable style={styles.infoAction} onPress={()=>setLiked(v=>!v)}>
+            <Ionicons name={liked?"heart":"heart-outline"} size={18} color={liked?"#FF5A6E":PRIMARY}/>
+            <Text style={[styles.infoActionText,liked&&{color:"#FF5A6E"}]}>
+              {liked?"已点赞":"点赞"}
+            </Text>
           </Pressable>
           <Pressable style={styles.infoAction}>
             <Ionicons name="bookmark-outline" size={18} color={PRIMARY}/>
