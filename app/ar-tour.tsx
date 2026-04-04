@@ -197,7 +197,7 @@ export default function ArTourScreen() {
   const modelRotate   = useRef(new Animated.Value(0)).current;
 
   // Info panel expand (height-based, bottom anchored)
-  const EXPAND_HEIGHT = 102;         // title row + description text
+  const EXPAND_HEIGHT = 148;         // title row + description text
   const EXPAND_DRAG_PX = 60;         // px of drag to go 0→1
   const panelExpandAnim = useRef(new Animated.Value(0)).current;  // 0=collapsed 1=expanded
   const panelExpandRef  = useRef(0);
