@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import Colors from "@/constants/colors";
+import { disconnectDevice } from "@/lib/terminal-store";
 
 const PRIMARY = Colors.light.primary;
 const BG = "#F5EFE6";
@@ -35,6 +36,7 @@ export default function TerminalDeviceScreen() {
   const handleDisconnect = () => {
     setDisconnecting(true);
     setTimeout(() => {
+      disconnectDevice(id ?? "");
       router.back();
     }, 600);
   };
