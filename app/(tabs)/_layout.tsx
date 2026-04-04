@@ -50,7 +50,7 @@ function NativeTabLayout() {
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="guide">
         <Icon sf={{ default: "map", selected: "map.fill" }} />
-        <Label>游游指南</Label>
+        <Label>游逛指南</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="voice">
         <Icon sf={{ default: "mic", selected: "mic.fill" }} />

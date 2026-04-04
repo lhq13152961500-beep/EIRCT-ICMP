@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
 import Colors from "@/constants/colors";
 import { useLocation } from "@/contexts/LocationContext";
 
@@ -178,14 +179,17 @@ function FeatureCard({
   iconBg,
   title,
   subtitle,
+  onPress,
 }: {
   icon: React.ReactNode;
   iconBg: string;
   title: string;
   subtitle: string;
+  onPress?: () => void;
 }) {
   const handlePress = () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress?.();
   };
   return (
     <Pressable
@@ -277,6 +281,7 @@ export default function GuideScreen() {
               iconBg="#FDEAF3"
               title="AR实景畅游"
               subtitle="AR场景搭建 千年穿越"
+              onPress={() => router.push("/ar-tour")}
             />
           </View>
 
