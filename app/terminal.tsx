@@ -129,6 +129,55 @@ function FloatingDots() {
   );
 }
 
+/* ── Animated speaker bars ── */
+const BAR_HEIGHTS = [10, 18, 28, 22, 14, 22, 10];
+
+function SpeakerBarsIcon({ color }: { color: string }) {
+  const anims = useRef(BAR_HEIGHTS.map(() => new Animated.Value(1))).current;
+
+  useEffect(() => {
+    const loops = anims.map((anim, i) => {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(anim, {
+            toValue: 0.3 + Math.random() * 0.5,
+            duration: 300 + i * 80,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 300 + i * 80,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      loop.start();
+      return loop;
+    });
+    return () => loops.forEach((l) => l.stop());
+  }, []);
+
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 3, height: 32 }}>
+      {BAR_HEIGHTS.map((h, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            width: 4,
+            height: h,
+            borderRadius: 2,
+            backgroundColor: color,
+            opacity: i === 0 || i === 6 ? 0.55 : i === 1 || i === 5 ? 0.75 : 1,
+            transform: [{ scaleY: anims[i] }],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
 /* ── Device node around radar ── */
 type DeviceNodeProps = { device: Device; connected: boolean; onPress: () => void };
 
@@ -156,26 +205,21 @@ function DeviceNode({ device, connected, onPress }: DeviceNodeProps) {
   return (
     <Animated.View style={[styles.deviceNode, { transform: [{ translateX: x }, { translateY: y }, { scale: appear.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] }) }], opacity: appear }]}>
       <Pressable onPress={onPress} style={styles.deviceNodeInner}>
-        {/* Outer glow ring */}
+        {/* Soft halo behind circle */}
         <Animated.View style={[
-          styles.deviceGlow,
-          { borderColor: connected ? PRIMARY : device.color, transform: [{ scale: pulse }] },
+          styles.deviceHalo,
+          { backgroundColor: connected ? "rgba(61,170,110,0.18)" : "rgba(124,77,255,0.18)" },
+          { transform: [{ scale: pulse }] },
         ]} />
+        {/* Main icon circle */}
         <Animated.View style={[
           styles.deviceCircle,
-          { backgroundColor: connected ? PRIMARY : device.bg, width: 62, height: 62, borderRadius: 31 },
-          connected && { shadowColor: PRIMARY, shadowOpacity: 0.5, shadowRadius: 12, elevation: 10 },
+          { backgroundColor: connected ? PRIMARY : XIAOXI_PURPLE, width: 64, height: 64, borderRadius: 32 },
+          { shadowColor: connected ? PRIMARY : XIAOXI_PURPLE, shadowOpacity: 0.45, shadowRadius: 14, elevation: 10 },
           { transform: [{ scale: pulse }] },
         ]}>
-          {/* Sound wave bars inside circle */}
-          {!connected && (
-            <View style={styles.speakerBars}>
-              {[10, 16, 22, 16, 10].map((h, i) => (
-                <View key={i} style={[styles.speakerBar, { height: h, backgroundColor: device.color }]} />
-              ))}
-            </View>
-          )}
-          {connected && <Ionicons name="musical-notes-outline" size={24} color="#fff" />}
+          {!connected && <SpeakerBarsIcon color="rgba(255,255,255,0.92)" />}
+          {connected && <Ionicons name="musical-notes-outline" size={26} color="#fff" />}
           {connected && (
             <View style={styles.connectedBadge}>
               <Ionicons name="checkmark" size={9} color={PRIMARY} />
@@ -439,17 +483,13 @@ const styles = StyleSheet.create({
   sweepLine: { width: 2, backgroundColor: PRIMARY, opacity: 0.25, borderRadius: 1, position: "absolute", bottom: 0 },
   deviceNode: { position: "absolute", alignItems: "center", justifyContent: "center", width: 100, height: 110, marginLeft: -50, marginTop: -55 },
   deviceNodeInner: { alignItems: "center", gap: 4 },
-  deviceGlow: {
+  deviceHalo: {
     position: "absolute",
-    width: 78, height: 78, borderRadius: 39,
-    borderWidth: 1.5, borderColor: XIAOXI_PURPLE,
-    opacity: 0.35,
+    width: 88, height: 88, borderRadius: 44,
   },
-  deviceCircle: { width: ICON_SIZE, height: ICON_SIZE, borderRadius: ICON_SIZE / 2, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 4 },
+  deviceCircle: { alignItems: "center", justifyContent: "center", shadowOffset: { width: 0, height: 4 } },
   connectedBadge: { position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: 8, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
-  speakerBars: { flexDirection: "row", alignItems: "center", gap: 3 },
-  speakerBar: { width: 4, borderRadius: 2 },
-  deviceLabel: { fontSize: 11, fontWeight: "700", color: Colors.light.text, maxWidth: ICON_SIZE + 28, textAlign: "center", marginTop: 2 },
+  deviceLabel: { fontSize: 11, fontWeight: "700", color: Colors.light.text, maxWidth: 88, textAlign: "center", marginTop: 2 },
   deviceSub: { fontSize: 9, color: Colors.light.textSecondary, textAlign: "center" },
   statusBlock: { alignItems: "center", gap: 6 },
   statusTitle: { fontSize: 15, fontWeight: "600", color: Colors.light.text, textAlign: "center" },
