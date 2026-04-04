@@ -133,33 +133,6 @@ function LoadingDots() {
   );
 }
 
-/* ────────────────────────────────────────────
-   AR: floating marker
-   ──────────────────────────────────────────── */
-function ArMarker({ x, y, label, delay }: { x:number; y:number; label:string; delay:number }) {
-  const appear = useRef(new Animated.Value(0)).current;
-  const bob    = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.spring(appear, { toValue:1, friction:6, tension:80, useNativeDriver:true }),
-    ]).start();
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(bob, { toValue:-7, duration:1400, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
-      Animated.timing(bob, { toValue:0,  duration:1400, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
-    ]));
-    setTimeout(() => loop.start(), delay + 600);
-    return () => loop.stop();
-  }, []);
-  return (
-    <Animated.View style={[styles.arMarker, { left:x, top:y, opacity:appear, transform:[{ scale:appear },{ translateY:bob }] }]}>
-      <View style={styles.arMarkerDot}/>
-      <View style={styles.arMarkerLine}/>
-      <View style={styles.arMarkerLabel}><Text style={styles.arMarkerText}>{label}</Text></View>
-    </Animated.View>
-  );
-}
-
 /* ════════════════════════════════════════════
    Main screen
    ════════════════════════════════════════════ */
@@ -467,17 +440,6 @@ export default function ArTourScreen() {
       }
       <View style={[StyleSheet.absoluteFill,{backgroundColor:"rgba(0,0,0,0.28)"}]} pointerEvents="none"/>
 
-      {/* ── AR content layer (opacity starts 0) ── */}
-      {/* AR markers */}
-      <Animated.View pointerEvents="none"
-        style={[StyleSheet.absoluteFill,{opacity:arAlpha}]}>
-        <Animated.View style={{opacity:arModeAlpha,flex:1}}>
-          <ArMarker x={SW*0.10} y={SH*0.18} label="古建筑群 · 清代" delay={0}/>
-          <ArMarker x={SW*0.55} y={SH*0.26} label="非遗传承地"       delay={220}/>
-          <ArMarker x={SW*0.28} y={SH*0.43} label="距您 120m"        delay={440}/>
-        </Animated.View>
-      </Animated.View>
-
       {/* 3D model */}
       <Animated.View pointerEvents={viewMode==="3d"?"auto":"none"}
         style={[StyleSheet.absoluteFill,styles.model3dWrap,{opacity:d3ModeAlpha}]}>
@@ -655,12 +617,6 @@ const styles = StyleSheet.create({
   modeBtnActive:{ backgroundColor:PRIMARY },
   modeBtnText:{ fontSize:12, fontWeight:"700", color:"rgba(255,255,255,0.6)" },
   modeBtnTextActive:{ color:"#fff" },
-
-  arMarker:{ position:"absolute", alignItems:"flex-start", zIndex:10 },
-  arMarkerDot:{ width:10,height:10,borderRadius:5,backgroundColor:PRIMARY,borderWidth:2,borderColor:"#fff" },
-  arMarkerLine:{ width:1.5,height:30,backgroundColor:PRIMARY,marginLeft:4 },
-  arMarkerLabel:{ backgroundColor:"rgba(0,0,0,0.75)",borderRadius:8,paddingHorizontal:10,paddingVertical:5,borderLeftWidth:2,borderLeftColor:PRIMARY,marginTop:2 },
-  arMarkerText:{ fontSize:11, fontWeight:"600", color:"#fff" },
 
   model3dWrap:{ alignItems:"center", justifyContent:"center", gap:16 },
   model3dBox:{ width:200,height:180,borderRadius:20,overflow:"hidden",shadowColor:PRIMARY,shadowRadius:20,shadowOpacity:0.6,elevation:16 },
