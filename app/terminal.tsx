@@ -361,12 +361,12 @@ export default function TerminalScreen() {
           <View style={styles.idleWrap}>
             <View style={styles.idleIconRing}>
               <View style={styles.idleIconCircle}>
-                <Ionicons name="hardware-chip-outline" size={48} color={PRIMARY} />
+                <Ionicons name="sync-outline" size={52} color={PRIMARY} />
               </View>
             </View>
             <Text style={styles.idleTitle}>终端互联</Text>
             <Text style={styles.idleSub}>
-              搜索并关联附近的乡音终端设备，{"\n"}实时推送您的录音至本地展示屏与广播站
+              搜索并关联附近的乡音终端设备{"\n"}丰富您的每一场旅途体验，分享您的每一段心声
             </Text>
             <Pressable style={styles.startBtn} onPress={handleStartSearch}>
               <Ionicons name="search-outline" size={18} color="#fff" />
@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
   idleWrap: { alignItems: "center", gap: 20, paddingHorizontal: 32 },
   idleIconRing: {
     width: 160, height: 160, borderRadius: 80,
-    backgroundColor: BLUE_BG,
+    backgroundColor: GREEN_BG,
     alignItems: "center", justifyContent: "center",
   },
   idleIconCircle: {
