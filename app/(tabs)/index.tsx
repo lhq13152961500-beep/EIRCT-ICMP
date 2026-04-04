@@ -86,7 +86,7 @@ type MiniIconItem = {
 };
 
 const MINI_ICONS: MiniIconItem[] = [
-  { label: "AR实景畅游", icon: "navigate-circle-outline", bg: CORAL_BG, color: CORAL_ICON },
+  { label: "AR实景畅游", icon: "navigate-circle-outline", bg: CORAL_BG, color: CORAL_ICON, onPress: () => router.push("/ar-tour") },
   { label: "声音邮局",   icon: "mic-outline",             bg: GREEN_BG,  color: Colors.light.primary },
   { label: "乡思AI",     icon: "partly-sunny-outline",    bg: BLUE_BG,   color: BLUE_ICON },
   { label: "声音档案",   icon: "albums-outline",          bg: CORAL_BG,  color: CORAL_ICON },
