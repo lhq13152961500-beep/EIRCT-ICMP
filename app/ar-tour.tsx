@@ -411,10 +411,6 @@ export default function ArTourScreen() {
       <View style={[StyleSheet.absoluteFill,{backgroundColor:"rgba(0,0,0,0.28)"}]} pointerEvents="none"/>
 
       {/* ── AR content layer (opacity starts 0) ── */}
-      {/* Scan line */}
-      <Animated.View pointerEvents="none"
-        style={[styles.scanLine,{opacity:arModeAlpha,transform:[{translateY:scanLineY}]}]}/>
-
       {/* AR markers */}
       <Animated.View pointerEvents="none"
         style={[StyleSheet.absoluteFill,{opacity:arAlpha}]}>
@@ -444,7 +440,8 @@ export default function ArTourScreen() {
           <Pressable style={styles.backBtn} onPress={()=>router.back()}>
             <Ionicons name="chevron-back" size={22} color="#fff"/>
           </Pressable>
-          <Text style={styles.headerTitle}>AR 实景畅游</Text>
+          <Text style={styles.headerTitleLeft}>AR 实景畅游</Text>
+          <View style={{flex:1}}/>
           <View style={styles.modeToggle}>
             <Pressable style={[styles.modeBtn,viewMode==="ar"&&styles.modeBtnActive]} onPress={()=>switchViewMode("ar")}>
               <Text style={[styles.modeBtnText,viewMode==="ar"&&styles.modeBtnTextActive]}>AR</Text>
@@ -530,6 +527,7 @@ const styles = StyleSheet.create({
   header:{ flexDirection:"row", alignItems:"center", paddingHorizontal:14, paddingBottom:10, zIndex:20 },
   backBtn:{ width:36,height:36,borderRadius:18, backgroundColor:"rgba(255,255,255,0.18)", alignItems:"center",justifyContent:"center" },
   headerTitle:{ flex:1, textAlign:"center", fontSize:17, fontWeight:"700", color:"#fff" },
+  headerTitleLeft:{ fontSize:17, fontWeight:"700", color:"#fff", marginLeft:10 },
 
   /* Idle */
   idleCenter:{ flex:1, alignItems:"center", justifyContent:"center", gap:16 },
