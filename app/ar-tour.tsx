@@ -197,7 +197,7 @@ export default function ArTourScreen() {
   const modelRotate   = useRef(new Animated.Value(0)).current;
 
   // Info panel expand (height-based, bottom anchored)
-  const EXPAND_HEIGHT = 148;         // title row + description text
+  const EXPAND_HEIGHT = 72;          // description text only (~3 lines)
   const EXPAND_DRAG_PX = 60;         // px of drag to go 0→1
   const panelExpandAnim = useRef(new Animated.Value(0)).current;  // 0=collapsed 1=expanded
   const panelExpandRef  = useRef(0);
@@ -515,30 +515,30 @@ export default function ArTourScreen() {
         {...panelPanResponder.panHandlers}
         style={[styles.infoPanel,{paddingBottom:insets.bottom+16,transform:[{translateY:infoPanelY}]}]}>
 
-        {/* ── Expanding top: title + description (height 0→EXPAND_HEIGHT, fades in) ── */}
-        <Animated.View style={{
-          height: panelExpandAnim.interpolate({inputRange:[0,1],outputRange:[0,EXPAND_HEIGHT]}),
-          marginBottom: panelExpandAnim.interpolate({inputRange:[0,1],outputRange:[0,12]}),
-          overflow:"hidden",
-        }}>
-          <Animated.View style={{opacity:panelExpandAnim}}>
-            <View style={[styles.infoPanelRow,{marginBottom:8}]}>
-              <View style={styles.infoBadge}>
-                <Ionicons name="checkmark-circle" size={13} color={PRIMARY}/>
-                <Text style={styles.infoBadgeText}>已识别</Text>
-              </View>
-              <Text style={styles.infoPanelTitle}>古风建筑群 · 清代遗址</Text>
-            </View>
-            <Text style={styles.infoPanelDesc}>
-              该建筑始建于清代乾隆年间，保留了典型的徽派建筑风格，是当地重要的文化遗产保护单位。
-            </Text>
-          </Animated.View>
-        </Animated.View>
-
-        {/* ── Fixed bottom: handle + tags + actions ── */}
+        {/* ── Always visible: handle ── */}
         <View style={styles.infoPanelHandle}/>
 
-        {/* Always-visible: tags + actions */}
+        {/* ── Always visible: badge + title ── */}
+        <View style={styles.infoPanelRow}>
+          <View style={styles.infoBadge}>
+            <Ionicons name="checkmark-circle" size={13} color={PRIMARY}/>
+            <Text style={styles.infoBadgeText}>已识别</Text>
+          </View>
+          <Text style={styles.infoPanelTitle}>古风建筑群 · 清代遗址</Text>
+        </View>
+
+        {/* ── Expanding: description text (between title and tags) ── */}
+        <Animated.View style={{
+          height: panelExpandAnim.interpolate({inputRange:[0,1],outputRange:[0,EXPAND_HEIGHT]}),
+          marginTop: panelExpandAnim.interpolate({inputRange:[0,1],outputRange:[0,4]}),
+          overflow:"hidden",
+        }}>
+          <Animated.Text style={[styles.infoPanelDesc,{opacity:panelExpandAnim}]}>
+            该建筑始建于清代乾隆年间，保留了典型的徽派建筑风格，是当地重要的文化遗产保护单位。
+          </Animated.Text>
+        </Animated.View>
+
+        {/* ── Always visible: tags + actions ── */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.infoTagsScroll}>
           {["历史文化","清代建筑","徽派风格","文保单位","非遗体验"].map(tag=>(
             <View key={tag} style={styles.infoTag}><Text style={styles.infoTagText}>{tag}</Text></View>
