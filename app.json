@@ -18,7 +18,8 @@
       "bundleIdentifier": "com.v10.app",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "录制声音日记和语音留言需要使用麦克风",
-        "NSLocationWhenInUseUsageDescription": "关联地标和发布录音需要获取您的位置信息"
+        "NSLocationWhenInUseUsageDescription": "关联地标和发布录音需要获取您的位置信息",
+        "NSCameraUsageDescription": "AR实景畅游功能需要使用摄像头识别建筑物"
       }
     },
     "android": {
@@ -26,7 +27,8 @@
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#3DAA6F",
