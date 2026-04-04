@@ -59,7 +59,8 @@ function RootLayoutNav() {
       <Stack.Screen name="account-switch"   options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="account-security" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="map-guide" options={{ headerShown: false, animation: "slide_from_right" }} />
-      <Stack.Screen name="terminal"  options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="terminal"         options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="terminal-device" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="(tabs)"   options={{ headerShown: false }} />
     </Stack>
   );
