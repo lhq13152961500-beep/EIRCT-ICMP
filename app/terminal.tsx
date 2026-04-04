@@ -1,10 +1,13 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Pressable,
+  Modal,
+  Animated,
+  Easing,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,92 +23,195 @@ const CORAL_BG = "#FFE8E2";
 const CORAL_ICON = "#E05A3A";
 const ORANGE_BG = "#FFE4CC";
 const ORANGE_ICON = "#E07830";
+const PRIMARY = Colors.light.primary;
+
+const SCAN_DURATION = 30000;
 
 type TerminalDevice = {
   id: string;
   name: string;
   type: string;
   location: string;
-  status: "online" | "busy" | "offline";
-  distance: string;
   icon: keyof typeof Ionicons.glyphMap;
   bg: string;
   color: string;
+  appearAt: number;
 };
 
-const DEVICES: TerminalDevice[] = [
+const DEVICE_POOL: TerminalDevice[] = [
   {
     id: "1",
     name: "乡村广播站·南村",
     type: "广播终端",
     location: "河马泉街道 南村路 12号",
-    status: "online",
-    distance: "0.3 km",
     icon: "radio-outline",
     bg: GREEN_BG,
-    color: Colors.light.primary,
+    color: PRIMARY,
+    appearAt: 4000,
   },
   {
     id: "2",
     name: "民俗文化馆·展示屏",
     type: "展示终端",
     location: "水磨沟区 文化路 88号",
-    status: "online",
-    distance: "1.2 km",
     icon: "tv-outline",
     bg: BLUE_BG,
     color: BLUE_ICON,
+    appearAt: 10000,
   },
   {
     id: "3",
     name: "古镇入口·导览亭",
     type: "导览终端",
     location: "沙依巴克区 古镇入口",
-    status: "busy",
-    distance: "2.8 km",
     icon: "information-circle-outline",
     bg: ORANGE_BG,
     color: ORANGE_ICON,
+    appearAt: 18000,
   },
   {
     id: "4",
     name: "非遗传承中心",
     type: "互动终端",
     location: "天山区 非遗街 3号",
-    status: "online",
-    distance: "4.1 km",
     icon: "musical-notes-outline",
     bg: CORAL_BG,
     color: CORAL_ICON,
-  },
-  {
-    id: "5",
-    name: "乡音记录站·东区",
-    type: "录制终端",
-    location: "东山区 东大路 56号",
-    status: "offline",
-    distance: "6.5 km",
-    icon: "mic-outline",
-    bg: CORAL_BG,
-    color: CORAL_ICON,
+    appearAt: 25000,
   },
 ];
-
-const STATUS_MAP = {
-  online:  { label: "在线", color: "#3DAA6E", bg: "#E6F5ED" },
-  busy:    { label: "使用中", color: "#E07830", bg: "#FFF3E8" },
-  offline: { label: "离线", color: "#9E9E9E", bg: "#F0F0F0" },
-};
 
 export default function TerminalScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const [connected, setConnected] = useState<string | null>(null);
 
-  const handleConnect = (device: TerminalDevice) => {
-    if (device.status === "offline") return;
-    setConnected((prev) => (prev === device.id ? null : device.id));
+  const [phase, setPhase] = useState<"scanning" | "timeout" | "done">("scanning");
+  const [foundDevices, setFoundDevices] = useState<TerminalDevice[]>([]);
+  const [confirmDevice, setConfirmDevice] = useState<TerminalDevice | null>(null);
+  const [connectedId, setConnectedId] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+
+  const ring1 = useRef(new Animated.Value(0)).current;
+  const ring2 = useRef(new Animated.Value(0)).current;
+  const ring3 = useRef(new Animated.Value(0)).current;
+  const scanRotate = useRef(new Animated.Value(0)).current;
+
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startTimeRef = useRef<number>(0);
+
+  const clearAllTimers = () => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+    if (intervalRef.current) clearInterval(intervalRef.current);
   };
+
+  const startPulseAnimation = useCallback(() => {
+    const makePulse = (anim: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 2000,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(anim, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+    const rotAnim = Animated.loop(
+      Animated.timing(scanRotate, {
+        toValue: 1,
+        duration: 3000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    makePulse(ring1, 0).start();
+    makePulse(ring2, 600).start();
+    makePulse(ring3, 1200).start();
+    rotAnim.start();
+  }, [ring1, ring2, ring3, scanRotate]);
+
+  const startScan = useCallback(() => {
+    setPhase("scanning");
+    setFoundDevices([]);
+    setElapsed(0);
+    startTimeRef.current = Date.now();
+
+    startPulseAnimation();
+
+    intervalRef.current = setInterval(() => {
+      const e = Date.now() - startTimeRef.current;
+      setElapsed(e);
+      if (e >= SCAN_DURATION) {
+        clearInterval(intervalRef.current!);
+        setPhase((prev) => (prev === "scanning" ? "timeout" : prev));
+      }
+    }, 500);
+
+    DEVICE_POOL.forEach((device) => {
+      const t = setTimeout(() => {
+        setFoundDevices((prev) => {
+          if (prev.find((d) => d.id === device.id)) return prev;
+          return [...prev, device];
+        });
+        setPhase("done");
+      }, device.appearAt);
+      timersRef.current.push(t);
+    });
+  }, [startPulseAnimation]);
+
+  useEffect(() => {
+    startScan();
+    return () => {
+      clearAllTimers();
+      ring1.stopAnimation();
+      ring2.stopAnimation();
+      ring3.stopAnimation();
+      scanRotate.stopAnimation();
+    };
+  }, []);
+
+  const handleRefresh = () => {
+    clearAllTimers();
+    ring1.setValue(0);
+    ring2.setValue(0);
+    ring3.setValue(0);
+    scanRotate.setValue(0);
+    startScan();
+  };
+
+  const handleDevicePress = (device: TerminalDevice) => {
+    setConfirmDevice(device);
+  };
+
+  const handleConfirmConnect = () => {
+    if (!confirmDevice) return;
+    setConnectedId(confirmDevice.id);
+    setConfirmDevice(null);
+  };
+
+  const handleCancelConnect = () => {
+    setConfirmDevice(null);
+  };
+
+  const remaining = Math.max(0, Math.ceil((SCAN_DURATION - elapsed) / 1000));
+
+  const ringStyle = (anim: Animated.Value) => ({
+    opacity: anim.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 0.5, 0] }),
+    transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.4] }) }],
+  });
+
+  const rotateDeg = scanRotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
 
   return (
     <View style={[styles.root, { backgroundColor: BG }]}>
@@ -115,109 +221,134 @@ export default function TerminalScreen() {
           <Ionicons name="chevron-back" size={24} color={Colors.light.text} />
         </Pressable>
         <Text style={styles.headerTitle}>终端互联</Text>
-        <View style={styles.headerRight}>
-          <Ionicons name="wifi" size={20} color={Colors.light.primary} />
-        </View>
+        <View style={{ width: 36 }} />
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
       >
-        {/* Info card */}
-        <View style={styles.infoCard}>
-          <View style={styles.infoIconWrap}>
-            <Ionicons name="wifi-outline" size={28} color={BLUE_ICON} />
-          </View>
-          <View style={styles.infoText}>
-            <Text style={styles.infoTitle}>附近终端设备</Text>
-            <Text style={styles.infoSub}>连接周边乡音终端，实时推送您的录音至本地展示屏与广播站</Text>
-          </View>
-        </View>
-
-        {/* Stats row */}
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statNum}>
-              {DEVICES.filter((d) => d.status === "online").length}
-            </Text>
-            <Text style={styles.statLabel}>在线设备</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statNum}>
-              {DEVICES.filter((d) => d.status === "busy").length}
-            </Text>
-            <Text style={styles.statLabel}>使用中</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statNum}>{DEVICES.length}</Text>
-            <Text style={styles.statLabel}>附近总数</Text>
+        {/* Radar scanner */}
+        <View style={styles.radarWrap}>
+          <Animated.View style={[styles.ring, ringStyle(ring1), { borderColor: PRIMARY }]} />
+          <Animated.View style={[styles.ring, ringStyle(ring2), { borderColor: PRIMARY }]} />
+          <Animated.View style={[styles.ring, ringStyle(ring3), { borderColor: PRIMARY }]} />
+          <View style={styles.radarCircle}>
+            <Animated.View style={[styles.radarSweep, { transform: [{ rotate: rotateDeg }] }]}>
+              <View style={styles.sweepLine} />
+            </Animated.View>
+            <Ionicons name="wifi" size={34} color={PRIMARY} />
           </View>
         </View>
 
-        {/* Device list */}
-        <Text style={styles.sectionTitle}>附近终端列表</Text>
-        {DEVICES.map((device) => {
-          const status = STATUS_MAP[device.status];
-          const isConnected = connected === device.id;
-          const canConnect = device.status !== "offline";
-          return (
-            <View key={device.id} style={[styles.deviceCard, isConnected && styles.deviceCardActive]}>
-              <View style={[styles.deviceIcon, { backgroundColor: device.bg }]}>
-                <Ionicons name={device.icon} size={22} color={device.color} />
-              </View>
-              <View style={styles.deviceInfo}>
-                <View style={styles.deviceTopRow}>
-                  <Text style={styles.deviceName} numberOfLines={1}>{device.name}</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-                    <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
-                  </View>
-                </View>
-                <Text style={styles.deviceType}>{device.type}</Text>
-                <View style={styles.deviceMeta}>
-                  <Ionicons name="location-outline" size={11} color={Colors.light.textSecondary} />
-                  <Text style={styles.deviceLocation} numberOfLines={1}>{device.location}</Text>
-                  <Text style={styles.deviceDistance}>· {device.distance}</Text>
-                </View>
-              </View>
-              <Pressable
-                style={[
-                  styles.connectBtn,
-                  isConnected && styles.connectBtnActive,
-                  !canConnect && styles.connectBtnDisabled,
-                ]}
-                onPress={() => handleConnect(device)}
-                disabled={!canConnect}
-              >
-                <Text
-                  style={[
-                    styles.connectBtnText,
-                    isConnected && styles.connectBtnTextActive,
-                    !canConnect && styles.connectBtnTextDisabled,
-                  ]}
+        {/* Status text */}
+        <View style={styles.statusBlock}>
+          {phase === "scanning" && foundDevices.length === 0 && (
+            <>
+              <Text style={styles.statusTitle}>正在搜索附近终端…</Text>
+              <Text style={styles.statusSub}>剩余 {remaining} 秒</Text>
+            </>
+          )}
+          {phase === "done" && (
+            <>
+              <Text style={[styles.statusTitle, { color: "#3DAA6E" }]}>
+                已发现 {foundDevices.length} 个终端设备
+              </Text>
+              <Text style={styles.statusSub}>点击设备进行关联</Text>
+            </>
+          )}
+          {phase === "timeout" && foundDevices.length === 0 && (
+            <>
+              <Text style={[styles.statusTitle, { color: "#9E9E9E" }]}>未找到附近终端</Text>
+              <Text style={styles.statusSub}>请确认设备已开启，或刷新重试</Text>
+            </>
+          )}
+        </View>
+
+        {/* Timeout refresh button */}
+        {phase === "timeout" && foundDevices.length === 0 && (
+          <Pressable style={styles.refreshBtn} onPress={handleRefresh}>
+            <Ionicons name="refresh-outline" size={18} color="#fff" />
+            <Text style={styles.refreshBtnText}>刷新搜索</Text>
+          </Pressable>
+        )}
+
+        {/* Refresh during scan (after finding some) */}
+        {phase !== "timeout" && foundDevices.length > 0 && (
+          <Pressable style={styles.rescanBtn} onPress={handleRefresh}>
+            <Ionicons name="refresh-outline" size={15} color={PRIMARY} />
+            <Text style={styles.rescanBtnText}>重新搜索</Text>
+          </Pressable>
+        )}
+
+        {/* Found devices list */}
+        {foundDevices.length > 0 && (
+          <View style={styles.deviceList}>
+            {foundDevices.map((device) => {
+              const isConnected = connectedId === device.id;
+              return (
+                <Pressable
+                  key={device.id}
+                  style={[styles.deviceCard, isConnected && styles.deviceCardConnected]}
+                  onPress={() => !isConnected && handleDevicePress(device)}
                 >
-                  {isConnected ? "断开" : "连接"}
-                </Text>
-              </Pressable>
-            </View>
-          );
-        })}
-
-        {/* Connected hint */}
-        {connected && (
-          <View style={styles.connectedHint}>
-            <Ionicons name="checkmark-circle" size={16} color="#3DAA6E" />
-            <Text style={styles.connectedHintText}>
-              已连接至 {DEVICES.find((d) => d.id === connected)?.name}，录音将实时同步推送
-            </Text>
+                  <View style={[styles.deviceIcon, { backgroundColor: device.bg }]}>
+                    <Ionicons name={device.icon} size={22} color={device.color} />
+                  </View>
+                  <View style={styles.deviceInfo}>
+                    <Text style={styles.deviceName}>{device.name}</Text>
+                    <Text style={styles.deviceType}>{device.type}</Text>
+                    <View style={styles.deviceMeta}>
+                      <Ionicons name="location-outline" size={11} color={Colors.light.textSecondary} />
+                      <Text style={styles.deviceLocation}>{device.location}</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.statusDot, isConnected && styles.statusDotConnected]}>
+                    {isConnected
+                      ? <Ionicons name="checkmark" size={13} color="#fff" />
+                      : <Ionicons name="chevron-forward" size={14} color={Colors.light.textSecondary} />
+                    }
+                  </View>
+                </Pressable>
+              );
+            })}
           </View>
         )}
       </ScrollView>
+
+      {/* Confirm connection modal */}
+      <Modal
+        visible={!!confirmDevice}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCancelConnect}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={handleCancelConnect}>
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <View style={[styles.modalIconWrap, { backgroundColor: confirmDevice?.bg ?? BLUE_BG }]}>
+              <Ionicons name={confirmDevice?.icon ?? "wifi-outline"} size={30} color={confirmDevice?.color ?? BLUE_ICON} />
+            </View>
+            <Text style={styles.modalTitle}>关联设备</Text>
+            <Text style={styles.modalDeviceName}>{confirmDevice?.name}</Text>
+            <Text style={styles.modalSub}>
+              关联后，您的录音将实时同步推送至该终端进行展示与播放。是否确认关联？
+            </Text>
+            <View style={styles.modalBtns}>
+              <Pressable style={styles.modalCancelBtn} onPress={handleCancelConnect}>
+                <Text style={styles.modalCancelText}>取消</Text>
+              </Pressable>
+              <Pressable style={styles.modalConfirmBtn} onPress={handleConfirmConnect}>
+                <Text style={styles.modalConfirmText}>确认关联</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
+
+const RADAR_SIZE = 180;
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
@@ -227,7 +358,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingBottom: 12,
-    backgroundColor: "#F5EFE6",
   },
   backBtn: {
     width: 36, height: 36, borderRadius: 18,
@@ -243,49 +373,93 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.light.text,
   },
-  headerRight: {
-    width: 36, height: 36,
-    alignItems: "center", justifyContent: "center",
+
+  content: {
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 24,
+    gap: 20,
   },
 
-  content: { paddingHorizontal: 16, gap: 14, paddingTop: 4 },
+  /* Radar */
+  radarWrap: {
+    width: RADAR_SIZE * 2.4,
+    height: RADAR_SIZE * 2.4,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ring: {
+    position: "absolute",
+    width: RADAR_SIZE,
+    height: RADAR_SIZE,
+    borderRadius: RADAR_SIZE / 2,
+    borderWidth: 2,
+  },
+  radarCircle: {
+    width: RADAR_SIZE,
+    height: RADAR_SIZE,
+    borderRadius: RADAR_SIZE / 2,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: PRIMARY,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 8,
+    overflow: "hidden",
+  },
+  radarSweep: {
+    position: "absolute",
+    top: 0,
+    left: RADAR_SIZE / 2 - 1,
+    width: 2,
+    height: RADAR_SIZE / 2,
+    transformOrigin: "bottom center",
+  },
+  sweepLine: {
+    flex: 1,
+    backgroundColor: PRIMARY,
+    opacity: 0.35,
+    borderRadius: 1,
+  },
 
-  infoCard: {
-    backgroundColor: BLUE_BG,
-    borderRadius: 16,
-    padding: 16,
+  /* Status */
+  statusBlock: { alignItems: "center", gap: 6 },
+  statusTitle: { fontSize: 17, fontWeight: "700", color: Colors.light.text },
+  statusSub: { fontSize: 13, color: Colors.light.textSecondary },
+
+  /* Buttons */
+  refreshBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 8,
+    backgroundColor: PRIMARY,
+    borderRadius: 24,
+    paddingHorizontal: 28,
+    paddingVertical: 13,
+    shadowColor: PRIMARY,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  infoIconWrap: {
-    width: 52, height: 52, borderRadius: 26,
-    backgroundColor: "#fff",
-    alignItems: "center", justifyContent: "center",
-  },
-  infoText: { flex: 1, gap: 4 },
-  infoTitle: { fontSize: 15, fontWeight: "700", color: BLUE_ICON },
-  infoSub: { fontSize: 12, color: "#4A5570", lineHeight: 17 },
+  refreshBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 
-  statsRow: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
+  rescanBtn: {
     flexDirection: "row",
     alignItems: "center",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+    gap: 6,
+    borderWidth: 1.5,
+    borderColor: PRIMARY,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
   },
-  statBox: { flex: 1, alignItems: "center", gap: 4 },
-  statNum: { fontSize: 22, fontWeight: "700", color: Colors.light.text },
-  statLabel: { fontSize: 11, color: Colors.light.textSecondary },
-  statDivider: { width: 1, height: 32, backgroundColor: "#EBEBEB" },
+  rescanBtnText: { fontSize: 13, fontWeight: "600", color: PRIMARY },
 
-  sectionTitle: {
-    fontSize: 15, fontWeight: "700", color: Colors.light.text,
-    marginTop: 4,
-  },
-
+  /* Device list */
+  deviceList: { width: "100%", gap: 10 },
   deviceCard: {
     backgroundColor: "#fff",
     borderRadius: 16,
@@ -298,85 +472,84 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "transparent",
   },
-  deviceCardActive: {
-    borderColor: Colors.light.primary,
+  deviceCardConnected: {
+    borderColor: "#3DAA6E",
+    backgroundColor: "#F5FBF8",
   },
   deviceIcon: {
     width: 46, height: 46, borderRadius: 23,
     alignItems: "center", justifyContent: "center",
     flexShrink: 0,
   },
-  deviceInfo: { flex: 1, gap: 3, minWidth: 0 },
-  deviceTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  deviceName: {
-    flex: 1,
-    fontSize: 14, fontWeight: "600", color: Colors.light.text,
-  },
-  statusBadge: {
-    borderRadius: 8,
-    paddingHorizontal: 7, paddingVertical: 2,
-    flexShrink: 0,
-  },
-  statusText: { fontSize: 10, fontWeight: "600" },
+  deviceInfo: { flex: 1, gap: 2, minWidth: 0 },
+  deviceName: { fontSize: 14, fontWeight: "600", color: Colors.light.text },
   deviceType: { fontSize: 11, color: Colors.light.textSecondary },
-  deviceMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    marginTop: 1,
-  },
-  deviceLocation: {
-    fontSize: 10,
-    color: Colors.light.textSecondary,
-    flex: 1,
-  },
-  deviceDistance: {
-    fontSize: 10,
-    color: Colors.light.textSecondary,
-    flexShrink: 0,
-  },
-
-  connectBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: Colors.light.primary,
-    flexShrink: 0,
-  },
-  connectBtnActive: {
-    backgroundColor: "#fff",
-    borderWidth: 1.5,
-    borderColor: Colors.light.primary,
-  },
-  connectBtnDisabled: {
+  deviceMeta: { flexDirection: "row", alignItems: "center", gap: 2, marginTop: 1 },
+  deviceLocation: { fontSize: 10, color: Colors.light.textSecondary, flex: 1 },
+  statusDot: {
+    width: 28, height: 28, borderRadius: 14,
     backgroundColor: "#F0F0F0",
+    alignItems: "center", justifyContent: "center",
+    flexShrink: 0,
   },
-  connectBtnText: {
-    fontSize: 13, fontWeight: "600", color: "#fff",
-  },
-  connectBtnTextActive: {
-    color: Colors.light.primary,
-  },
-  connectBtnTextDisabled: {
-    color: "#BDBDBD",
-  },
+  statusDotConnected: { backgroundColor: "#3DAA6E" },
 
-  connectedHint: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#E6F5ED",
-    borderRadius: 12,
-    padding: 12,
-  },
-  connectedHintText: {
+  /* Confirm modal */
+  modalBackdrop: {
     flex: 1,
-    fontSize: 12,
-    color: "#2E7D52",
-    lineHeight: 17,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 28,
   },
+  modalSheet: {
+    width: "100%",
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 28,
+    alignItems: "center",
+    gap: 10,
+  },
+  modalIconWrap: {
+    width: 68, height: 68, borderRadius: 34,
+    alignItems: "center", justifyContent: "center",
+    marginBottom: 4,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "700", color: Colors.light.text },
+  modalDeviceName: { fontSize: 14, fontWeight: "600", color: PRIMARY },
+  modalSub: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    textAlign: "center",
+    lineHeight: 19,
+    marginTop: 2,
+  },
+  modalBtns: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 10,
+    width: "100%",
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: "#E0E0E0",
+    alignItems: "center",
+  },
+  modalCancelText: { fontSize: 15, fontWeight: "600", color: Colors.light.textSecondary },
+  modalConfirmBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: PRIMARY,
+    alignItems: "center",
+    shadowColor: PRIMARY,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  modalConfirmText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 });
