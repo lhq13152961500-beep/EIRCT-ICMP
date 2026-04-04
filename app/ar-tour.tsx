@@ -355,7 +355,7 @@ export default function ArTourScreen() {
           <Text style={styles.idleTitle}>AR 实景畅游</Text>
           <Text style={styles.idleSub}>{"将镜头对准周边建筑与景点\n即可触发沉浸式 AR 体验"}</Text>
           <View style={styles.idleTags}>
-            {["3D 建模识别","文化讲解","历史层叠","实时标注"].map(t=>(
+            {["3D 建模识别","文化讲解","历史层叠"].map(t=>(
               <View key={t} style={styles.idleTag}><Text style={styles.idleTagText}>{t}</Text></View>
             ))}
           </View>
