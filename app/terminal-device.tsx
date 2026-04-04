@@ -96,6 +96,8 @@ export default function TerminalDeviceScreen() {
     },
   ];
 
+  const activeBg = PRIMARY + "18";
+
   return (
     <View style={[styles.root, { backgroundColor: BG }]}>
       {/* Header */}
@@ -139,19 +141,19 @@ export default function TerminalDeviceScreen() {
               <View key={item.key}>
                 <View style={styles.settingRow}>
                   <View style={styles.settingLeft}>
-                    <View style={[styles.iconCircle, { backgroundColor: item.value ? PURPLE + "18" : "#F5F5F5" }]}>
-                      <Ionicons name={item.icon} size={17} color={item.value ? PURPLE : Colors.light.textSecondary} />
+                    <View style={[styles.iconCircle, { backgroundColor: item.value ? activeBg : "#F5F5F5" }]}>
+                      <Ionicons name={item.icon} size={17} color={item.value ? PRIMARY : Colors.light.textSecondary} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.settingLabel, item.value && { color: PURPLE }]}>{item.label}</Text>
+                      <Text style={[styles.settingLabel, item.value && { color: PRIMARY }]}>{item.label}</Text>
                       <Text style={styles.settingDesc}>{item.desc}</Text>
                     </View>
                   </View>
                   <Switch
                     value={item.value}
                     onValueChange={item.onToggle}
-                    trackColor={{ false: "#E0E0E0", true: PURPLE + "55" }}
-                    thumbColor={item.value ? PURPLE : "#fff"}
+                    trackColor={{ false: "#E0E0E0", true: PRIMARY + "66" }}
+                    thumbColor={item.value ? PRIMARY : "#fff"}
                   />
                 </View>
                 {i < featureItems.length - 1 && <View style={styles.divider} />}
@@ -166,20 +168,20 @@ export default function TerminalDeviceScreen() {
           <View style={styles.card}>
             <Pressable style={styles.modeRow} onPress={() => setMode("eco")}>
               <View style={styles.settingLeft}>
-                <View style={[styles.iconCircle, { backgroundColor: mode === "eco" ? "#E3F2FD" : "#F5F5F5" }]}>
+                <View style={[styles.iconCircle, { backgroundColor: mode === "eco" ? activeBg : "#F5F5F5" }]}>
                   <Ionicons
                     name="leaf-outline"
                     size={17}
-                    color={mode === "eco" ? "#1976D2" : Colors.light.textSecondary}
+                    color={mode === "eco" ? PRIMARY : Colors.light.textSecondary}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, mode === "eco" && { color: "#1976D2" }]}>省电模式</Text>
+                  <Text style={[styles.settingLabel, mode === "eco" && { color: PRIMARY }]}>省电模式</Text>
                   <Text style={styles.settingDesc}>降低功耗，延长待机时间</Text>
                 </View>
               </View>
-              <View style={[styles.radioOuter, mode === "eco" && { borderColor: "#1976D2" }]}>
-                {mode === "eco" && <View style={[styles.radioInner, { backgroundColor: "#1976D2" }]} />}
+              <View style={[styles.radioOuter, mode === "eco" && { borderColor: PRIMARY }]}>
+                {mode === "eco" && <View style={[styles.radioInner, { backgroundColor: PRIMARY }]} />}
               </View>
             </Pressable>
 
@@ -187,20 +189,20 @@ export default function TerminalDeviceScreen() {
 
             <Pressable style={styles.modeRow} onPress={() => setMode("performance")}>
               <View style={styles.settingLeft}>
-                <View style={[styles.iconCircle, { backgroundColor: mode === "performance" ? "#FFF3E0" : "#F5F5F5" }]}>
+                <View style={[styles.iconCircle, { backgroundColor: mode === "performance" ? activeBg : "#F5F5F5" }]}>
                   <Ionicons
                     name="flash-outline"
                     size={17}
-                    color={mode === "performance" ? "#F57C00" : Colors.light.textSecondary}
+                    color={mode === "performance" ? PRIMARY : Colors.light.textSecondary}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingLabel, mode === "performance" && { color: "#F57C00" }]}>高性能模式</Text>
+                  <Text style={[styles.settingLabel, mode === "performance" && { color: PRIMARY }]}>高性能模式</Text>
                   <Text style={styles.settingDesc}>全功能运行，响应更快速</Text>
                 </View>
               </View>
-              <View style={[styles.radioOuter, mode === "performance" && { borderColor: "#F57C00" }]}>
-                {mode === "performance" && <View style={[styles.radioInner, { backgroundColor: "#F57C00" }]} />}
+              <View style={[styles.radioOuter, mode === "performance" && { borderColor: PRIMARY }]}>
+                {mode === "performance" && <View style={[styles.radioInner, { backgroundColor: PRIMARY }]} />}
               </View>
             </Pressable>
           </View>
