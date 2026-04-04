@@ -75,7 +75,7 @@ const BANNERS: BannerItem[] = [
   },
 ];
 
-const MINI_ICONS: { label: string; icon: keyof typeof Ionicons.glyphMap; bg: string; color: string }[] = [
+const MINI_ICONS: { label: string; icon: keyof typeof Ionicons.glyphMap; bg: string; color: string; route?: string }[] = [
   { label: "AR实景畅游", icon: "navigate-circle-outline", bg: CORAL_BG, color: CORAL_ICON },
   { label: "声音邮局",   icon: "mic-outline",             bg: GREEN_BG,  color: Colors.light.primary },
   { label: "乡思AI",     icon: "partly-sunny-outline",    bg: BLUE_BG,   color: BLUE_ICON },
@@ -83,6 +83,7 @@ const MINI_ICONS: { label: string; icon: keyof typeof Ionicons.glyphMap; bg: str
   { label: "村民伴游",   icon: "people-outline",          bg: CORAL_BG,  color: CORAL_ICON },
   { label: "乡音趣采",   icon: "flower-outline",          bg: CORAL_BG,  color: CORAL_ICON },
   { label: "特产礼品",   icon: "gift-outline",            bg: ORANGE_BG, color: ORANGE_ICON },
+  { label: "终端互联",   icon: "wifi-outline",            bg: BLUE_BG,   color: BLUE_ICON, route: "/terminal" },
 ];
 
 export default function HomeScreen() {
@@ -259,7 +260,7 @@ export default function HomeScreen() {
         <View style={styles.gridWrap}>
           <View style={styles.gridRow}>
             {MINI_ICONS.slice(0, 4).map((item) => (
-              <Pressable key={item.label} style={styles.gridItem} onPress={haptic}>
+              <Pressable key={item.label} style={styles.gridItem} onPress={() => { haptic(); if (item.route) router.push(item.route as any); }}>
                 <View style={[styles.gridIconCircle, { backgroundColor: item.bg }]}>
                   <Ionicons name={item.icon} size={22} color={item.color} />
                 </View>
@@ -269,7 +270,7 @@ export default function HomeScreen() {
           </View>
           <View style={[styles.gridRow, styles.gridRowBottom]}>
             {MINI_ICONS.slice(4).map((item) => (
-              <Pressable key={item.label} style={styles.gridItem} onPress={haptic}>
+              <Pressable key={item.label} style={styles.gridItem} onPress={() => { haptic(); if (item.route) router.push(item.route as any); }}>
                 <View style={[styles.gridIconCircle, { backgroundColor: item.bg }]}>
                   <Ionicons name={item.icon} size={22} color={item.color} />
                 </View>
