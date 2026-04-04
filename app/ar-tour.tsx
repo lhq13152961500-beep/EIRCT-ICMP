@@ -413,8 +413,6 @@ export default function ArTourScreen() {
               </Pressable>
             </Animated.View>
 
-            {/* Spacer to keep shutter centered */}
-            <View style={styles.galleryBtn}/>
           </View>
           <Text style={styles.shutterSub}>拍摄后自动进入 AR 模式</Text>
         </View>
