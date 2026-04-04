@@ -565,58 +565,136 @@ export default function MapGuideScreen() {
       >
         <View style={styles.aiOverlay}>
           <View style={[styles.aiModal, { paddingBottom: bottomPad + 20 }]}>
+            {/* Header */}
             <LinearGradient colors={[Colors.light.primary, "#2D8A55"]} style={styles.aiModalHeader}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.aiModalTitle}>✨ AI 智能路线规划</Text>
-                <Text style={styles.aiModalSub}>描述你的偏好，AI 为你定制专属路线</Text>
+                <Text style={styles.aiModalSub}>步态感知 · 多维偏好 · 实时自适应优化</Text>
               </View>
               <Pressable onPress={() => { setAiModalVisible(false); setAiResponse(""); setAiQuery(""); }}>
                 <Ionicons name="close-circle" size={26} color="rgba(255,255,255,0.8)" />
               </Pressable>
             </LinearGradient>
 
-            <View style={styles.aiBody}>
-              <TextInput
-                style={styles.aiInput}
-                placeholder="例如：我喜欢建筑历史，时间大概2小时..."
-                placeholderTextColor={Colors.light.textSecondary}
-                value={aiQuery}
-                onChangeText={setAiQuery}
-                multiline
-                numberOfLines={3}
-              />
-              <Pressable
-                style={[styles.aiSubmit, (!aiQuery.trim() || aiLoading) && styles.aiSubmitDisabled]}
-                onPress={handleAiSubmit}
-              >
-                {aiLoading ? (
-                  <Text style={styles.aiSubmitText}>🤔 AI 思考中...</Text>
-                ) : (
-                  <>
-                    <Ionicons name="sparkles" size={16} color="#fff" />
-                    <Text style={styles.aiSubmitText}>生成专属路线</Text>
-                  </>
-                )}
-              </Pressable>
-
-              {aiResponse ? (
-                <View style={styles.aiResult}>
-                  <View style={styles.aiResultHeader}>
-                    <Text style={styles.aiResultTitle}>🗺️ 专属路线已生成</Text>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {/* ── Feature cards ── */}
+              <View style={styles.aiFeatures}>
+                {/* Card 1: Smart Path Planning */}
+                <View style={styles.aiFeatureCard}>
+                  <View style={styles.aiFeatureCardTop}>
+                    <View style={[styles.aiFeatureIconWrap, { backgroundColor: Colors.light.primary + "18" }]}>
+                      <Ionicons name="git-network-outline" size={18} color={Colors.light.primary} />
+                    </View>
+                    <Text style={styles.aiFeatureTitle}>多维路径智能规划</Text>
                   </View>
-                  <ScrollView style={{ maxHeight: 180 }}>
-                    <Text style={styles.aiResultText}>{aiResponse}</Text>
-                  </ScrollView>
-                  <Pressable
-                    style={styles.aiUseBtn}
-                    onPress={() => { haptic("medium"); setAiModalVisible(false); setAiResponse(""); setAiQuery(""); }}
-                  >
-                    <Ionicons name="checkmark-circle" size={18} color="#fff" />
-                    <Text style={styles.aiUseBtnText}>开始使用此路线</Text>
-                  </Pressable>
+                  <Text style={styles.aiFeatureDesc}>
+                    融合历史游览步伐速度、景点游览偏好与当日天气等多维信息，动态生成个性化游览路径
+                  </Text>
+                  <View style={styles.aiChips}>
+                    {[
+                      { label: "步伐速度", icon: "walk-outline" },
+                      { label: "景点偏好", icon: "heart-outline" },
+                      { label: "当日天气", icon: "partly-sunny-outline" },
+                    ].map((item) => (
+                      <View key={item.label} style={styles.aiChip}>
+                        <Ionicons name={item.icon as any} size={11} color={Colors.light.primary} />
+                        <Text style={styles.aiChipText}>{item.label}</Text>
+                      </View>
+                    ))}
+                  </View>
                 </View>
-              ) : null}
-            </View>
+
+                {/* Card 2: Gait-Adaptive */}
+                <View style={styles.aiFeatureCard}>
+                  <View style={styles.aiFeatureCardTop}>
+                    <View style={[styles.aiFeatureIconWrap, { backgroundColor: "#FFF3E0" }]}>
+                      <Ionicons name="body-outline" size={18} color="#F57C00" />
+                    </View>
+                    <Text style={styles.aiFeatureTitle}>步态感知自适应调整</Text>
+                  </View>
+                  <Text style={styles.aiFeatureDesc}>
+                    实时分析步长、步频、步速等参数，智能感知游览状态并动态优化路线
+                  </Text>
+                  <View style={styles.aiAdaptRows}>
+                    <View style={styles.aiAdaptRow}>
+                      <View style={[styles.aiAdaptTag, { backgroundColor: "#E8F5E9" }]}>
+                        <Text style={[styles.aiAdaptTagText, { color: "#388E3C" }]}>停留↑</Text>
+                      </View>
+                      <Ionicons name="arrow-forward" size={11} color={Colors.light.textSecondary} />
+                      <Text style={styles.aiAdaptText}>标记高兴趣偏好，优先推荐同类文化景点</Text>
+                    </View>
+                    <View style={styles.aiAdaptRow}>
+                      <View style={[styles.aiAdaptTag, { backgroundColor: "#FBE9E7" }]}>
+                        <Text style={[styles.aiAdaptTagText, { color: "#E64A19" }]}>步速↓</Text>
+                      </View>
+                      <Ionicons name="arrow-forward" size={11} color={Colors.light.textSecondary} />
+                      <Text style={styles.aiAdaptText}>自动缩减路径长度或插入休息节点</Text>
+                    </View>
+                  </View>
+                  <View style={styles.aiChips}>
+                    {[
+                      { label: "步长", icon: "resize-outline" },
+                      { label: "步频", icon: "pulse-outline" },
+                      { label: "步速", icon: "speedometer-outline" },
+                      { label: "停留时长", icon: "time-outline" },
+                    ].map((item) => (
+                      <View key={item.label} style={[styles.aiChip, { backgroundColor: "#FFF3E0" }]}>
+                        <Ionicons name={item.icon as any} size={11} color="#F57C00" />
+                        <Text style={[styles.aiChipText, { color: "#F57C00" }]}>{item.label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </View>
+
+              {/* ── Input ── */}
+              <View style={styles.aiBody}>
+                <View style={styles.aiInputLabel}>
+                  <Ionicons name="create-outline" size={14} color={Colors.light.textSecondary} />
+                  <Text style={styles.aiInputLabelText}>描述你的偏好，AI 为你定制专属路线</Text>
+                </View>
+                <TextInput
+                  style={styles.aiInput}
+                  placeholder="例如：我喜欢建筑历史，步行不超过2小时..."
+                  placeholderTextColor={Colors.light.textSecondary}
+                  value={aiQuery}
+                  onChangeText={setAiQuery}
+                  multiline
+                  numberOfLines={3}
+                />
+                <Pressable
+                  style={[styles.aiSubmit, (!aiQuery.trim() || aiLoading) && styles.aiSubmitDisabled]}
+                  onPress={handleAiSubmit}
+                >
+                  {aiLoading ? (
+                    <Text style={styles.aiSubmitText}>🤔 AI 思考中...</Text>
+                  ) : (
+                    <>
+                      <Ionicons name="sparkles" size={16} color="#fff" />
+                      <Text style={styles.aiSubmitText}>生成专属路线</Text>
+                    </>
+                  )}
+                </Pressable>
+
+                {aiResponse ? (
+                  <View style={styles.aiResult}>
+                    <View style={styles.aiResultHeader}>
+                      <Text style={styles.aiResultTitle}>🗺️ 专属路线已生成</Text>
+                    </View>
+                    <ScrollView style={{ maxHeight: 180 }} scrollEnabled>
+                      <Text style={styles.aiResultText}>{aiResponse}</Text>
+                    </ScrollView>
+                    <Pressable
+                      style={styles.aiUseBtn}
+                      onPress={() => { haptic("medium"); setAiModalVisible(false); setAiResponse(""); setAiQuery(""); }}
+                    >
+                      <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                      <Text style={styles.aiUseBtnText}>开始使用此路线</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -842,17 +920,49 @@ const styles = StyleSheet.create({
 
   // AI Modal
   aiOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  aiModal: { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: "hidden" },
+  aiModal: { backgroundColor: "#F7F8FA", borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: "hidden", maxHeight: "90%" },
   aiModalHeader: {
     flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between",
     padding: 22, paddingTop: 24,
   },
   aiModalTitle: { fontSize: 19, fontWeight: "800", color: "#fff" },
-  aiModalSub: { fontSize: 13, color: "rgba(255,255,255,0.75)", marginTop: 3 },
-  aiBody: { padding: 20, gap: 14 },
+  aiModalSub: { fontSize: 12, color: "rgba(255,255,255,0.78)", marginTop: 4 },
+
+  // Feature cards
+  aiFeatures: { paddingHorizontal: 14, paddingTop: 14, gap: 10 },
+  aiFeatureCard: {
+    backgroundColor: "#fff", borderRadius: 16, padding: 14,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05, shadowRadius: 6, elevation: 2, gap: 10,
+  },
+  aiFeatureCardTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  aiFeatureIconWrap: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: "center", justifyContent: "center",
+  },
+  aiFeatureTitle: { fontSize: 14, fontWeight: "700", color: Colors.light.text },
+  aiFeatureDesc: { fontSize: 12, color: Colors.light.textSecondary, lineHeight: 18 },
+  aiChips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  aiChip: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: Colors.light.primary + "15",
+    borderRadius: 20, paddingHorizontal: 9, paddingVertical: 4,
+  },
+  aiChipText: { fontSize: 11, fontWeight: "600", color: Colors.light.primary },
+  aiAdaptRows: { gap: 7 },
+  aiAdaptRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  aiAdaptTag: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  aiAdaptTagText: { fontSize: 11, fontWeight: "700" },
+  aiAdaptText: { fontSize: 12, color: Colors.light.textSecondary, flex: 1 },
+
+  // Input section
+  aiInputLabel: { flexDirection: "row", alignItems: "center", gap: 5 },
+  aiInputLabelText: { fontSize: 12, color: Colors.light.textSecondary },
+
+  aiBody: { padding: 14, gap: 12, backgroundColor: "#F7F8FA" },
   aiInput: {
-    backgroundColor: "#F8F8FA", borderRadius: 14, padding: 14,
-    fontSize: 14, color: Colors.light.text, minHeight: 88, textAlignVertical: "top",
+    backgroundColor: "#fff", borderRadius: 14, padding: 14,
+    fontSize: 14, color: Colors.light.text, minHeight: 80, textAlignVertical: "top",
     borderWidth: 1.5, borderColor: "#EAEAF0",
   },
   aiSubmit: {
