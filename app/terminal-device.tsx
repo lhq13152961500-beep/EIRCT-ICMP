@@ -16,6 +16,7 @@ import { disconnectDevice } from "@/lib/terminal-store";
 
 const PRIMARY = Colors.light.primary;
 const BG = "#F5EFE6";
+const PURPLE = "#7C4DFF";
 
 export default function TerminalDeviceScreen() {
   const insets = useSafeAreaInsets();
@@ -27,9 +28,13 @@ export default function TerminalDeviceScreen() {
     location: string;
   }>();
 
-  const [autoSync, setAutoSync] = useState(true);
-  const [liveStream, setLiveStream] = useState(false);
-  const [notifications, setNotifications] = useState(true);
+  const [aiDialog, setAiDialog] = useState(true);
+  const [routePlanning, setRoutePlanning] = useState(true);
+  const [lbsGuide, setLbsGuide] = useState(false);
+  const [mobileSync, setMobileSync] = useState(true);
+  const [speakerOnly, setSpeakerOnly] = useState(false);
+
+  const [mode, setMode] = useState<"eco" | "performance">("eco");
   const [quality, setQuality] = useState<"standard" | "high">("standard");
   const [disconnecting, setDisconnecting] = useState(false);
 
@@ -40,6 +45,56 @@ export default function TerminalDeviceScreen() {
       router.back();
     }, 600);
   };
+
+  const featureItems: {
+    key: string;
+    label: string;
+    desc: string;
+    icon: React.ComponentProps<typeof Ionicons>["name"];
+    value: boolean;
+    onToggle: (v: boolean) => void;
+  }[] = [
+    {
+      key: "ai",
+      label: "AI 对话问答",
+      desc: "通过语音与小乡进行智能对话",
+      icon: "chatbubble-ellipses-outline",
+      value: aiDialog,
+      onToggle: setAiDialog,
+    },
+    {
+      key: "route",
+      label: "路线自适应规划",
+      desc: "根据当前位置动态推荐游览路线",
+      icon: "map-outline",
+      value: routePlanning,
+      onToggle: setRoutePlanning,
+    },
+    {
+      key: "lbs",
+      label: "LBS 讲解功能",
+      desc: "靠近景点自动触发语音讲解",
+      icon: "location-outline",
+      value: lbsGuide,
+      onToggle: setLbsGuide,
+    },
+    {
+      key: "mobile",
+      label: "移动端协同",
+      desc: "与手机应用实时同步内容与操作",
+      icon: "phone-portrait-outline",
+      value: mobileSync,
+      onToggle: setMobileSync,
+    },
+    {
+      key: "speaker",
+      label: "仅扬声器模式",
+      desc: "关闭 AI 功能，仅用作音频播放",
+      icon: "volume-high-outline",
+      value: speakerOnly,
+      onToggle: setSpeakerOnly,
+    },
+  ];
 
   return (
     <View style={[styles.root, { backgroundColor: BG }]}>
@@ -59,7 +114,7 @@ export default function TerminalDeviceScreen() {
         {/* Device info card */}
         <View style={styles.deviceCard}>
           <View style={[styles.deviceIconWrap, { backgroundColor: "#EDE7F6" }]}>
-            <Ionicons name="musical-notes-outline" size={28} color="#7C4DFF" />
+            <Ionicons name="musical-notes-outline" size={28} color={PURPLE} />
           </View>
           <View style={styles.deviceInfo}>
             <View style={styles.onlineDot} />
@@ -76,72 +131,86 @@ export default function TerminalDeviceScreen() {
           </View>
         </View>
 
-        {/* Settings section */}
+        {/* ── 功能选项 ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>同步设置</Text>
+          <Text style={styles.sectionTitle}>功能选项</Text>
           <View style={styles.card}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingLeft}>
-                <Ionicons name="sync-outline" size={18} color={PRIMARY} style={styles.settingIcon} />
-                <View>
-                  <Text style={styles.settingLabel}>自动同步录音</Text>
-                  <Text style={styles.settingDesc}>录音完成后自动推送至终端</Text>
+            {featureItems.map((item, i) => (
+              <View key={item.key}>
+                <View style={styles.settingRow}>
+                  <View style={styles.settingLeft}>
+                    <View style={[styles.iconCircle, { backgroundColor: item.value ? PURPLE + "18" : "#F5F5F5" }]}>
+                      <Ionicons name={item.icon} size={17} color={item.value ? PURPLE : Colors.light.textSecondary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.settingLabel, item.value && { color: PURPLE }]}>{item.label}</Text>
+                      <Text style={styles.settingDesc}>{item.desc}</Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={item.value}
+                    onValueChange={item.onToggle}
+                    trackColor={{ false: "#E0E0E0", true: PURPLE + "55" }}
+                    thumbColor={item.value ? PURPLE : "#fff"}
+                  />
                 </View>
+                {i < featureItems.length - 1 && <View style={styles.divider} />}
               </View>
-              <Switch
-                value={autoSync}
-                onValueChange={setAutoSync}
-                trackColor={{ false: "#E0E0E0", true: PRIMARY + "66" }}
-                thumbColor={autoSync ? PRIMARY : "#fff"}
-              />
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingLeft}>
-                <Ionicons name="pulse-outline" size={18} color={PRIMARY} style={styles.settingIcon} />
-                <View>
-                  <Text style={styles.settingLabel}>实时播放</Text>
-                  <Text style={styles.settingDesc}>录音时同步在终端播放</Text>
-                </View>
-              </View>
-              <Switch
-                value={liveStream}
-                onValueChange={setLiveStream}
-                trackColor={{ false: "#E0E0E0", true: PRIMARY + "66" }}
-                thumbColor={liveStream ? PRIMARY : "#fff"}
-              />
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingLeft}>
-                <Ionicons name="notifications-outline" size={18} color={PRIMARY} style={styles.settingIcon} />
-                <View>
-                  <Text style={styles.settingLabel}>终端通知</Text>
-                  <Text style={styles.settingDesc}>接收该终端的状态通知</Text>
-                </View>
-              </View>
-              <Switch
-                value={notifications}
-                onValueChange={setNotifications}
-                trackColor={{ false: "#E0E0E0", true: PRIMARY + "66" }}
-                thumbColor={notifications ? PRIMARY : "#fff"}
-              />
-            </View>
+            ))}
           </View>
         </View>
 
-        {/* Audio quality */}
+        {/* ── 模式选择 ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>模式选择</Text>
+          <View style={styles.card}>
+            <Pressable style={styles.modeRow} onPress={() => setMode("eco")}>
+              <View style={styles.settingLeft}>
+                <View style={[styles.iconCircle, { backgroundColor: mode === "eco" ? "#E3F2FD" : "#F5F5F5" }]}>
+                  <Ionicons
+                    name="leaf-outline"
+                    size={17}
+                    color={mode === "eco" ? "#1976D2" : Colors.light.textSecondary}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.settingLabel, mode === "eco" && { color: "#1976D2" }]}>省电模式</Text>
+                  <Text style={styles.settingDesc}>降低功耗，延长待机时间</Text>
+                </View>
+              </View>
+              <View style={[styles.radioOuter, mode === "eco" && { borderColor: "#1976D2" }]}>
+                {mode === "eco" && <View style={[styles.radioInner, { backgroundColor: "#1976D2" }]} />}
+              </View>
+            </Pressable>
+
+            <View style={styles.divider} />
+
+            <Pressable style={styles.modeRow} onPress={() => setMode("performance")}>
+              <View style={styles.settingLeft}>
+                <View style={[styles.iconCircle, { backgroundColor: mode === "performance" ? "#FFF3E0" : "#F5F5F5" }]}>
+                  <Ionicons
+                    name="flash-outline"
+                    size={17}
+                    color={mode === "performance" ? "#F57C00" : Colors.light.textSecondary}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.settingLabel, mode === "performance" && { color: "#F57C00" }]}>高性能模式</Text>
+                  <Text style={styles.settingDesc}>全功能运行，响应更快速</Text>
+                </View>
+              </View>
+              <View style={[styles.radioOuter, mode === "performance" && { borderColor: "#F57C00" }]}>
+                {mode === "performance" && <View style={[styles.radioInner, { backgroundColor: "#F57C00" }]} />}
+              </View>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* ── 音质设置 ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>音质设置</Text>
           <View style={styles.card}>
-            <Pressable
-              style={styles.qualityRow}
-              onPress={() => setQuality("standard")}
-            >
+            <Pressable style={styles.qualityRow} onPress={() => setQuality("standard")}>
               <View style={styles.settingLeft}>
                 <Ionicons name="musical-note-outline" size={18} color={PRIMARY} style={styles.settingIcon} />
                 <View>
@@ -154,10 +223,7 @@ export default function TerminalDeviceScreen() {
               )}
             </Pressable>
             <View style={styles.divider} />
-            <Pressable
-              style={styles.qualityRow}
-              onPress={() => setQuality("high")}
-            >
+            <Pressable style={styles.qualityRow} onPress={() => setQuality("high")}>
               <View style={styles.settingLeft}>
                 <Ionicons name="musical-notes-outline" size={18} color={PRIMARY} style={styles.settingIcon} />
                 <View>
@@ -172,7 +238,7 @@ export default function TerminalDeviceScreen() {
           </View>
         </View>
 
-        {/* Device info section */}
+        {/* ── 设备信息 ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>设备信息</Text>
           <View style={styles.card}>
@@ -193,7 +259,7 @@ export default function TerminalDeviceScreen() {
           </View>
         </View>
 
-        {/* Disconnect */}
+        {/* ── 解除关联 ── */}
         <Pressable
           style={[styles.disconnectBtn, disconnecting && { opacity: 0.6 }]}
           onPress={handleDisconnect}
@@ -239,7 +305,6 @@ const styles = StyleSheet.create({
   },
   deviceIconWrap: {
     width: 54, height: 54, borderRadius: 27,
-    backgroundColor: "#DDE8FF",
     alignItems: "center", justifyContent: "center",
     flexShrink: 0,
   },
@@ -272,7 +337,12 @@ const styles = StyleSheet.create({
   settingRow: {
     flexDirection: "row", alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16, paddingVertical: 14,
+    paddingHorizontal: 14, paddingVertical: 13,
+  },
+  modeRow: {
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14, paddingVertical: 13,
   },
   qualityRow: {
     flexDirection: "row", alignItems: "center",
@@ -281,9 +351,22 @@ const styles = StyleSheet.create({
   },
   settingLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
   settingIcon: { width: 22, alignItems: "center" },
+  iconCircle: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: "center", justifyContent: "center",
+    flexShrink: 0,
+  },
   settingLabel: { fontSize: 14, fontWeight: "600", color: Colors.light.text },
   settingDesc: { fontSize: 11, color: Colors.light.textSecondary, marginTop: 1 },
-  divider: { height: 1, backgroundColor: "#F2F2F2", marginHorizontal: 16 },
+  divider: { height: 1, backgroundColor: "#F2F2F2", marginHorizontal: 14 },
+
+  radioOuter: {
+    width: 20, height: 20, borderRadius: 10,
+    borderWidth: 2, borderColor: "#BDBDBD",
+    alignItems: "center", justifyContent: "center",
+    flexShrink: 0,
+  },
+  radioInner: { width: 10, height: 10, borderRadius: 5 },
 
   infoRow: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
