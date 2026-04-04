@@ -7,31 +7,70 @@ import {
   Pressable,
   Animated,
   Easing,
-  Image,
   ScrollView,
   Platform,
   Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import Svg, { Path, Line as SvgLine } from "react-native-svg";
 import { router } from "expo-router";
-import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import Colors from "@/constants/colors";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 const PRIMARY = Colors.light.primary;
 
-type Phase = "idle" | "scanning" | "ar" | "model3d";
+type Phase = "idle" | "scanning" | "ar";
 
-/* ── Floating ring decoration ── */
+/* ── Hexagonal AR icon (SVG) ── */
+function ArHexIcon({ size = 64, color = PRIMARY }: { size?: number; color?: string }) {
+  const r = 36;
+  const ri = 16;
+  const cx = 50, cy = 50;
+  const arrowLen = 10;
+
+  const verts = Array.from({ length: 6 }, (_, i) => {
+    const a = (i * 60 - 90) * (Math.PI / 180);
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  });
+  const innerPts = Array.from({ length: 6 }, (_, i) => {
+    const a = (i * 60 - 90) * (Math.PI / 180);
+    return `${i === 0 ? "M" : "L"} ${(cx + ri * Math.cos(a)).toFixed(1)} ${(cy + ri * Math.sin(a)).toFixed(1)}`;
+  }).join(" ") + " Z";
+  const norm = (dx: number, dy: number) => {
+    const d = Math.sqrt(dx * dx + dy * dy);
+    return { dx: dx / d, dy: dy / d };
+  };
+  return (
+    <Svg width={size} height={size} viewBox="0 0 100 100">
+      {verts.map((v, i) => {
+        const prev = verts[(i + 5) % 6];
+        const next = verts[(i + 1) % 6];
+        const dp = norm(prev.x - v.x, prev.y - v.y);
+        const dn = norm(next.x - v.x, next.y - v.y);
+        return (
+          <React.Fragment key={i}>
+            <SvgLine x1={v.x} y1={v.y} x2={v.x + arrowLen * dp.dx} y2={v.y + arrowLen * dp.dy}
+              stroke={color} strokeWidth="3.8" strokeLinecap="round" />
+            <SvgLine x1={v.x} y1={v.y} x2={v.x + arrowLen * dn.dx} y2={v.y + arrowLen * dn.dy}
+              stroke={color} strokeWidth="3.8" strokeLinecap="round" />
+          </React.Fragment>
+        );
+      })}
+      <Path d={innerPts} fill="none" stroke={color} strokeWidth="3" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/* ── Pulse ring ── */
 function PulseRing({ delay, size }: { delay: number; size: number }) {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.delay(delay),
-        Animated.timing(anim, { toValue: 1, duration: 2200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 1, duration: 2400, easing: Easing.out(Easing.quad), useNativeDriver: true }),
         Animated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: true }),
       ])
     );
@@ -43,13 +82,13 @@ function PulseRing({ delay, size }: { delay: number; size: number }) {
       position: "absolute",
       width: size, height: size, borderRadius: size / 2,
       borderWidth: 1.5, borderColor: PRIMARY,
-      opacity: anim.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 0.6, 0] }),
-      transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1.5] }) }],
+      opacity: anim.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 0.55, 0] }),
+      transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.65, 1.5] }) }],
     }} />
   );
 }
 
-/* ── Floating AR marker dot ── */
+/* ── AR floating marker ── */
 function ArMarker({ x, y, label, delay }: { x: number; y: number; label: string; delay: number }) {
   const appear = useRef(new Animated.Value(0)).current;
   const bob = useRef(new Animated.Value(0)).current;
@@ -60,15 +99,19 @@ function ArMarker({ x, y, label, delay }: { x: number; y: number; label: string;
     ]).start();
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(bob, { toValue: -6, duration: 1200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(bob, { toValue: 0, duration: 1200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(bob, { toValue: -6, duration: 1300, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(bob, { toValue: 0, duration: 1300, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       ])
     );
-    setTimeout(() => loop.start(), delay);
+    setTimeout(() => loop.start(), delay + 400);
     return () => loop.stop();
   }, []);
   return (
-    <Animated.View style={[styles.arMarker, { left: x, top: y, opacity: appear, transform: [{ scale: appear }, { translateY: bob }] }]}>
+    <Animated.View style={[styles.arMarker, {
+      left: x, top: y,
+      opacity: appear,
+      transform: [{ scale: appear }, { translateY: bob }],
+    }]}>
       <View style={styles.arMarkerDot} />
       <View style={styles.arMarkerLine} />
       <View style={styles.arMarkerLabel}>
@@ -83,27 +126,24 @@ export default function ArTourScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const [phase, setPhase] = useState<Phase>("idle");
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"ar" | "3d">("ar");
-  const [scanProgress, setScanProgress] = useState(0);
 
-  const btnScale = useRef(new Animated.Value(1)).current;
-  const btnY = useRef(new Animated.Value(0)).current;
-  const scanAnim = useRef(new Animated.Value(0)).current;
-  const scanProgress3d = useRef(new Animated.Value(0)).current;
+  const flashAnim = useRef(new Animated.Value(0)).current;
+  const shutterScale = useRef(new Animated.Value(1)).current;
+  const scanLine = useRef(new Animated.Value(0)).current;
   const modelRotate = useRef(new Animated.Value(0)).current;
 
-  /* ── Scan line animation ── */
+  /* Scan line loop (AR result) */
   useEffect(() => {
-    if (phase !== "ar" && phase !== "model3d") return;
+    if (phase !== "ar") return;
     const loop = Animated.loop(
-      Animated.timing(scanAnim, { toValue: 1, duration: 2400, easing: Easing.linear, useNativeDriver: true })
+      Animated.timing(scanLine, { toValue: 1, duration: 2600, easing: Easing.linear, useNativeDriver: true })
     );
     loop.start();
     return () => loop.stop();
   }, [phase]);
 
-  /* ── 3D model rotation ── */
+  /* 3D rotation */
   useEffect(() => {
     if (viewMode !== "3d") return;
     const loop = Animated.loop(
@@ -113,66 +153,40 @@ export default function ArTourScreen() {
     return () => loop.stop();
   }, [viewMode]);
 
-  const handleStart = async () => {
-    /* Button shrink + move animation */
-    Animated.parallel([
-      Animated.spring(btnScale, { toValue: 0.82, useNativeDriver: true, friction: 6 }),
+  /* Open camera (scanning phase) */
+  const handleStart = () => setPhase("scanning");
+
+  /* Shutter tap → flash → AR result */
+  const handleCapture = () => {
+    /* Shutter press animation */
+    Animated.sequence([
+      Animated.timing(shutterScale, { toValue: 0.8, duration: 80, useNativeDriver: true }),
+      Animated.timing(shutterScale, { toValue: 1, duration: 120, useNativeDriver: true }),
     ]).start();
 
-    setPhase("scanning");
-
-    /* Progress simulation */
-    let p = 0;
-    const iv = setInterval(() => {
-      p += 4;
-      setScanProgress(Math.min(p, 100));
-      if (p >= 100) clearInterval(iv);
-    }, 40);
-
-    /* Launch camera */
-    try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== "granted") {
-        setTimeout(() => {
-          setPhase("ar");
-          setScanProgress(100);
-        }, 2000);
-        return;
-      }
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: "images",
-        quality: 0.85,
-        allowsEditing: false,
-      });
-      if (!result.canceled && result.assets[0]) {
-        setPhotoUri(result.assets[0].uri);
-      }
-    } catch (_) {}
-    setTimeout(() => {
-      setPhase("ar");
-      setScanProgress(100);
-    }, 800);
+    /* White flash */
+    Animated.sequence([
+      Animated.timing(flashAnim, { toValue: 1, duration: 60, useNativeDriver: true }),
+      Animated.timing(flashAnim, { toValue: 0, duration: 400, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+    ]).start(() => setPhase("ar"));
   };
 
-  const scanY = scanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, SH * 0.55] });
+  const scanLineY = scanLine.interpolate({ inputRange: [0, 1], outputRange: [0, SH * 0.52] });
   const rotateDeg = modelRotate.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
 
-  /* ════════════════ IDLE ════════════════ */
+  /* ════ IDLE ════ */
   if (phase === "idle") {
     return (
       <View style={styles.root}>
-        <LinearGradient colors={["#0A1628", "#0D2B1A", "#0A1628"]} style={StyleSheet.absoluteFill} />
-
-        {/* Starfield dots */}
-        {Array.from({ length: 30 }).map((_, i) => (
+        <LinearGradient colors={["#071018", "#0B2215", "#071018"]} style={StyleSheet.absoluteFill} />
+        {Array.from({ length: 28 }).map((_, i) => (
           <View key={i} style={[styles.star, {
-            left: (i * 137.5) % SW, top: (i * 97.3) % (SH * 0.75),
+            left: (i * 137.5) % SW, top: (i * 89.3) % (SH * 0.78),
             width: i % 3 === 0 ? 2 : 1.5, height: i % 3 === 0 ? 2 : 1.5,
-            opacity: 0.3 + (i % 5) * 0.1,
+            opacity: 0.25 + (i % 5) * 0.08,
           }]} />
         ))}
 
-        {/* Header */}
         <View style={[styles.header, { paddingTop: topPad + 8 }]}>
           <Pressable style={styles.backBtn} onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={22} color="#fff" />
@@ -181,17 +195,15 @@ export default function ArTourScreen() {
           <View style={{ width: 36 }} />
         </View>
 
-        {/* Center content */}
         <View style={styles.idleCenter}>
-          {/* Pulse rings */}
-          <PulseRing size={260} delay={0} />
-          <PulseRing size={200} delay={600} />
-          <PulseRing size={140} delay={1200} />
+          <PulseRing size={270} delay={0} />
+          <PulseRing size={200} delay={700} />
+          <PulseRing size={134} delay={1400} />
 
-          {/* Center icon circle */}
+          {/* Icon circle */}
           <View style={styles.idleCircle}>
             <LinearGradient colors={[PRIMARY + "CC", "#1A6A3A"]} style={styles.idleCircleInner}>
-              <Ionicons name="camera-outline" size={44} color="#fff" />
+              <ArHexIcon size={64} color="#fff" />
             </LinearGradient>
           </View>
 
@@ -200,7 +212,6 @@ export default function ArTourScreen() {
             {"将镜头对准周边建筑与景点\n即可触发沉浸式 AR 体验"}
           </Text>
 
-          {/* Feature tags */}
           <View style={styles.idleTags}>
             {["3D 建模识别", "文化讲解", "历史层叠", "实时标注"].map((t) => (
               <View key={t} style={styles.idleTag}>
@@ -210,80 +221,102 @@ export default function ArTourScreen() {
           </View>
         </View>
 
-        {/* CTA Button */}
         <View style={[styles.idleBottom, { paddingBottom: insets.bottom + 40 }]}>
-          <Pressable style={styles.startBtn} onPress={handleStart} android_ripple={{ color: PRIMARY + "44" }}>
+          <Pressable style={styles.startBtn} onPress={handleStart}>
             <LinearGradient colors={[PRIMARY, "#2D8A55"]} style={styles.startBtnGrad}>
               <Ionicons name="scan-outline" size={22} color="#fff" />
               <Text style={styles.startBtnText}>点击开启 AR 之旅</Text>
               <Ionicons name="arrow-forward" size={18} color="rgba(255,255,255,0.7)" />
             </LinearGradient>
           </Pressable>
-          <Text style={styles.idleHint}>首次使用需授权相机权限</Text>
+          <Text style={styles.idleHint}>点击按钮，将镜头对准建筑物</Text>
         </View>
       </View>
     );
   }
 
-  /* ════════════════ SCANNING ════════════════ */
+  /* ════ SCANNING (in-app camera viewfinder) ════ */
   if (phase === "scanning") {
     return (
       <View style={styles.root}>
-        <LinearGradient colors={["#050D10", "#071A12"]} style={StyleSheet.absoluteFill} />
+        {/* Camera viewfinder background */}
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: "#050A06" }]} />
+
+        {/* Simulated camera noise texture dots */}
+        {Array.from({ length: 16 }).map((_, i) => (
+          <View key={i} style={[styles.noiseDot, {
+            left: (i * 193) % SW, top: (i * 107) % SH,
+            opacity: 0.04,
+          }]} />
+        ))}
+
+        {/* Green tint overlay (AR mode feel) */}
+        <LinearGradient
+          colors={["rgba(0,80,30,0.12)", "transparent", "rgba(0,60,20,0.1)"]}
+          style={StyleSheet.absoluteFill}
+        />
+
         <View style={[styles.header, { paddingTop: topPad + 8 }]}>
-          <Pressable style={styles.backBtn} onPress={() => { setPhase("idle"); setScanProgress(0); }}>
+          <Pressable style={styles.backBtn} onPress={() => setPhase("idle")}>
             <Ionicons name="chevron-back" size={22} color="#fff" />
           </Pressable>
-          <Text style={styles.headerTitle}>初始化 AR 引擎</Text>
+          <Text style={styles.headerTitle}>AR 扫描中</Text>
           <View style={{ width: 36 }} />
         </View>
-        <View style={styles.scanCenter}>
-          <View style={styles.scanCorners}>
-            {["tl", "tr", "bl", "br"].map((pos) => (
-              <View key={pos} style={[styles.corner,
-                pos.includes("t") ? { top: 0 } : { bottom: 0 },
-                pos.includes("l") ? { left: 0 } : { right: 0 },
-                pos.includes("b") ? { borderTopWidth: 0, borderRightWidth: pos === "bl" ? 0 : undefined, borderLeftWidth: pos === "br" ? 0 : undefined } : { borderBottomWidth: 0, borderRightWidth: pos === "tl" ? 0 : undefined, borderLeftWidth: pos === "tr" ? 0 : undefined },
-              ]} />
-            ))}
-            <Text style={styles.scanText}>正在识别建筑结构...</Text>
+
+        {/* Viewfinder frame */}
+        <View style={styles.viewfinderWrap}>
+          <View style={styles.viewfinder}>
+            {/* 4 corner brackets */}
+            <View style={[styles.corner, styles.cornerTL]} />
+            <View style={[styles.corner, styles.cornerTR]} />
+            <View style={[styles.corner, styles.cornerBL]} />
+            <View style={[styles.corner, styles.cornerBR]} />
+
+            {/* Center crosshair */}
+            <View style={styles.crosshairH} />
+            <View style={styles.crosshairV} />
+
+            {/* Scan line inside viewfinder */}
+            <Animated.View style={[styles.scanLineInner, {
+              transform: [{ translateY: scanLine.interpolate({ inputRange: [0, 1], outputRange: [-110, 110] }) }],
+            }]} />
+
+            <Text style={styles.viewfinderText}>对准建筑物</Text>
           </View>
-          <View style={styles.scanProgressWrap}>
-            <View style={[styles.scanProgressBar, { width: `${scanProgress}%` as any }]} />
-          </View>
-          <Text style={styles.scanPct}>{scanProgress}%</Text>
-          <Text style={styles.scanHint}>请保持相机稳定，对准建筑物</Text>
         </View>
 
-        {/* Bottom shutter */}
-        <View style={[styles.shutterWrap, { paddingBottom: insets.bottom + 32 }]}>
-          <Animated.View style={[styles.shutterBtn, { transform: [{ scale: btnScale }] }]}>
-            <LinearGradient colors={[PRIMARY, "#2D8A55"]} style={styles.shutterGrad}>
-              <Ionicons name="camera" size={32} color="#fff" />
-            </LinearGradient>
+        {/* Bottom shutter controls */}
+        <View style={[styles.shutterArea, { paddingBottom: insets.bottom + 36 }]}>
+          <Text style={styles.shutterHint}>点击按钮进行拍摄识别</Text>
+          <Animated.View style={{ transform: [{ scale: shutterScale }] }}>
+            <Pressable onPress={handleCapture} style={styles.shutterOuter}>
+              <LinearGradient colors={[PRIMARY, "#2D8A55"]} style={styles.shutterInner}>
+                <Ionicons name="camera" size={30} color="#fff" />
+              </LinearGradient>
+            </Pressable>
           </Animated.View>
-          <Text style={styles.shutterHint}>AR 摄像头已激活</Text>
+          <Text style={styles.shutterSub}>拍摄后自动进入 AR 模式</Text>
         </View>
+
+        {/* Flash overlay */}
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { backgroundColor: "#fff", opacity: flashAnim }]}
+        />
       </View>
     );
   }
 
-  /* ════════════════ AR RESULT ════════════════ */
+  /* ════ AR RESULT ════ */
   return (
     <View style={styles.root}>
-      {/* Background: photo or dark */}
-      {photoUri ? (
-        <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-      ) : (
-        <LinearGradient colors={["#0D2010", "#0A1628", "#071A0F"]} style={StyleSheet.absoluteFill} />
-      )}
-
-      {/* Dark overlay */}
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.38)" }]} />
+      <LinearGradient colors={["#071820", "#0B1F10", "#071820"]} style={StyleSheet.absoluteFill} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.25)" }]} />
 
       {/* Scan line */}
       {viewMode === "ar" && (
-        <Animated.View style={[styles.scanLine, { transform: [{ translateY: scanY }] }]} />
+        <Animated.View style={[styles.scanLine, { transform: [{ translateY: scanLineY }] }]} />
       )}
 
       {/* Header */}
@@ -292,18 +325,11 @@ export default function ArTourScreen() {
           <Ionicons name="chevron-back" size={22} color="#fff" />
         </Pressable>
         <Text style={styles.headerTitle}>AR 实景畅游</Text>
-        {/* Mode toggle */}
         <View style={styles.modeToggle}>
-          <Pressable
-            style={[styles.modeBtn, viewMode === "ar" && styles.modeBtnActive]}
-            onPress={() => setViewMode("ar")}
-          >
+          <Pressable style={[styles.modeBtn, viewMode === "ar" && styles.modeBtnActive]} onPress={() => setViewMode("ar")}>
             <Text style={[styles.modeBtnText, viewMode === "ar" && styles.modeBtnTextActive]}>AR</Text>
           </Pressable>
-          <Pressable
-            style={[styles.modeBtn, viewMode === "3d" && styles.modeBtnActive]}
-            onPress={() => setViewMode("3d")}
-          >
+          <Pressable style={[styles.modeBtn, viewMode === "3d" && styles.modeBtnActive]} onPress={() => setViewMode("3d")}>
             <Text style={[styles.modeBtnText, viewMode === "3d" && styles.modeBtnTextActive]}>3D</Text>
           </Pressable>
         </View>
@@ -312,18 +338,18 @@ export default function ArTourScreen() {
       {/* AR markers */}
       {viewMode === "ar" && (
         <>
-          <ArMarker x={SW * 0.12} y={SH * 0.18} label="古建筑群 · 清代" delay={400} />
-          <ArMarker x={SW * 0.58} y={SH * 0.24} label="非遗传承地" delay={900} />
-          <ArMarker x={SW * 0.3} y={SH * 0.42} label="距您 120m" delay={1400} />
+          <ArMarker x={SW * 0.1} y={SH * 0.18} label="古建筑群 · 清代" delay={300} />
+          <ArMarker x={SW * 0.55} y={SH * 0.26} label="非遗传承地" delay={800} />
+          <ArMarker x={SW * 0.28} y={SH * 0.44} label="距您 120m" delay={1300} />
         </>
       )}
 
-      {/* 3D Model view */}
+      {/* 3D model */}
       {viewMode === "3d" && (
         <View style={styles.model3dWrap}>
           <Animated.View style={[styles.model3dBox, { transform: [{ rotateY: rotateDeg }] }]}>
             <LinearGradient colors={[PRIMARY + "99", "#2D8A5599"]} style={styles.model3dFace}>
-              <Ionicons name="business-outline" size={36} color="#fff" />
+              <ArHexIcon size={52} color="#fff" />
               <Text style={styles.model3dLabel}>3D 建筑模型</Text>
               <Text style={styles.model3dSub}>古风建筑群 · 清代</Text>
             </LinearGradient>
@@ -352,8 +378,6 @@ export default function ArTourScreen() {
             </View>
           ))}
         </ScrollView>
-
-        {/* Actions */}
         <View style={styles.infoActions}>
           <Pressable style={styles.infoAction}>
             <Ionicons name="volume-high-outline" size={18} color={PRIMARY} />
@@ -367,7 +391,7 @@ export default function ArTourScreen() {
             <Ionicons name="bookmark-outline" size={18} color={PRIMARY} />
             <Text style={styles.infoActionText}>收藏</Text>
           </Pressable>
-          <Pressable style={styles.infoAction} onPress={handleStart}>
+          <Pressable style={styles.infoAction} onPress={() => setPhase("scanning")}>
             <Ionicons name="camera-outline" size={18} color={PRIMARY} />
             <Text style={styles.infoActionText}>重新扫描</Text>
           </Pressable>
@@ -380,11 +404,11 @@ export default function ArTourScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#060E18" },
   star: { position: "absolute", backgroundColor: "#fff", borderRadius: 1 },
+  noiseDot: { position: "absolute", width: 60, height: 60, backgroundColor: "#3DAA6E", borderRadius: 30 },
 
   header: {
     flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 14, paddingBottom: 10,
-    zIndex: 20,
+    paddingHorizontal: 14, paddingBottom: 10, zIndex: 20,
   },
   backBtn: {
     width: 36, height: 36, borderRadius: 18,
@@ -393,68 +417,74 @@ const styles = StyleSheet.create({
   },
   headerTitle: { flex: 1, textAlign: "center", fontSize: 17, fontWeight: "700", color: "#fff" },
 
-  /* ── Idle ── */
+  /* Idle */
   idleCenter: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16 },
   idleCircle: {
-    width: 120, height: 120, borderRadius: 60,
-    overflow: "hidden",
+    width: 128, height: 128, borderRadius: 64, overflow: "hidden",
     shadowColor: PRIMARY, shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.5, shadowRadius: 20, elevation: 12,
   },
   idleCircleInner: { flex: 1, alignItems: "center", justifyContent: "center" },
   idleTitle: { fontSize: 24, fontWeight: "800", color: "#fff", marginTop: 8 },
-  idleSub: { fontSize: 14, color: "rgba(255,255,255,0.65)", textAlign: "center", lineHeight: 22 },
-  idleTags: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 4, paddingHorizontal: 32 },
+  idleSub: { fontSize: 14, color: "rgba(255,255,255,0.6)", textAlign: "center", lineHeight: 22 },
+  idleTags: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center", paddingHorizontal: 32, marginTop: 4 },
   idleTag: {
-    backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.09)", borderRadius: 20,
     paddingHorizontal: 12, paddingVertical: 5,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.14)",
   },
-  idleTagText: { fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: "600" },
-  idleBottom: { alignItems: "center", gap: 10, paddingHorizontal: 32 },
+  idleTagText: { fontSize: 12, color: "rgba(255,255,255,0.78)", fontWeight: "600" },
+  idleBottom: { alignItems: "center", gap: 12, paddingHorizontal: 32 },
   startBtn: { width: "100%", borderRadius: 28, overflow: "hidden" },
   startBtnGrad: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
     gap: 10, paddingVertical: 16, paddingHorizontal: 24,
   },
   startBtnText: { fontSize: 17, fontWeight: "800", color: "#fff", flex: 1, textAlign: "center" },
-  idleHint: { fontSize: 12, color: "rgba(255,255,255,0.4)" },
+  idleHint: { fontSize: 12, color: "rgba(255,255,255,0.38)" },
 
-  /* ── Scanning ── */
-  scanCenter: { flex: 1, alignItems: "center", justifyContent: "center", gap: 24, paddingHorizontal: 40 },
-  scanCorners: {
-    width: 220, height: 220, position: "relative",
+  /* Scanning / in-app viewfinder */
+  viewfinderWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
+  viewfinder: {
+    width: SW * 0.76, height: SW * 0.76,
     alignItems: "center", justifyContent: "center",
+    overflow: "hidden",
   },
   corner: {
     position: "absolute", width: 28, height: 28,
     borderColor: PRIMARY, borderWidth: 3,
   },
-  scanText: { color: "rgba(255,255,255,0.7)", fontSize: 13, textAlign: "center" },
-  scanProgressWrap: {
-    width: "100%", height: 4, backgroundColor: "rgba(255,255,255,0.12)",
-    borderRadius: 2, overflow: "hidden",
+  cornerTL: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0, borderTopLeftRadius: 4 },
+  cornerTR: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0, borderTopRightRadius: 4 },
+  cornerBL: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0, borderBottomLeftRadius: 4 },
+  cornerBR: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0, borderBottomRightRadius: 4 },
+  crosshairH: { position: "absolute", left: "10%", right: "10%", height: 1, backgroundColor: "rgba(61,170,110,0.3)" },
+  crosshairV: { position: "absolute", top: "10%", bottom: "10%", width: 1, backgroundColor: "rgba(61,170,110,0.3)" },
+  scanLineInner: {
+    position: "absolute", left: 0, right: 0,
+    height: 2, backgroundColor: PRIMARY, opacity: 0.7,
+    shadowColor: PRIMARY, shadowRadius: 6, shadowOpacity: 0.8,
   },
-  scanProgressBar: { height: 4, backgroundColor: PRIMARY, borderRadius: 2 },
-  scanPct: { fontSize: 28, fontWeight: "800", color: "#fff" },
-  scanHint: { fontSize: 12, color: "rgba(255,255,255,0.45)", textAlign: "center" },
-  shutterWrap: { alignItems: "center", gap: 10 },
-  shutterBtn: {
-    width: 76, height: 76, borderRadius: 38,
-    overflow: "hidden",
-    borderWidth: 3, borderColor: "rgba(255,255,255,0.3)",
-    shadowColor: PRIMARY, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5, shadowRadius: 12, elevation: 10,
-  },
-  shutterGrad: { flex: 1, alignItems: "center", justifyContent: "center" },
-  shutterHint: { fontSize: 12, color: "rgba(255,255,255,0.5)" },
+  viewfinderText: { fontSize: 12, color: "rgba(255,255,255,0.45)", position: "absolute", bottom: 10 },
 
-  /* ── AR Result ── */
+  /* Shutter */
+  shutterArea: { alignItems: "center", gap: 14, paddingTop: 8 },
+  shutterHint: { fontSize: 13, color: "rgba(255,255,255,0.6)", fontWeight: "600" },
+  shutterOuter: {
+    width: 80, height: 80, borderRadius: 40,
+    borderWidth: 3, borderColor: "rgba(255,255,255,0.25)",
+    overflow: "hidden",
+    shadowColor: PRIMARY, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.55, shadowRadius: 14, elevation: 12,
+  },
+  shutterInner: { flex: 1, alignItems: "center", justifyContent: "center" },
+  shutterSub: { fontSize: 11, color: "rgba(255,255,255,0.32)" },
+
+  /* AR result */
   scanLine: {
     position: "absolute", left: 0, right: 0,
-    height: 2, backgroundColor: PRIMARY,
-    shadowColor: PRIMARY, shadowRadius: 8, shadowOpacity: 0.8,
-    opacity: 0.7, zIndex: 5,
+    height: 2, backgroundColor: PRIMARY, opacity: 0.65,
+    shadowColor: PRIMARY, shadowRadius: 8, shadowOpacity: 0.8, zIndex: 5,
   },
   modeToggle: {
     flexDirection: "row", backgroundColor: "rgba(255,255,255,0.15)",
@@ -462,45 +492,40 @@ const styles = StyleSheet.create({
   },
   modeBtn: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 9 },
   modeBtnActive: { backgroundColor: PRIMARY },
-  modeBtnText: { fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.65)" },
+  modeBtnText: { fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.6)" },
   modeBtnTextActive: { color: "#fff" },
 
-  /* AR markers */
   arMarker: { position: "absolute", alignItems: "flex-start", zIndex: 10 },
   arMarkerDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: PRIMARY, borderWidth: 2, borderColor: "#fff" },
-  arMarkerLine: { width: 1.5, height: 28, backgroundColor: PRIMARY, marginLeft: 4 },
+  arMarkerLine: { width: 1.5, height: 30, backgroundColor: PRIMARY, marginLeft: 4 },
   arMarkerLabel: {
-    backgroundColor: "rgba(0,0,0,0.72)", borderRadius: 8,
+    backgroundColor: "rgba(0,0,0,0.75)", borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 5,
-    borderLeftWidth: 2, borderLeftColor: PRIMARY,
-    marginTop: 2,
+    borderLeftWidth: 2, borderLeftColor: PRIMARY, marginTop: 2,
   },
   arMarkerText: { fontSize: 11, fontWeight: "600", color: "#fff" },
 
-  /* 3D model */
   model3dWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16 },
   model3dBox: {
     width: 200, height: 180, borderRadius: 20, overflow: "hidden",
     shadowColor: PRIMARY, shadowRadius: 20, shadowOpacity: 0.6, elevation: 16,
   },
   model3dFace: {
-    flex: 1, alignItems: "center", justifyContent: "center", gap: 8,
+    flex: 1, alignItems: "center", justifyContent: "center", gap: 10,
     borderWidth: 1.5, borderColor: PRIMARY + "80", borderRadius: 20,
   },
   model3dLabel: { fontSize: 16, fontWeight: "800", color: "#fff" },
   model3dSub: { fontSize: 12, color: "rgba(255,255,255,0.7)" },
-  model3dHint: { fontSize: 12, color: "rgba(255,255,255,0.45)" },
+  model3dHint: { fontSize: 12, color: "rgba(255,255,255,0.4)" },
 
-  /* Bottom info panel */
   infoPanel: {
-    backgroundColor: "rgba(12,20,14,0.92)",
+    backgroundColor: "rgba(8,16,10,0.93)",
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: 20, paddingTop: 12, gap: 12,
-    backdropFilter: "blur(12px)",
   },
   infoPanelHandle: {
     width: 36, height: 4, borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.25)", alignSelf: "center", marginBottom: 4,
+    backgroundColor: "rgba(255,255,255,0.22)", alignSelf: "center", marginBottom: 4,
   },
   infoPanelRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   infoBadge: {
@@ -510,15 +535,15 @@ const styles = StyleSheet.create({
   },
   infoBadgeText: { fontSize: 11, fontWeight: "600", color: PRIMARY },
   infoPanelTitle: { fontSize: 16, fontWeight: "800", color: "#fff", flex: 1 },
-  infoPanelDesc: { fontSize: 13, color: "rgba(255,255,255,0.65)", lineHeight: 20 },
+  infoPanelDesc: { fontSize: 13, color: "rgba(255,255,255,0.6)", lineHeight: 20 },
   infoTagsScroll: { marginHorizontal: -20 },
   infoTag: {
-    backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.09)", borderRadius: 16,
     paddingHorizontal: 12, paddingVertical: 5, marginLeft: 8,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.13)",
   },
-  infoTagText: { fontSize: 11, fontWeight: "600", color: "rgba(255,255,255,0.8)" },
+  infoTagText: { fontSize: 11, fontWeight: "600", color: "rgba(255,255,255,0.75)" },
   infoActions: { flexDirection: "row", justifyContent: "space-around" },
   infoAction: { alignItems: "center", gap: 5 },
-  infoActionText: { fontSize: 11, color: "rgba(255,255,255,0.7)", fontWeight: "600" },
+  infoActionText: { fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: "600" },
 });
