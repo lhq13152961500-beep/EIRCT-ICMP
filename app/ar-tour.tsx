@@ -196,11 +196,11 @@ export default function ArTourScreen() {
   const scanLineAnim  = useRef(new Animated.Value(0)).current;
   const modelRotate   = useRef(new Animated.Value(0)).current;
 
-  // Info panel drag
-  const PANEL_COLLAPSED = 0;
-  const PANEL_EXPANDED  = -(SH * 0.44);
-  const panelDragAnim  = useRef(new Animated.Value(0)).current;
-  const panelOffsetRef = useRef(0);
+  // Info panel expand (height-based, bottom anchored)
+  const EXPAND_HEIGHT = 86;          // max extra height for description
+  const EXPAND_DRAG_PX = 60;         // px of drag to go 0→1
+  const panelExpandAnim = useRef(new Animated.Value(0)).current;  // 0=collapsed 1=expanded
+  const panelExpandRef  = useRef(0);
   const [liked, setLiked] = useState(false);
 
   const panelPanResponder = useRef(
@@ -208,21 +208,21 @@ export default function ArTourScreen() {
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 6,
       onPanResponderGrant: () => {
-        panelDragAnim.stopAnimation(v => {
-          panelOffsetRef.current = v;
-          panelDragAnim.setValue(v);
+        panelExpandAnim.stopAnimation(v => {
+          panelExpandRef.current = v;
+          panelExpandAnim.setValue(v);
         });
       },
       onPanResponderMove: (_, gs) => {
-        const next = Math.max(PANEL_EXPANDED, Math.min(PANEL_COLLAPSED, panelOffsetRef.current + gs.dy));
-        panelDragAnim.setValue(next);
+        // dy < 0 = dragging up = expand
+        const next = Math.max(0, Math.min(1, panelExpandRef.current + (-gs.dy / EXPAND_DRAG_PX)));
+        panelExpandAnim.setValue(next);
       },
       onPanResponderRelease: (_, gs) => {
-        const finalY = Math.max(PANEL_EXPANDED, Math.min(PANEL_COLLAPSED, panelOffsetRef.current + gs.dy));
-        const mid = (PANEL_COLLAPSED + PANEL_EXPANDED) / 2;
-        const target = finalY < mid ? PANEL_EXPANDED : PANEL_COLLAPSED;
-        panelOffsetRef.current = target;
-        Animated.spring(panelDragAnim, { toValue: target, friction: 8, tension: 70, useNativeDriver: true }).start();
+        const finalV = Math.max(0, Math.min(1, panelExpandRef.current + (-gs.dy / EXPAND_DRAG_PX)));
+        const target = finalV > 0.5 ? 1 : 0;
+        panelExpandRef.current = target;
+        Animated.spring(panelExpandAnim, { toValue: target, friction: 8, tension: 70, useNativeDriver: false }).start();
       },
     })
   ).current;
@@ -285,8 +285,8 @@ export default function ArTourScreen() {
     arModeAlpha.setValue(1);
     d3ModeAlpha.setValue(0);
     setViewMode("ar");
-    panelDragAnim.setValue(0);
-    panelOffsetRef.current = 0;
+    panelExpandAnim.setValue(0);
+    panelExpandRef.current = 0;
     setLiked(false);
 
     setTimeout(() => {
@@ -510,10 +510,22 @@ export default function ArTourScreen() {
         </View>
       </Animated.View>
 
-      {/* Info panel slide-up + draggable */}
+      {/* Info panel — bottom anchored, expands upward on drag */}
       <Animated.View
         {...panelPanResponder.panHandlers}
-        style={[styles.infoPanel,{paddingBottom:insets.bottom+16,transform:[{translateY:Animated.add(infoPanelY,panelDragAnim)}]}]}>
+        style={[styles.infoPanel,{paddingBottom:insets.bottom+16,transform:[{translateY:infoPanelY}]}]}>
+
+        {/* Expanding description (height 0→EXPAND_HEIGHT, fades in) */}
+        <Animated.View style={{
+          height: panelExpandAnim.interpolate({inputRange:[0,1],outputRange:[0,EXPAND_HEIGHT]}),
+          overflow:"hidden",
+        }}>
+          <Animated.Text style={[styles.infoPanelDesc,{opacity:panelExpandAnim}]}>
+            该建筑始建于清代乾隆年间，保留了典型的徽派建筑风格，是当地重要的文化遗产保护单位。
+          </Animated.Text>
+        </Animated.View>
+
+        {/* Always-visible: handle + title */}
         <View style={styles.infoPanelHandle}/>
         <View style={styles.infoPanelRow}>
           <View style={styles.infoBadge}>
@@ -522,9 +534,8 @@ export default function ArTourScreen() {
           </View>
           <Text style={styles.infoPanelTitle}>古风建筑群 · 清代遗址</Text>
         </View>
-        <Text style={styles.infoPanelDesc}>
-          该建筑始建于清代乾隆年间，保留了典型的徽派建筑风格，是当地重要的文化遗产保护单位。
-        </Text>
+
+        {/* Always-visible: tags + actions (fixed at bottom) */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.infoTagsScroll}>
           {["历史文化","清代建筑","徽派风格","文保单位","非遗体验"].map(tag=>(
             <View key={tag} style={styles.infoTag}><Text style={styles.infoTagText}>{tag}</Text></View>
