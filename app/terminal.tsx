@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import Svg, { Circle, Path } from "react-native-svg";
 import { router } from "expo-router";
 import Colors from "@/constants/colors";
 import {
@@ -68,6 +69,26 @@ const DEVICE_POOL: Device[] = [
 function toRad(deg: number) { return (deg * Math.PI) / 180; }
 function devicePos(angleDeg: number) {
   return { x: ORBIT_R * Math.cos(toRad(angleDeg)), y: ORBIT_R * Math.sin(toRad(angleDeg)) };
+}
+
+/* ── Custom radar SVG icon for idle state ── */
+function RadarIcon({ size = 60, color = PRIMARY }: { size?: number; color?: string }) {
+  const r = 45;
+  // Sector from top (−90°) clockwise 85° to about −5°
+  const endAngleDeg = -5;
+  const endX = (50 + r * Math.cos((endAngleDeg * Math.PI) / 180)).toFixed(2);
+  const endY = (50 + r * Math.sin((endAngleDeg * Math.PI) / 180)).toFixed(2);
+  // Start is the top: (50, 5) = (50, 50−45)
+  const sectorPath = `M 50 50 L 50 5 A ${r} ${r} 0 0 1 ${endX} ${endY} Z`;
+  return (
+    <Svg width={size} height={size} viewBox="0 0 100 100">
+      <Path d={sectorPath} fill={color} />
+      <Circle cx="50" cy="50" r={r} fill="none" stroke={color} strokeWidth="3.5" />
+      <Circle cx="50" cy="50" r="31" fill="none" stroke={color} strokeWidth="2.5" />
+      <Circle cx="50" cy="50" r="17" fill="none" stroke={color} strokeWidth="2" />
+      <Circle cx="50" cy="50" r="4.5" fill={color} />
+    </Svg>
+  );
 }
 
 /* ── Floating green dots in center circle ── */
@@ -361,7 +382,7 @@ export default function TerminalScreen() {
           <View style={styles.idleWrap}>
             <View style={styles.idleIconRing}>
               <View style={styles.idleIconCircle}>
-                <Ionicons name="sync-outline" size={52} color={PRIMARY} />
+                <RadarIcon size={64} color={PRIMARY} />
               </View>
             </View>
             <Text style={styles.idleTitle}>终端互联</Text>
