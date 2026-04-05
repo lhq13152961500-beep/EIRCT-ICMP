@@ -157,6 +157,7 @@ export default function MapGuideScreen() {
   const [aiLoading, setAiLoading] = useState(false);
   const [mapAreaHeight, setMapAreaHeight] = useState(SCREEN_HEIGHT * 0.62);
   const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState(false);
 
   const sheetAnim = useRef(new Animated.Value(0)).current;
   const webViewRef = useRef<WebView>(null);
@@ -322,7 +323,7 @@ export default function MapGuideScreen() {
 
       {/* ── Map area (flex:1 — takes all remaining space) ── */}
       <View style={styles.mapOuter} onLayout={onMapAreaLayout}>
-        {MAP_URL ? (
+        {MAP_URL && !mapError ? (
           <WebView
             ref={webViewRef}
             source={{ uri: MAP_URL }}
@@ -332,10 +333,26 @@ export default function MapGuideScreen() {
             domStorageEnabled
             mixedContentMode="always"
             originWhitelist={["*"]}
+            onError={() => setMapError(true)}
+            onHttpError={(e) => { if (e.nativeEvent.statusCode >= 400) setMapError(true); }}
+            renderLoading={() => (
+              <View style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center", backgroundColor: "#e8dcc8" }]}>
+                <ActivityIndicator size="large" color="#8B5E3C" />
+                <Text style={{ marginTop: 10, color: "#8B5E3C", fontSize: 13 }}>地图加载中…</Text>
+              </View>
+            )}
+            startInLoadingState
           />
         ) : (
-          <View style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center", backgroundColor: "#e8dcc8" }]}>
-            <ActivityIndicator size="large" color="#8B5E3C" />
+          <View style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center", backgroundColor: "#e8dcc8", gap: 12 }]}>
+            <Text style={{ fontSize: 32 }}>🗺️</Text>
+            <Text style={{ color: "#8B5E3C", fontSize: 14, fontWeight: "600" }}>地图加载失败</Text>
+            <Pressable
+              style={{ backgroundColor: "#8B5E3C", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 }}
+              onPress={() => { setMapError(false); setMapReady(false); webViewRef.current?.reload(); }}
+            >
+              <Text style={{ color: "#fff", fontSize: 13, fontWeight: "700" }}>重新加载</Text>
+            </Pressable>
           </View>
         )}
 
