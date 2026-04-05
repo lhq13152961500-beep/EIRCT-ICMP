@@ -59,7 +59,7 @@ def run_expo():
     kill_port_8081()
 
     env = os.environ.copy()
-    env['NODE_OPTIONS'] = '--max-old-space-size=800'
+    env['NODE_OPTIONS'] = '--max-old-space-size=1024'
     env['EXPO_NO_INLINE_SOURCEMAPS'] = '1'
     env['REACT_NATIVE_PACKAGER_HOSTNAME'] = 'localhost'
 
@@ -177,6 +177,8 @@ def run_expo():
 def main():
     attempt = 0
     ngrok_fails = 0
+    oom_count = 0
+    last_oom_time = 0.0
     while True:
         attempt += 1
         if attempt > 1:
@@ -185,18 +187,27 @@ def main():
         result = run_expo()
         if result == "ngrok_error":
             ngrok_fails += 1
-            # Exponential back-off: 3min, 5min, 10min, 15min cap
+            # Exponential back-off: 3min, 6min, 12min, 15min cap
             wait = min(180 * (2 ** (ngrok_fails - 1)), 900)
             sys.stdout.write(f'[Waiting {wait}s for Ngrok rate-limit to reset (fail #{ngrok_fails})...]\n')
             sys.stdout.flush()
             time.sleep(wait)
             continue
         if result == "oom":
-            # OOM = bundle was served; restart quickly so the tunnel stays warm
+            # OOM = bundle was served successfully; Metro ran out of memory.
+            # Wait longer to let Ngrok's rate-limit window breathe before
+            # creating a new tunnel on restart.
+            oom_count += 1
+            now = time.time()
+            since_last = now - last_oom_time
+            last_oom_time = now
             ngrok_fails = 0  # successful connection, reset fail count
-            sys.stdout.write('[Waiting 10s then restarting Metro...]\n')
+            # If OOMs are happening rapidly (< 5 min apart), wait 90s.
+            # Otherwise 30s is enough.
+            wait = 90 if since_last < 300 else 30
+            sys.stdout.write(f'[Metro OOM #{oom_count} — waiting {wait}s before restart...]\n')
             sys.stdout.flush()
-            time.sleep(10)
+            time.sleep(wait)
             continue
         break
 
