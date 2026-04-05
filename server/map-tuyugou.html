@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>吐峪沟地图</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:#e8dcc8}
+  #map{width:100vw;height:100vh}
+  .amap-logo{display:none!important}
+  .amap-copyright{display:none!important}
+  .custom-marker{position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none}
+  .marker-bubble{background:white;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.25);display:flex;align-items:center;gap:3px;transition:transform .15s}
+  .marker-bubble:active{transform:scale(0.95)}
+  .marker-stem{width:2px;height:8px;margin:0 auto}
+  .marker-dot{width:7px;height:7px;border-radius:50%;margin:-1px auto 0;border:2px solid white}
+  .my-loc-wrap{position:relative;display:flex;flex-direction:column;align-items:center}
+  .my-loc-pulse{width:40px;height:40px;border-radius:50%;position:absolute;top:-20px;left:-20px;opacity:0.3;animation:pulse 2s infinite}
+  .my-loc-inner{width:18px;height:18px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)}
+  @keyframes pulse{0%{transform:scale(0.6);opacity:0.4}70%{transform:scale(1.4);opacity:0}100%{transform:scale(0.6);opacity:0}}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+window._AMapSecurityConfig = { securityJsCode: '__AMAP_SECURITY_KEY__' };
+
+var POIS = [
+  { id:"1",  pos:[89.5971,42.8603], name:"景区入口大门", emoji:"🚪", category:"建筑",  desc:"吐峪沟大峡谷景区正门，古朴石砌拱门，始建于清代" },
+  { id:"2",  pos:[89.5998,42.8588], name:"麻扎村",       emoji:"🕌", category:"建筑",  desc:"千年维吾尔族古村落，保留完整的生土建筑群" },
+  { id:"3",  pos:[89.6012,42.8572], name:"吐峪沟清真寺", emoji:"⛩️", category:"建筑",  desc:"历史悠久的伊斯兰建筑，精美木雕装饰令人叹为观止" },
+  { id:"4",  pos:[89.6078,42.8641], name:"千年洞窟",     emoji:"⛰️", category:"建筑",  desc:"公元4世纪佛教石窟群，壁画保存完好" },
+  { id:"5",  pos:[89.6045,42.8615], name:"古麻扎遗址",   emoji:"🏛️", category:"建筑",  desc:"伊斯兰圣祠遗址，是新疆最古老的麻扎之一" },
+  { id:"6",  pos:[89.6035,42.8560], name:"非遗文化馆",   emoji:"🎨", category:"展览",  desc:"集中展示维吾尔族非物质文化遗产，含木卡姆、都它尔等项目" },
+  { id:"7",  pos:[89.5985,42.8625], name:"民俗体验馆",   emoji:"🖼️", category:"展览",  desc:"原汁原味的维吾尔族传统手工艺展示与互动体验" },
+  { id:"8",  pos:[89.6058,42.8625], name:"葡萄晾房",     emoji:"🍇", category:"特产",  desc:"传统土坯晾房，秋季满室葡萄干香气" },
+  { id:"9",  pos:[89.5972,42.8638], name:"特产集市",     emoji:"🎁", category:"特产",  desc:"葡萄干、无花果、馕饼等吐峪沟特色农产品" },
+  { id:"10", pos:[89.6020,42.8605], name:"烤馕馆",       emoji:"🫓", category:"美食",  desc:"现烤坑炉馕饼，外脆内软，是当地最具特色的主食" },
+  { id:"11", pos:[89.6048,42.8583], name:"瓜果长廊",     emoji:"🍈", category:"美食",  desc:"种植哈密瓜、白杏等特色瓜果，可现场品尝" },
+  { id:"12", pos:[89.6010,42.8640], name:"游客服务中心", emoji:"ℹ️",  category:"建筑",  desc:"提供景区导览、租赁、急救等综合服务" },
+  { id:"13", pos:[89.6030,42.8600], name:"WC",           emoji:"🚻", category:"卫生间", desc:"公共卫生间" },
+  { id:"14", pos:[89.6072,42.8558], name:"WC",           emoji:"🚻", category:"卫生间", desc:"公共卫生间" },
+];
+
+var COLORS = {
+  "建筑":  { dot:"#E88A2E", text:"#B8681E" },
+  "展览":  { dot:"#6B7FD4", text:"#4A5CB8" },
+  "美食":  { dot:"#E8514A", text:"#C0392B" },
+  "特产":  { dot:"#3DAA6F", text:"#2D8A55" },
+  "卫生间":{ dot:"#8B8EC8", text:"#6B6EAA" },
+};
+
+var map = null;
+var markers = [];
+var activeMarkerId = null;
+var currentFilter = "全部";
+var myLocMarker = null;
+
+function sendToApp(data) {
+  try {
+    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      window.ReactNativeWebView.postMessage(JSON.stringify(data));
+    }
+  } catch(e) {}
+}
+
+function buildMarkerContent(poi, isActive) {
+  var c = COLORS[poi.category];
+  var dotColor = isActive ? c.dot : c.dot;
+  var bgColor  = isActive ? c.dot : "white";
+  var txtColor = isActive ? "white" : c.text;
+  var border   = isActive ? "none" : "2px solid " + c.dot;
+  var shadow   = isActive ? "0 3px 10px rgba(0,0,0,0.35)" : "0 2px 7px rgba(0,0,0,0.22)";
+  var scale    = isActive ? "scale(1.12)" : "scale(1)";
+  return (
+    '<div class="custom-marker">' +
+    '<div class="marker-bubble" style="background:' + bgColor + ';border:' + border + ';color:' + txtColor + ';box-shadow:' + shadow + ';transform:' + scale + '">' +
+    poi.emoji + ' <span>' + poi.name + '</span>' +
+    '</div>' +
+    '<div class="marker-stem" style="background:' + dotColor + '"></div>' +
+    '<div class="marker-dot" style="background:' + dotColor + '"></div>' +
+    '</div>'
+  );
+}
+
+function buildMyLocContent() {
+  return (
+    '<div class="my-loc-wrap">' +
+    '<div class="my-loc-pulse" style="background:#FF8C42"></div>' +
+    '<div class="my-loc-inner" style="background:#FF8C42"></div>' +
+    '</div>'
+  );
+}
+
+function createMarker(poi) {
+  var isActive = (poi.id === activeMarkerId);
+  var marker = new AMap.Marker({
+    position: poi.pos,
+    content: buildMarkerContent(poi, isActive),
+    offset: new AMap.Pixel(-30, -54),
+    extData: poi,
+    cursor: "pointer",
+  });
+  marker.on("click", function() {
+    setActiveMarker(poi.id);
+    sendToApp({ type:"poiClick", id:poi.id, name:poi.name, category:poi.category, desc:poi.desc, emoji:poi.emoji });
+  });
+  return marker;
+}
+
+function setActiveMarker(id) {
+  activeMarkerId = id;
+  markers.forEach(function(m) {
+    var p = m.getExtData();
+    if (!p) return;
+    m.setContent(buildMarkerContent(p, p.id === id));
+  });
+}
+
+function shouldShow(poi) {
+  if (currentFilter === "全部") return true;
+  return poi.category === currentFilter;
+}
+
+function renderMarkers() {
+  map.remove(markers);
+  markers = [];
+  POIS.forEach(function(poi) {
+    if (!shouldShow(poi)) return;
+    var m = createMarker(poi);
+    markers.push(m);
+  });
+  map.add(markers);
+}
+
+window.filterPoi = function(category) {
+  currentFilter = category;
+  renderMarkers();
+};
+
+window.setMyLocation = function(lng, lat) {
+  if (myLocMarker) map.remove(myLocMarker);
+  myLocMarker = new AMap.Marker({
+    position: [lng, lat],
+    content: buildMyLocContent(),
+    offset: new AMap.Pixel(-9, -9),
+    zIndex: 200,
+  });
+  map.add(myLocMarker);
+};
+
+window.selectPoi = function(id) {
+  if (id === null) {
+    activeMarkerId = null;
+    markers.forEach(function(m) {
+      var p = m.getExtData();
+      if (p) m.setContent(buildMarkerContent(p, false));
+    });
+  } else {
+    setActiveMarker(id);
+  }
+};
+
+function initMap() {
+  map = new AMap.Map("map", {
+    center: [89.6025, 42.8605],
+    zoom: 15,
+    mapStyle: "amap://styles/normal",
+    showBuildingBlock: true,
+    viewMode: "2D",
+  });
+  renderMarkers();
+  map.addControl(new AMap.Scale({ visible: true }));
+  map.on("click", function() {
+    sendToApp({ type:"mapClick" });
+  });
+  sendToApp({ type:"ready" });
+}
+</script>
+<script
+  src="https://webapi.amap.com/maps?v=2.0&key=__AMAP_KEY__&plugin=AMap.Scale"
+  onload="initMap()"
+  onerror="document.body.style.background='#e8dcc8'">
+</script>
+</body>
+</html>

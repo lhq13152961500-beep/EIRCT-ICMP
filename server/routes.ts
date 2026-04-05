@@ -278,6 +278,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/map-tuyugou", (_req, res) => {
+    const key = process.env.AMAP_API_KEY;
+    const securityKey = process.env.AMAP_SECURITY_KEY || "";
+    if (!key) return res.status(500).send("AMAP_API_KEY not configured");
+    try {
+      const candidates = [
+        join(process.cwd(), "server_dist", "map-tuyugou.html"),
+        join(process.cwd(), "server", "map-tuyugou.html"),
+      ];
+      const htmlPath = candidates.find(p => existsSync(p));
+      if (!htmlPath) return res.status(500).send("map-tuyugou.html not found");
+      const html = readFileSync(htmlPath, "utf-8");
+      const page = html
+        .replace(/__AMAP_KEY__/g, key)
+        .replace(/__AMAP_SECURITY_KEY__/g, securityKey);
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      return res.send(page);
+    } catch (e) {
+      return res.status(500).send("Failed to load map page");
+    }
+  });
+
   app.get("/api/geocode/reverse", async (req, res) => {
     try {
       const { lat, lng } = req.query as { lat?: string; lng?: string };
