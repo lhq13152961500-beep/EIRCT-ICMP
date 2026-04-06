@@ -4,27 +4,53 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>吐峪沟地图</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{width:100%;height:100%;overflow:hidden;background:#e8dcc8}
   #map{width:100vw;height:100vh}
-  .amap-logo{opacity:0.01!important;pointer-events:none!important;position:absolute!important;left:-9999px!important}
-  .amap-copyright{opacity:0.01!important;pointer-events:none!important;position:absolute!important;left:-9999px!important}
   .custom-marker{position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none}
   .marker-bubble{background:white;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.25);display:flex;align-items:center;gap:3px;transition:transform .15s}
-  .marker-bubble:active{transform:scale(0.95)}
   .marker-stem{width:2px;height:8px;margin:0 auto}
   .marker-dot{width:7px;height:7px;border-radius:50%;margin:-1px auto 0;border:2px solid white}
   .my-loc-wrap{position:relative;display:flex;flex-direction:column;align-items:center}
   .my-loc-pulse{width:40px;height:40px;border-radius:50%;position:absolute;top:-20px;left:-20px;opacity:0.3;animation:pulse 2s infinite}
   .my-loc-inner{width:18px;height:18px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)}
   @keyframes pulse{0%{transform:scale(0.6);opacity:0.4}70%{transform:scale(1.4);opacity:0}100%{transform:scale(0.6);opacity:0}}
+  .leaflet-control-attribution{font-size:8px!important;opacity:0.5!important}
 </style>
 </head>
 <body>
 <div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-window._AMapSecurityConfig = { securityJsCode: '__AMAP_SECURITY_KEY__' };
+/* GCJ-02 → WGS-84 conversion (needed because POI coords are GCJ-02, OSM uses WGS-84) */
+function gcj2wgs(lng, lat) {
+  var a = 6378245.0, ee = 0.00669342162296594323;
+  var dlat = transformLat(lng - 105.0, lat - 35.0);
+  var dlng = transformLng(lng - 105.0, lat - 35.0);
+  var radlat = lat / 180.0 * Math.PI;
+  var magic = Math.sin(radlat);
+  magic = 1 - ee * magic * magic;
+  var sqrtmagic = Math.sqrt(magic);
+  dlat = (dlat * 180.0) / ((a * (1 - ee)) / (magic * sqrtmagic) * Math.PI);
+  dlng = (dlng * 180.0) / (a / sqrtmagic * Math.cos(radlat) * Math.PI);
+  return [lng - dlng, lat - dlat];
+}
+function transformLat(x, y) {
+  var ret = -100.0 + 2.0*x + 3.0*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x));
+  ret += (20.0*Math.sin(6.0*x*Math.PI) + 20.0*Math.sin(2.0*x*Math.PI)) * 2.0/3.0;
+  ret += (20.0*Math.sin(y*Math.PI) + 40.0*Math.sin(y/3.0*Math.PI)) * 2.0/3.0;
+  ret += (160.0*Math.sin(y/12.0*Math.PI) + 320.0*Math.sin(y*Math.PI/30.0)) * 2.0/3.0;
+  return ret;
+}
+function transformLng(x, y) {
+  var ret = 300.0 + x + 2.0*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x));
+  ret += (20.0*Math.sin(6.0*x*Math.PI) + 20.0*Math.sin(2.0*x*Math.PI)) * 2.0/3.0;
+  ret += (20.0*Math.sin(x*Math.PI) + 40.0*Math.sin(x/3.0*Math.PI)) * 2.0/3.0;
+  ret += (150.0*Math.sin(x/12.0*Math.PI) + 300.0*Math.sin(x/30.0*Math.PI)) * 2.0/3.0;
+  return ret;
+}
 
 var POIS = [
   { id:"1",  pos:[89.5971,42.8603], name:"景区入口大门", emoji:"🚪", category:"建筑",  desc:"吐峪沟大峡谷景区正门，古朴石砌拱门，始建于清代" },
@@ -52,10 +78,10 @@ var COLORS = {
 };
 
 var map = null;
-var markers = [];
+var leafletMarkers = {};
+var myLocMarker = null;
 var activeMarkerId = null;
 var currentFilter = "全部";
-var myLocMarker = null;
 
 function sendToApp(data) {
   try {
@@ -65,9 +91,8 @@ function sendToApp(data) {
   } catch(e) {}
 }
 
-function buildMarkerContent(poi, isActive) {
-  var c = COLORS[poi.category];
-  var dotColor = isActive ? c.dot : c.dot;
+function buildMarkerHtml(poi, isActive) {
+  var c = COLORS[poi.category] || { dot:"#888", text:"#555" };
   var bgColor  = isActive ? c.dot : "white";
   var txtColor = isActive ? "white" : c.text;
   var border   = isActive ? "none" : "2px solid " + c.dot;
@@ -76,45 +101,47 @@ function buildMarkerContent(poi, isActive) {
   return (
     '<div class="custom-marker">' +
     '<div class="marker-bubble" style="background:' + bgColor + ';border:' + border + ';color:' + txtColor + ';box-shadow:' + shadow + ';transform:' + scale + '">' +
-    poi.emoji + ' <span>' + poi.name + '</span>' +
-    '</div>' +
-    '<div class="marker-stem" style="background:' + dotColor + '"></div>' +
-    '<div class="marker-dot" style="background:' + dotColor + '"></div>' +
+    poi.emoji + ' <span>' + poi.name + '</span></div>' +
+    '<div class="marker-stem" style="background:' + c.dot + '"></div>' +
+    '<div class="marker-dot" style="background:' + c.dot + '"></div>' +
     '</div>'
   );
 }
 
-function buildMyLocContent() {
-  return (
-    '<div class="my-loc-wrap">' +
-    '<div class="my-loc-pulse" style="background:#FF8C42"></div>' +
-    '<div class="my-loc-inner" style="background:#FF8C42"></div>' +
-    '</div>'
-  );
+function poiToWgs(poi) {
+  var wgs = gcj2wgs(poi.pos[0], poi.pos[1]);
+  return [wgs[1], wgs[0]]; /* leaflet uses [lat, lng] */
 }
 
-function createMarker(poi) {
+function createLeafletMarker(poi) {
+  var wgsLatLng = poiToWgs(poi);
   var isActive = (poi.id === activeMarkerId);
-  var marker = new AMap.Marker({
-    position: poi.pos,
-    content: buildMarkerContent(poi, isActive),
-    offset: new AMap.Pixel(-30, -54),
-    extData: poi,
-    cursor: "pointer",
+  var icon = L.divIcon({
+    html: buildMarkerHtml(poi, isActive),
+    className: '',
+    iconSize: null,
+    iconAnchor: [30, 54],
   });
-  marker.on("click", function() {
+  var m = L.marker(wgsLatLng, { icon: icon });
+  m.on('click', function() {
     setActiveMarker(poi.id);
     sendToApp({ type:"poiClick", id:poi.id, name:poi.name, category:poi.category, desc:poi.desc, emoji:poi.emoji });
   });
-  return marker;
+  return m;
 }
 
 function setActiveMarker(id) {
   activeMarkerId = id;
-  markers.forEach(function(m) {
-    var p = m.getExtData();
-    if (!p) return;
-    m.setContent(buildMarkerContent(p, p.id === id));
+  Object.keys(leafletMarkers).forEach(function(pid) {
+    var m = leafletMarkers[pid];
+    var poi = POIS.find(function(p){ return p.id === pid; });
+    if (!poi) return;
+    m.setIcon(L.divIcon({
+      html: buildMarkerHtml(poi, poi.id === id),
+      className: '',
+      iconSize: null,
+      iconAnchor: [30, 54],
+    }));
   });
 }
 
@@ -124,14 +151,16 @@ function shouldShow(poi) {
 }
 
 function renderMarkers() {
-  map.remove(markers);
-  markers = [];
+  Object.keys(leafletMarkers).forEach(function(id) {
+    leafletMarkers[id].remove();
+  });
+  leafletMarkers = {};
   POIS.forEach(function(poi) {
     if (!shouldShow(poi)) return;
-    var m = createMarker(poi);
-    markers.push(m);
+    var m = createLeafletMarker(poi);
+    m.addTo(map);
+    leafletMarkers[poi.id] = m;
   });
-  map.add(markers);
 }
 
 window.filterPoi = function(category) {
@@ -140,53 +169,64 @@ window.filterPoi = function(category) {
 };
 
 window.setMyLocation = function(lng, lat) {
-  if (myLocMarker) map.remove(myLocMarker);
-  myLocMarker = new AMap.Marker({
-    position: [lng, lat],
-    content: buildMyLocContent(),
-    offset: new AMap.Pixel(-9, -9),
-    zIndex: 200,
+  var wgs = gcj2wgs(lng, lat);
+  var wgsLatLng = [wgs[1], wgs[0]];
+  if (myLocMarker) myLocMarker.remove();
+  var icon = L.divIcon({
+    html: '<div class="my-loc-wrap"><div class="my-loc-pulse" style="background:#FF8C42"></div><div class="my-loc-inner" style="background:#FF8C42"></div></div>',
+    className: '',
+    iconSize: null,
+    iconAnchor: [9, 9],
   });
-  map.add(myLocMarker);
+  myLocMarker = L.marker(wgsLatLng, { icon: icon, zIndexOffset: 1000 });
+  myLocMarker.addTo(map);
 };
 
 window.selectPoi = function(id) {
   if (id === null) {
     activeMarkerId = null;
-    markers.forEach(function(m) {
-      var p = m.getExtData();
-      if (p) m.setContent(buildMarkerContent(p, false));
+    Object.keys(leafletMarkers).forEach(function(pid) {
+      var poi = POIS.find(function(p){ return p.id === pid; });
+      if (!poi) return;
+      leafletMarkers[pid].setIcon(L.divIcon({
+        html: buildMarkerHtml(poi, false),
+        className: '',
+        iconSize: null,
+        iconAnchor: [30, 54],
+      }));
     });
   } else {
     setActiveMarker(id);
   }
 };
 
-function initMap() {
-  map = new AMap.Map("map", {
-    center: [89.6025, 42.8605],
-    zoom: 15,
-    viewMode: "2D",
-    showBuildingBlock: true,
-    resizeEnable: true,
-  });
-  map.on("complete", function() {
-    sendToApp({ type:"ready" });
-  });
-  renderMarkers();
-  try { map.addControl(new AMap.Scale({ visible: true })); } catch(e) {}
-  map.on("click", function() {
-    sendToApp({ type:"mapClick" });
-  });
-  setTimeout(function() {
-    sendToApp({ type:"ready" });
-  }, 3000);
-}
-</script>
-<script
-  src="https://webapi.amap.com/maps?v=2.0&key=__AMAP_KEY__&plugin=AMap.Scale"
-  onload="initMap()"
-  onerror="document.body.style.background='#e8dcc8'">
+/* Center on WGS-84 equivalent of GCJ-02 center [89.6025, 42.8605] */
+var centerWgs = gcj2wgs(89.6025, 42.8605);
+
+map = L.map('map', {
+  center: [centerWgs[1], centerWgs[0]],
+  zoom: 15,
+  zoomControl: false,
+  attributionControl: true,
+});
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 19,
+  crossOrigin: true,
+}).addTo(map);
+
+map.on('load', function() {
+  sendToApp({ type:"ready" });
+});
+
+map.on('click', function() {
+  sendToApp({ type:"mapClick" });
+});
+
+renderMarkers();
+
+setTimeout(function() { sendToApp({ type:"ready" }); }, 2000);
 </script>
 </body>
 </html>
