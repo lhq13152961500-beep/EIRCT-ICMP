@@ -59,7 +59,7 @@ def run_expo():
     kill_port_8081()
 
     env = os.environ.copy()
-    env['NODE_OPTIONS'] = '--max-old-space-size=8192'
+    env['NODE_OPTIONS'] = '--max-old-space-size=4096'
     env['EXPO_NO_INLINE_SOURCEMAPS'] = '1'
     env['REACT_NATIVE_PACKAGER_HOSTNAME'] = 'localhost'
 
@@ -76,7 +76,7 @@ def run_expo():
         os.dup2(slave_fd, 2)
         if slave_fd > 2:
             os.close(slave_fd)
-        os.execvpe('npx', ['npx', 'expo', 'start', '--go', '--tunnel'], env)
+        os.execvpe('npx', ['npx', 'expo', 'start', '--go', '--tunnel', '--max-workers', '1'], env)
     else:
         os.close(slave_fd)
         last_anon_answer = 0.0

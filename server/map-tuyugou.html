@@ -8,8 +8,8 @@
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{width:100%;height:100%;overflow:hidden;background:#e8dcc8}
   #map{width:100vw;height:100vh}
-  .amap-logo{display:none!important}
-  .amap-copyright{display:none!important}
+  .amap-logo{opacity:0.01!important;pointer-events:none!important;position:absolute!important;left:-9999px!important}
+  .amap-copyright{opacity:0.01!important;pointer-events:none!important;position:absolute!important;left:-9999px!important}
   .custom-marker{position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none}
   .marker-bubble{background:white;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.25);display:flex;align-items:center;gap:3px;transition:transform .15s}
   .marker-bubble:active{transform:scale(0.95)}
@@ -166,16 +166,21 @@ function initMap() {
   map = new AMap.Map("map", {
     center: [89.6025, 42.8605],
     zoom: 15,
-    mapStyle: "amap://styles/normal",
-    showBuildingBlock: true,
     viewMode: "2D",
+    showBuildingBlock: true,
+    resizeEnable: true,
+  });
+  map.on("complete", function() {
+    sendToApp({ type:"ready" });
   });
   renderMarkers();
-  map.addControl(new AMap.Scale({ visible: true }));
+  try { map.addControl(new AMap.Scale({ visible: true })); } catch(e) {}
   map.on("click", function() {
     sendToApp({ type:"mapClick" });
   });
-  sendToApp({ type:"ready" });
+  setTimeout(function() {
+    sendToApp({ type:"ready" });
+  }, 3000);
 }
 </script>
 <script
