@@ -13,10 +13,6 @@
   .marker-bubble{background:white;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.25);display:flex;align-items:center;gap:3px;transition:transform .15s}
   .marker-stem{width:2px;height:8px;margin:0 auto}
   .marker-dot{width:7px;height:7px;border-radius:50%;margin:-1px auto 0;border:2px solid white}
-  .my-loc-wrap{position:relative;display:flex;flex-direction:column;align-items:center}
-  .my-loc-pulse{width:40px;height:40px;border-radius:50%;position:absolute;top:-20px;left:-20px;opacity:0.3;animation:pulse 2s infinite}
-  .my-loc-inner{width:18px;height:18px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)}
-  @keyframes pulse{0%{transform:scale(0.6);opacity:0.4}70%{transform:scale(1.4);opacity:0}100%{transform:scale(0.6);opacity:0}}
   .leaflet-control-attribution{font-size:8px!important;opacity:0.5!important}
 </style>
 </head>
@@ -172,11 +168,10 @@ window.setMyLocation = function(lng, lat) {
   var wgs = gcj2wgs(lng, lat);
   var wgsLatLng = [wgs[1], wgs[0]];
   if (myLocMarker) myLocMarker.remove();
-  var icon = L.divIcon({
-    html: '<div class="my-loc-wrap"><div class="my-loc-pulse" style="background:#FF8C42"></div><div class="my-loc-inner" style="background:#FF8C42"></div><div style="margin-top:5px;background:#FF8C42;color:#fff;font-size:9px;font-weight:800;border-radius:6px;padding:2px 7px;white-space:nowrap;box-shadow:0 2px 6px rgba(255,140,66,0.5)">📍 你在这里</div></div>',
-    className: '',
-    iconSize: null,
-    iconAnchor: [9, 9],
+  var icon = L.icon({
+    iconUrl: '/assets/loc-pin.png',
+    iconSize: [48, 48],
+    iconAnchor: [24, 48],
   });
   myLocMarker = L.marker(wgsLatLng, { icon: icon, zIndexOffset: 1000 });
   myLocMarker.addTo(map);
