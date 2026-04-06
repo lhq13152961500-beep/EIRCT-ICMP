@@ -296,11 +296,13 @@ var allWgsPoints = POIS.map(function(p) {
   return [w[1], w[0]];
 });
 var bounds = L.latLngBounds(allWgsPoints);
-map.fitBounds(bounds, { padding: [40, 40] });
 
-map.on('load', function() {
+/* 注册 load 事件必须在 fitBounds 之前，否则事件已触发无法捕获 */
+map.once('load', function() {
   sendToApp({ type:"ready" });
 });
+
+map.fitBounds(bounds, { padding: [40, 40] });
 
 map.on('click', function() {
   sendToApp({ type:"mapClick" });
@@ -308,6 +310,10 @@ map.on('click', function() {
 
 renderMarkers();
 
+/* 进入地图即显示当前位置（景区入口大门，GCJ-02） */
+window.setMyLocation(89.5971, 42.8603);
+
+/* 兜底：2秒后再次通知 React Native，确保 mapReady 被触发 */
 setTimeout(function() { sendToApp({ type:"ready" }); }, 2000);
 </script>
 </body>
