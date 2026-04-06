@@ -329,18 +329,18 @@ export default function ArTourScreen() {
   if (phase === "idle") {
     return (
       <View style={styles.root}>
-        <LinearGradient colors={["#071018","#0B2215","#071018"]} style={StyleSheet.absoluteFill}/>
+        <LinearGradient colors={["#FFFFFF","#F2FAF6","#FFFFFF"]} style={StyleSheet.absoluteFill}/>
         {Array.from({length:28}).map((_,i) => (
           <View key={i} style={[styles.star,{
             left:(i*137.5)%SW, top:(i*89.3)%(SH*0.78),
-            width:i%3===0?2:1.5, height:i%3===0?2:1.5, opacity:0.25+(i%5)*0.08,
+            width:i%3===0?3:2, height:i%3===0?3:2, opacity:0.12+(i%5)*0.04,
           }]}/>
         ))}
         <View style={[styles.header,{paddingTop:topPad+8}]}>
           <Pressable style={styles.backBtn} onPress={()=>router.back()}>
-            <Ionicons name="chevron-back" size={22} color="#fff"/>
+            <Ionicons name="chevron-back" size={22} color="#1A1A1A"/>
           </Pressable>
-          <Text style={styles.headerTitle}>AR 实景畅游</Text>
+          <Text style={[styles.headerTitle,{color:"#1A1A1A"}]}>AR 实景畅游</Text>
           <View style={{width:36}}/>
         </View>
         <View style={styles.idleCenter}>
@@ -352,11 +352,11 @@ export default function ArTourScreen() {
               <ArHexIcon size={64} color="#fff"/>
             </LinearGradient>
           </View>
-          <Text style={styles.idleTitle}>AR 实景畅游</Text>
-          <Text style={styles.idleSub}>{"将镜头对准周边建筑与景点\n即可触发沉浸式 AR 体验"}</Text>
+          <Text style={[styles.idleTitle,{color:"#1A1A1A"}]}>AR 实景畅游</Text>
+          <Text style={[styles.idleSub,{color:"rgba(0,0,0,0.5)"}]}>{"将镜头对准周边建筑与景点\n即可触发沉浸式 AR 体验"}</Text>
           <View style={styles.idleTags}>
             {["3D 建模识别","文化讲解","历史层叠"].map(t=>(
-              <View key={t} style={styles.idleTag}><Text style={styles.idleTagText}>{t}</Text></View>
+              <View key={t} style={styles.idleTagLight}><Text style={styles.idleTagTextLight}>{t}</Text></View>
             ))}
           </View>
         </View>
@@ -368,7 +368,7 @@ export default function ArTourScreen() {
               <Ionicons name="arrow-forward" size={18} color="rgba(255,255,255,0.7)"/>
             </LinearGradient>
           </Pressable>
-          <Text style={styles.idleHint}>点击按钮，将镜头对准建筑物</Text>
+          <Text style={[styles.idleHint,{color:"rgba(0,0,0,0.35)"}]}>点击按钮，将镜头对准建筑物</Text>
         </View>
       </View>
     );
@@ -384,10 +384,10 @@ export default function ArTourScreen() {
           locations={[0,0.2,0.65,1]} style={StyleSheet.absoluteFill} pointerEvents="none"
         />
         <View style={[styles.header,{paddingTop:topPad+8}]}>
-          <Pressable style={styles.backBtn} onPress={()=>setPhase("idle")}>
+          <Pressable style={[styles.backBtn,styles.backBtnCamera]} onPress={()=>setPhase("idle")}>
             <Ionicons name="chevron-back" size={22} color="#fff"/>
           </Pressable>
-          <Text style={styles.headerTitle}>AR 扫描中</Text>
+          <Text style={[styles.headerTitle,{color:"#fff"}]}>AR 扫描中</Text>
           <View style={{width:36}}/>
         </View>
         <View style={styles.viewfinderWrap} pointerEvents="none">
@@ -456,7 +456,7 @@ export default function ArTourScreen() {
       {/* Header */}
       <Animated.View style={{opacity:headerAlpha}}>
         <View style={[styles.header,{paddingTop:topPad+8}]}>
-          <Pressable style={styles.backBtn} onPress={()=>router.back()}>
+          <Pressable style={[styles.backBtn,styles.backBtnCamera]} onPress={()=>router.back()}>
             <Ionicons name="chevron-back" size={22} color="#fff"/>
           </Pressable>
           <Text style={styles.headerTitleLeft}>AR 实景畅游</Text>
@@ -558,28 +558,31 @@ export default function ArTourScreen() {
    Styles
    ═══════════════════════════════ */
 const styles = StyleSheet.create({
-  root:{ flex:1, backgroundColor:"#060E18" },
-  star:{ position:"absolute", backgroundColor:"#fff", borderRadius:1 },
+  root:{ flex:1, backgroundColor:"#FAFAFA" },
+  star:{ position:"absolute", backgroundColor:PRIMARY, borderRadius:99 },
 
   header:{ flexDirection:"row", alignItems:"center", paddingHorizontal:14, paddingBottom:10, zIndex:20 },
-  backBtn:{ width:36,height:36,borderRadius:18, backgroundColor:"rgba(255,255,255,0.18)", alignItems:"center",justifyContent:"center" },
-  headerTitle:{ flex:1, textAlign:"center", fontSize:17, fontWeight:"700", color:"#fff" },
+  backBtn:{ width:36,height:36,borderRadius:18, backgroundColor:"rgba(0,0,0,0.07)", alignItems:"center",justifyContent:"center" },
+  backBtnCamera:{ backgroundColor:"rgba(0,0,0,0.42)" },
+  headerTitle:{ flex:1, textAlign:"center", fontSize:17, fontWeight:"700", color:"#1A1A1A" },
   headerTitleLeft:{ fontSize:17, fontWeight:"700", color:"#fff", marginLeft:10 },
 
   /* Idle */
   idleCenter:{ flex:1, alignItems:"center", justifyContent:"center", gap:16 },
   idleCircle:{ width:128,height:128,borderRadius:64,overflow:"hidden", shadowColor:PRIMARY,shadowOffset:{width:0,height:8},shadowOpacity:0.5,shadowRadius:20,elevation:12 },
   idleCircleInner:{ flex:1, alignItems:"center", justifyContent:"center" },
-  idleTitle:{ fontSize:24, fontWeight:"800", color:"#fff", marginTop:8 },
-  idleSub:{ fontSize:14, color:"rgba(255,255,255,0.6)", textAlign:"center", lineHeight:22 },
+  idleTitle:{ fontSize:24, fontWeight:"800", color:"#1A1A1A", marginTop:8 },
+  idleSub:{ fontSize:14, color:"rgba(0,0,0,0.5)", textAlign:"center", lineHeight:22 },
   idleTags:{ flexDirection:"row", flexWrap:"wrap", gap:8, justifyContent:"center", paddingHorizontal:32, marginTop:4 },
   idleTag:{ backgroundColor:"rgba(255,255,255,0.09)", borderRadius:20, paddingHorizontal:12, paddingVertical:5, borderWidth:1, borderColor:"rgba(255,255,255,0.14)" },
+  idleTagLight:{ backgroundColor:PRIMARY+"12", borderRadius:20, paddingHorizontal:12, paddingVertical:5, borderWidth:1, borderColor:PRIMARY+"30" },
   idleTagText:{ fontSize:12, color:"rgba(255,255,255,0.78)", fontWeight:"600" },
+  idleTagTextLight:{ fontSize:12, color:PRIMARY, fontWeight:"600" },
   idleBottom:{ alignItems:"center", gap:12, paddingHorizontal:32 },
   startBtn:{ width:"100%", borderRadius:28, overflow:"hidden" },
   startBtnGrad:{ flexDirection:"row", alignItems:"center", justifyContent:"center", gap:10, paddingVertical:16, paddingHorizontal:24 },
   startBtnText:{ fontSize:17, fontWeight:"800", color:"#fff", flex:1, textAlign:"center" },
-  idleHint:{ fontSize:12, color:"rgba(255,255,255,0.38)" },
+  idleHint:{ fontSize:12, color:"rgba(0,0,0,0.35)" },
 
   /* Scanning */
   viewfinderWrap:{ flex:1, alignItems:"center", justifyContent:"center" },
