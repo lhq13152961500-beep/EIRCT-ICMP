@@ -234,6 +234,8 @@ export default function MapGuideScreen() {
     outputRange: [SHEET_FULL + 40, 0],
   });
 
+  const activeRoute = activeRouteId ? ROUTES.find(r => r.id === activeRouteId) ?? null : null;
+
   const startRoute = useCallback((route: RouteItem) => {
     haptic("medium");
     setActiveRouteId(route.id);
@@ -242,6 +244,12 @@ export default function MapGuideScreen() {
     );
     closeSheet();
   }, [injectJs, closeSheet]);
+
+  const cancelRoute = useCallback(() => {
+    haptic();
+    setActiveRouteId(null);
+    injectJs(`window.clearRoute && window.clearRoute();`);
+  }, [injectJs]);
 
   const onMapAreaLayout = useCallback((e: LayoutChangeEvent) => {
     const h = e.nativeEvent.layout.height;
@@ -396,20 +404,35 @@ export default function MapGuideScreen() {
 
         {/* Route button — floating above bottom inset */}
         <View style={[styles.routeBtnArea, { paddingBottom: bottomPad + 12 }]}>
-          <Pressable style={styles.routeBtn} onPress={openSheet}>
-            <LinearGradient
-              colors={["#8B5E3C", "#6B4228"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.routeBtnGradient}
-            >
-              <MaterialCommunityIcons name="map-marker-path" size={20} color="#fff" />
-              <Text style={styles.routeBtnText}>游览路线</Text>
-              <View style={styles.routeBtnBadge}>
-                <Text style={styles.routeBtnBadgeText}>{ROUTES.length}</Text>
+          {activeRoute ? (
+            <View style={[styles.activeRouteBtn, { shadowColor: activeRoute.color }]}>
+              <View style={[styles.activeRouteBtnMain, { backgroundColor: activeRoute.color }]}>
+                <Text style={styles.activeRouteBtnIcon}>{activeRoute.icon}</Text>
+                <Text style={styles.activeRouteBtnText} numberOfLines={1}>{activeRoute.title}</Text>
               </View>
-            </LinearGradient>
-          </Pressable>
+              <Pressable
+                style={[styles.activeRouteCancelBtn, { backgroundColor: activeRoute.color }]}
+                onPress={cancelRoute}
+              >
+                <Ionicons name="close" size={20} color="#fff" />
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable style={styles.routeBtn} onPress={openSheet}>
+              <LinearGradient
+                colors={["#8B5E3C", "#6B4228"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.routeBtnGradient}
+              >
+                <MaterialCommunityIcons name="map-marker-path" size={20} color="#fff" />
+                <Text style={styles.routeBtnText}>游览路线</Text>
+                <View style={styles.routeBtnBadge}>
+                  <Text style={styles.routeBtnBadgeText}>{ROUTES.length}</Text>
+                </View>
+              </LinearGradient>
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -661,6 +684,22 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.28)", alignItems: "center", justifyContent: "center",
   },
   routeBtnBadgeText: { fontSize: 12, fontWeight: "700", color: "#fff" },
+
+  // Active route button
+  activeRouteBtn: {
+    flexDirection: "row", alignItems: "stretch", borderRadius: 28, overflow: "hidden",
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 10,
+  },
+  activeRouteBtnMain: {
+    flex: 1, flexDirection: "row", alignItems: "center",
+    gap: 8, paddingVertical: 16, paddingHorizontal: 20,
+  },
+  activeRouteBtnIcon: { fontSize: 18 },
+  activeRouteBtnText: { flex: 1, fontSize: 15, fontWeight: "700", color: "#fff" },
+  activeRouteCancelBtn: {
+    paddingHorizontal: 18, alignItems: "center", justifyContent: "center",
+    borderLeftWidth: 1, borderLeftColor: "rgba(255,255,255,0.3)",
+  },
 
   // Sheet
   sheetOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.4)" },
