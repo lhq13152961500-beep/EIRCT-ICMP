@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
+  Modal,
   Pressable,
   ScrollView,
   StatusBar,
@@ -122,8 +123,18 @@ export default function AdaptiveRoamScreen() {
     inputRange: [0, 1], outputRange: [240, 0],
   });
 
-  const loadColor = stability >= 90 ? "#3DAA6F" : stability >= 75 ? "#E8873A" : "#E05252";
-  const loadText  = stability >= 90 ? "低" : stability >= 75 ? "中" : "高";
+  const [arpModalVisible, setArpModalVisible] = useState(false);
+  const [arpAccepted, setArpAccepted]         = useState(false);
+
+  // ARP level derived from real-time gait — slow pace triggers fatigue alert
+  const arpLevel = speed >= 4.0 ? "活跃" : speed >= 2.8 ? "适中" : "疲劳预警";
+  const arpColor = speed >= 4.0 ? "#3DAA6F" : speed >= 2.8 ? "#2196F3" : "#E8873A";
+  const arpIcon: keyof typeof MaterialCommunityIcons.glyphMap =
+    speed >= 4.0 ? "lightning-bolt" : speed >= 2.8 ? "chart-line" : "alert-circle-outline";
+
+  const origKm   = selectedTime <= 1 ? 1.8 : selectedTime <= 2 ? 2.5 : 4.2;
+  const savedKm  = 1.4;
+  const optKm    = +(origKm - savedKm).toFixed(1);
 
   // ── SETUP PHASE ──────────────────────────────────────────────
   if (phase === "setup") {
@@ -340,16 +351,106 @@ export default function AdaptiveRoamScreen() {
             <Text style={styles.gaitMetricVal}>{stability}</Text>
             <Text style={styles.gaitMetricUnit}>%</Text>
           </View>
-          <View style={[styles.gaitMetricCard, { backgroundColor: loadColor + "18" }]}>
-            <Text style={styles.gaitMetricLabel}>运动负荷</Text>
-            <View style={styles.gaitLoadRow}>
-              <Text style={[styles.gaitMetricVal, { color: loadColor }]}>{loadText}</Text>
-              <Ionicons name="checkmark-circle" size={16} color={loadColor} style={{ marginTop: 2 }} />
+          <Pressable
+            style={[styles.gaitMetricCard, { backgroundColor: arpColor + "18" }]}
+            onPress={() => { haptic("medium"); setArpModalVisible(true); }}
+          >
+            <View style={styles.gaitArpLabelRow}>
+              <Text style={styles.gaitMetricLabel}>ARP规划</Text>
+              <MaterialCommunityIcons name={arpIcon} size={13} color={arpColor} />
             </View>
-            <Text style={[styles.gaitMetricUnit, { color: loadColor }]}>状态良好</Text>
-          </View>
+            <Text style={[styles.gaitMetricVal, { color: arpColor }]}>{arpLevel}</Text>
+            <Text style={[styles.gaitMetricUnit, { color: arpColor }]}>点击查看详情</Text>
+          </Pressable>
         </View>
       </Animated.View>
+
+      {/* ── ARP 규划 Modal ── */}
+      <Modal
+        visible={arpModalVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setArpModalVisible(false)}
+      >
+        <Pressable style={styles.arpOverlay} onPress={() => setArpModalVisible(false)}>
+          <View style={styles.arpModal}>
+
+            {/* Modal header icon */}
+            <View style={styles.arpModalIconWrap}>
+              <MaterialCommunityIcons name={arpIcon} size={28} color={arpColor} />
+            </View>
+
+            {/* Title */}
+            <Text style={styles.arpModalTitle}>
+              {arpLevel === "疲劳预警"
+                ? "检测到疲劳：正在优化路线"
+                : arpLevel === "适中"
+                ? "步态良好：路线持续分析中"
+                : "活跃状态：推荐探索更多景点"}
+            </Text>
+            <Text style={styles.arpModalSub}>ARP Bio-Sync 自适应规划 · 已激活</Text>
+
+            {/* Route comparison card */}
+            <View style={styles.arpRouteCard}>
+              <View style={styles.arpRouteCol}>
+                <Text style={styles.arpRouteColLabel}>原始路线</Text>
+                <Text style={styles.arpRouteKm}>{origKm}km</Text>
+                <Text style={styles.arpRouteTime}>
+                  -{Math.round(origKm / 4 * 60)} 分钟
+                </Text>
+              </View>
+              <View style={styles.arpRouteDivider} />
+              <View style={[styles.arpRouteCol, { alignItems: "flex-end" }]}>
+                <Text style={[styles.arpRouteColLabel, { color: arpColor }]}>优化后</Text>
+                <View style={styles.arpOptRow}>
+                  <Text style={[styles.arpSavedKm, { color: arpColor }]}>-{savedKm}km</Text>
+                  <Text style={styles.arpRouteKm}>{Math.max(0.5, optKm)}km</Text>
+                </View>
+                <Text style={[styles.arpRouteTime, { color: arpColor }]}>
+                  -{Math.round(savedKm / 4 * 60)} 分钟
+                </Text>
+              </View>
+            </View>
+
+            {/* Description */}
+            <Text style={styles.arpModalDesc}>
+              {arpLevel === "疲劳预警"
+                ? `根据您步速放缓、休息频次增加的数据，已将剩余路径缩减 ${savedKm}km，并插入休息节点，避免因疲劳影响游览体验。`
+                : arpLevel === "适中"
+                ? "您在多个景点停留时间延长，系统已识别您对文化类景点的偏好，后续将优先推荐同类人文景点。"
+                : "您步速保持活跃，系统将探索周边评分较高的隐藏景点，为您生成延伸路线推荐。"}
+            </Text>
+
+            {/* Action button */}
+            {arpAccepted ? (
+              <View style={[styles.arpAcceptedBtn, { backgroundColor: arpColor + "22", borderColor: arpColor }]}>
+                <Ionicons name="checkmark-circle" size={18} color={arpColor} />
+                <Text style={[styles.arpAcceptedText, { color: arpColor }]}>已应用优化方案</Text>
+              </View>
+            ) : (
+              <Pressable
+                style={[styles.arpActionBtn, { backgroundColor: arpColor }]}
+                onPress={() => {
+                  haptic("medium");
+                  setArpAccepted(true);
+                  setTimeout(() => setArpModalVisible(false), 800);
+                }}
+              >
+                <Text style={styles.arpActionBtnText}>
+                  {arpLevel === "疲劳预警" ? "接受优化路线" : arpLevel === "适中" ? "应用偏好推荐" : "探索延伸景点"}
+                </Text>
+                <Ionicons name="navigate" size={16} color="#fff" />
+              </Pressable>
+            )}
+
+            {/* Close */}
+            <Pressable onPress={() => setArpModalVisible(false)} style={styles.arpCloseBtn}>
+              <Text style={styles.arpCloseText}>稍后再说</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -490,4 +591,50 @@ const styles = StyleSheet.create({
   gaitMetricVal: { fontSize: 26, fontWeight: "800", color: Colors.light.text, lineHeight: 30 },
   gaitMetricUnit: { fontSize: 12, color: Colors.light.textSecondary },
   gaitLoadRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  gaitArpLabelRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+
+  // ARP modal
+  arpOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center", alignItems: "center", padding: 24,
+  },
+  arpModal: {
+    width: "100%", backgroundColor: "#fff", borderRadius: 28,
+    padding: 24, alignItems: "center", gap: 12,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 20,
+  },
+  arpModalIconWrap: {
+    width: 60, height: 60, borderRadius: 30,
+    backgroundColor: "#E8F5F0", alignItems: "center", justifyContent: "center",
+  },
+  arpModalTitle: { fontSize: 18, fontWeight: "800", color: Colors.light.text, textAlign: "center", lineHeight: 24 },
+  arpModalSub: { fontSize: 12, color: Colors.light.textSecondary, textAlign: "center" },
+
+  arpRouteCard: {
+    flexDirection: "row", width: "100%", backgroundColor: "#F6F6F8",
+    borderRadius: 18, padding: 18, alignItems: "center",
+  },
+  arpRouteCol: { flex: 1, gap: 4 },
+  arpRouteColLabel: { fontSize: 10, fontWeight: "700", color: Colors.light.textSecondary, letterSpacing: 0.5, textTransform: "uppercase" },
+  arpRouteKm: { fontSize: 28, fontWeight: "900", color: Colors.light.text },
+  arpRouteTime: { fontSize: 13, color: Colors.light.textSecondary, fontWeight: "600" },
+  arpRouteDivider: { width: 1, height: 50, backgroundColor: "#E0E0E0", marginHorizontal: 16 },
+  arpOptRow: { flexDirection: "row", alignItems: "baseline", gap: 4 },
+  arpSavedKm: { fontSize: 13, fontWeight: "700" },
+
+  arpModalDesc: {
+    fontSize: 14, color: Colors.light.textSecondary, lineHeight: 21, textAlign: "center",
+  },
+  arpActionBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 8, width: "100%", paddingVertical: 16, borderRadius: 20,
+  },
+  arpActionBtnText: { fontSize: 16, fontWeight: "800", color: "#fff" },
+  arpAcceptedBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 8, width: "100%", paddingVertical: 14, borderRadius: 20, borderWidth: 1.5,
+  },
+  arpAcceptedText: { fontSize: 15, fontWeight: "700" },
+  arpCloseBtn: { paddingVertical: 4 },
+  arpCloseText: { fontSize: 13, color: Colors.light.textSecondary },
 });
