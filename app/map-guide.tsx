@@ -402,37 +402,58 @@ export default function MapGuideScreen() {
           </Pressable>
         )}
 
-        {/* Route button — floating above bottom inset */}
+        {/* Bottom buttons — floating above bottom inset */}
         <View style={[styles.routeBtnArea, { paddingBottom: bottomPad + 12 }]}>
-          {activeRoute ? (
-            <View style={[styles.activeRouteBtn, { shadowColor: activeRoute.color }]}>
-              <View style={[styles.activeRouteBtnMain, { backgroundColor: activeRoute.color }]}>
-                <Text style={styles.activeRouteBtnIcon}>{activeRoute.icon}</Text>
-                <Text style={styles.activeRouteBtnText} numberOfLines={1}>{activeRoute.title}</Text>
-              </View>
-              <Pressable
-                style={[styles.activeRouteCancelBtn, { backgroundColor: activeRoute.color }]}
-                onPress={cancelRoute}
-              >
-                <Ionicons name="close" size={20} color="#fff" />
-              </Pressable>
+          <View style={styles.bottomBtnRow}>
+            {/* 游览路线 button */}
+            <View style={styles.bottomBtnFlex}>
+              {activeRoute ? (
+                <View style={[styles.activeRouteBtn, { shadowColor: activeRoute.color }]}>
+                  <View style={[styles.activeRouteBtnMain, { backgroundColor: activeRoute.color }]}>
+                    <Text style={styles.activeRouteBtnIcon}>{activeRoute.icon}</Text>
+                    <Text style={styles.activeRouteBtnText} numberOfLines={1}>{activeRoute.title}</Text>
+                  </View>
+                  <Pressable
+                    style={[styles.activeRouteCancelBtn, { backgroundColor: activeRoute.color }]}
+                    onPress={cancelRoute}
+                  >
+                    <Ionicons name="close" size={20} color="#fff" />
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable style={styles.routeBtn} onPress={openSheet}>
+                  <LinearGradient
+                    colors={["#8B5E3C", "#6B4228"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.routeBtnGradient}
+                  >
+                    <MaterialCommunityIcons name="map-marker-path" size={20} color="#fff" />
+                    <Text style={styles.routeBtnText}>游览路线</Text>
+                    <View style={styles.routeBtnBadge}>
+                      <Text style={styles.routeBtnBadgeText}>{ROUTES.length}</Text>
+                    </View>
+                  </LinearGradient>
+                </Pressable>
+              )}
             </View>
-          ) : (
-            <Pressable style={styles.routeBtn} onPress={openSheet}>
+
+            {/* 自适应漫游 button */}
+            <Pressable
+              style={styles.adaptiveBtn}
+              onPress={() => { haptic("medium"); router.push("/adaptive-roam"); }}
+            >
               <LinearGradient
-                colors={["#8B5E3C", "#6B4228"]}
+                colors={["#3DAA6F", "#1E7E4F"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
-                style={styles.routeBtnGradient}
+                style={styles.adaptiveBtnGradient}
               >
-                <MaterialCommunityIcons name="map-marker-path" size={20} color="#fff" />
-                <Text style={styles.routeBtnText}>游览路线</Text>
-                <View style={styles.routeBtnBadge}>
-                  <Text style={styles.routeBtnBadgeText}>{ROUTES.length}</Text>
-                </View>
+                <MaterialCommunityIcons name="walk" size={20} color="#fff" />
+                <Text style={styles.routeBtnText}>自适应漫游</Text>
               </LinearGradient>
             </Pressable>
-          )}
+          </View>
         </View>
       </View>
 
@@ -673,6 +694,13 @@ const styles = StyleSheet.create({
     position: "absolute", bottom: 0, left: 0, right: 0,
     paddingHorizontal: 16, paddingTop: 8,
   },
+  bottomBtnRow: { flexDirection: "row", gap: 10 },
+  bottomBtnFlex: { flex: 1 },
+  adaptiveBtn: {
+    borderRadius: 28, overflow: "hidden",
+    shadowColor: "#1E7E4F", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 14, elevation: 10,
+  },
+  adaptiveBtnGradient: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 16, paddingHorizontal: 14 },
   routeBtn: {
     borderRadius: 28, overflow: "hidden",
     shadowColor: "#5C3D1E", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 14, elevation: 10,
