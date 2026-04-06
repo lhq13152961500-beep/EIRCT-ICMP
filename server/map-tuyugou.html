@@ -200,12 +200,31 @@ window.selectPoi = function(id) {
   }
 };
 
-/* Center on WGS-84 equivalent of GCJ-02 center [89.6025, 42.8605] */
-var centerWgs = gcj2wgs(89.6025, 42.8605);
+/* 吐峪沟景区大致边界 (GCJ-02) → WGS-84 */
+var BOUNDARY_GCJ = [
+  [89.5945, 42.8650],
+  [89.5975, 42.8660],
+  [89.6020, 42.8658],
+  [89.6065, 42.8652],
+  [89.6100, 42.8640],
+  [89.6110, 42.8620],
+  [89.6095, 42.8595],
+  [89.6080, 42.8568],
+  [89.6055, 42.8548],
+  [89.6020, 42.8543],
+  [89.5985, 42.8550],
+  [89.5958, 42.8568],
+  [89.5942, 42.8595],
+  [89.5940, 42.8620],
+  [89.5945, 42.8650],
+];
+var BOUNDARY_WGS = BOUNDARY_GCJ.map(function(c) {
+  var w = gcj2wgs(c[0], c[1]);
+  return [w[1], w[0]];
+});
 
+/* 初始化地图 */
 map = L.map('map', {
-  center: [centerWgs[1], centerWgs[0]],
-  zoom: 15,
   zoomControl: false,
   attributionControl: true,
 });
@@ -214,6 +233,24 @@ L.tileLayer('/api/tiles/{z}/{x}/{y}', {
   attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   maxZoom: 19,
 }).addTo(map);
+
+/* 景区范围半透明覆盖层 */
+L.polygon(BOUNDARY_WGS, {
+  color: '#E88A2E',
+  weight: 2,
+  opacity: 0.7,
+  fillColor: '#F5A623',
+  fillOpacity: 0.08,
+  dashArray: '6 4',
+}).addTo(map);
+
+/* 自动缩放至所有 POI 范围 */
+var allWgsPoints = POIS.map(function(p) {
+  var w = gcj2wgs(p.pos[0], p.pos[1]);
+  return [w[1], w[0]];
+});
+var bounds = L.latLngBounds(allWgsPoints);
+map.fitBounds(bounds, { padding: [40, 40] });
 
 map.on('load', function() {
   sendToApp({ type:"ready" });
