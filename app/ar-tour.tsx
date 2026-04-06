@@ -78,7 +78,7 @@ function PulseRing({ delay, size }: { delay: number; size: number }) {
     loop.start(); return () => loop.stop();
   }, []);
   return (
-    <Animated.View style={{
+    <Animated.View pointerEvents="none" style={{
       position: "absolute", width: size, height: size, borderRadius: size/2,
       borderWidth: 1.5, borderColor: PRIMARY,
       opacity: anim.interpolate({ inputRange:[0,0.3,1], outputRange:[0,0.55,0] }),
@@ -329,9 +329,9 @@ export default function ArTourScreen() {
   if (phase === "idle") {
     return (
       <View style={styles.root}>
-        <LinearGradient colors={["#FFFFFF","#F2FAF6","#FFFFFF"]} style={StyleSheet.absoluteFill}/>
+        <LinearGradient colors={["#FFFFFF","#F2FAF6","#FFFFFF"]} style={StyleSheet.absoluteFill} pointerEvents="none"/>
         {Array.from({length:28}).map((_,i) => (
-          <View key={i} style={[styles.star,{
+          <View key={i} pointerEvents="none" style={[styles.star,{
             left:(i*137.5)%SW, top:(i*89.3)%(SH*0.78),
             width:i%3===0?3:2, height:i%3===0?3:2, opacity:0.12+(i%5)*0.04,
           }]}/>
