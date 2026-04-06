@@ -173,7 +173,7 @@ window.setMyLocation = function(lng, lat) {
   var wgsLatLng = [wgs[1], wgs[0]];
   if (myLocMarker) myLocMarker.remove();
   var icon = L.divIcon({
-    html: '<div class="my-loc-wrap"><div class="my-loc-pulse" style="background:#FF8C42"></div><div class="my-loc-inner" style="background:#FF8C42"></div></div>',
+    html: '<div class="my-loc-wrap"><div class="my-loc-pulse" style="background:#FF8C42"></div><div class="my-loc-inner" style="background:#FF8C42"></div><div style="margin-top:5px;background:#FF8C42;color:#fff;font-size:9px;font-weight:800;border-radius:6px;padding:2px 7px;white-space:nowrap;box-shadow:0 2px 6px rgba(255,140,66,0.5)">📍 你在这里</div></div>',
     className: '',
     iconSize: null,
     iconAnchor: [9, 9],

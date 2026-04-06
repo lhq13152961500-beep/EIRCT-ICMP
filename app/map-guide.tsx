@@ -111,7 +111,7 @@ const ROUTES: RouteItem[] = [
     accent: "#F0FFF4",
     icon: "🎯",
     tags: ["精华", "文化", "非遗"],
-    poiIds: ["12", "7", "4", "5", "8", "9", "1", "2", "3", "10", "6", "11"],
+    poiIds: ["1", "9", "7", "12", "4", "8", "5", "10", "2", "3", "6", "11"],
   },
   {
     id: "3",
@@ -184,10 +184,11 @@ export default function MapGuideScreen() {
 
   useEffect(() => {
     if (!mapReady) return;
-    if (locationStatus.state === "located" && locationStatus.lng && locationStatus.lat) {
-      injectJs(`window.setMyLocation && window.setMyLocation(${locationStatus.lng}, ${locationStatus.lat});`);
-    }
-  }, [mapReady, locationStatus, injectJs]);
+    // 以景区入口大门 (GCJ-02) 为游览起始位置
+    const START_LNG = 89.5971;
+    const START_LAT = 42.8603;
+    injectJs(`window.setMyLocation && window.setMyLocation(${START_LNG}, ${START_LAT});`);
+  }, [mapReady, injectJs]);
 
   const handleWebViewMessage = useCallback((event: { nativeEvent: { data: string } }) => {
     try {
