@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>吐峪沟地图</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="/assets/leaflet.min.css"/>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{width:100%;height:100%;overflow:hidden;background:#e8dcc8}
@@ -18,7 +18,7 @@
 </head>
 <body>
 <div id="map"></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/assets/leaflet.min.js"></script>
 <script>
 /* GCJ-02 → WGS-84 conversion (needed because POI coords are GCJ-02, OSM uses WGS-84) */
 function gcj2wgs(lng, lat) {
@@ -75,6 +75,7 @@ var COLORS = {
 
 var map = null;
 var leafletMarkers = {};
+var markerLayer = null; /* LayerGroup for batch add/remove */
 var myLocMarker = null;
 var activeMarkerId = null;
 var currentFilter = "全部";
@@ -147,16 +148,18 @@ function shouldShow(poi) {
 }
 
 function renderMarkers() {
-  Object.keys(leafletMarkers).forEach(function(id) {
-    leafletMarkers[id].remove();
-  });
+  /* Remove existing layer group in one shot */
+  if (markerLayer) { markerLayer.clearLayers(); map.removeLayer(markerLayer); }
+  markerLayer = L.layerGroup();
   leafletMarkers = {};
   POIS.forEach(function(poi) {
     if (!shouldShow(poi)) return;
     var m = createLeafletMarker(poi);
-    m.addTo(map);
+    markerLayer.addLayer(m);
     leafletMarkers[poi.id] = m;
   });
+  /* Add entire group to map in one DOM operation */
+  markerLayer.addTo(map);
 }
 
 window.filterPoi = function(category) {

@@ -138,6 +138,9 @@ const MAP_URL = (() => {
   }
 })();
 
+/* Stable object reference — prevents WebView from reloading on parent re-renders */
+const MAP_SOURCE = MAP_URL ? { uri: MAP_URL } : undefined;
+
 export default function MapGuideScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 0 : insets.top;
@@ -333,11 +336,13 @@ export default function MapGuideScreen() {
         {MAP_URL && !mapError ? (
           <WebView
             ref={webViewRef}
-            source={{ uri: MAP_URL }}
+            source={MAP_SOURCE}
             style={StyleSheet.absoluteFill}
             onMessage={handleWebViewMessage}
             javaScriptEnabled
             domStorageEnabled
+            cacheEnabled
+            cacheMode="LOAD_CACHE_ELSE_NETWORK"
             mixedContentMode="always"
             originWhitelist={["*"]}
             onError={() => setMapError(true)}

@@ -637,8 +637,7 @@ async function registerRoutes(app2) {
       const html = readFileSync(htmlPath, "utf-8");
       const page = html.replace(/__AMAP_KEY__/g, key).replace(/__AMAP_SECURITY_KEY__/g, securityKey);
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
       return res.send(page);
     } catch (e) {
       return res.status(500).send("Failed to load map page");
