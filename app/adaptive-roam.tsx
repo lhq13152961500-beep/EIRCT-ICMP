@@ -39,10 +39,16 @@ const TIME_OPTIONS = [
   { label: "3小时以上", value: 3 },
 ];
 
-function pickRoute(hours: number) {
-  if (hours <= 1)   return { ids: ["1","9","8","10","11","7"],         color: "#9B59B6" };
-  if (hours <= 2)   return { ids: ["1","2","3","10","13","12","7","11"], color: "#E8873A" };
-  return               { ids: ["1","9","7","12","4","8","5","10","2","3","6","11"], color: "#3DAA6F" };
+const ROUTE_LEVELS = [
+  { ids: ["1","9","8","10","11","7"],                              color: "#9B59B6", stops: 6,  km: 1.8, label: "精华路线" },
+  { ids: ["1","2","3","10","13","12","7","11"],                    color: "#E8873A", stops: 8,  km: 2.5, label: "经典路线" },
+  { ids: ["1","9","7","12","4","8","5","10","2","3","6","11"],     color: "#3DAA6F", stops: 12, km: 4.2, label: "全览路线" },
+];
+
+function timeToLevel(hours: number) {
+  if (hours <= 1) return 0;
+  if (hours <= 2) return 1;
+  return 2;
 }
 
 export default function AdaptiveRoamScreen() {
@@ -54,6 +60,10 @@ export default function AdaptiveRoamScreen() {
 
   const [mapReady, setMapReady]   = useState(false);
   const webViewRef                = useRef<WebView>(null);
+
+  // ARP route level — starts from selectedTime, adjusted dynamically
+  const [arpRouteLevel, setArpRouteLevel] = useState<number>(() => timeToLevel(selectedTime));
+  const prevArpStateRef = useRef<string>("活跃"); // speed starts at 4.2 = 活跃
 
   // Gait simulation state
   const [speed,     setSpeed]     = useState(4.2);
@@ -68,15 +78,40 @@ export default function AdaptiveRoamScreen() {
     webViewRef.current?.injectJavaScript(js + "; true;");
   }, []);
 
-  // When map is ready & roaming started → draw route + set location
+  // When map is ready & roaming started → draw initial route
   useEffect(() => {
     if (!mapReady || phase !== "roaming") return;
-    const route = pickRoute(selectedTime);
+    const route = ROUTE_LEVELS[arpRouteLevel];
     injectJs(`window.setMyLocation && window.setMyLocation(89.5971, 42.8603);`);
     injectJs(
       `window.drawRoute && window.drawRoute(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)});`
     );
-  }, [mapReady, phase, selectedTime, injectJs]);
+  }, [mapReady, phase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ARP state transition → update route on map
+  useEffect(() => {
+    if (phase !== "roaming" || !mapReady) return;
+    const arpState = speed >= 4.0 ? "活跃" : speed >= 2.8 ? "适中" : "疲劳预警";
+    if (arpState === prevArpStateRef.current) return;
+    prevArpStateRef.current = arpState;
+
+    setArpRouteLevel(prev => {
+      let next = prev;
+      if (arpState === "活跃") {
+        next = Math.min(prev + 1, ROUTE_LEVELS.length - 1);
+      } else if (arpState === "疲劳预警") {
+        next = Math.max(prev - 1, 0);
+      }
+      if (next !== prev) {
+        const route = ROUTE_LEVELS[next];
+        injectJs(
+          `window.drawRoute && window.drawRoute(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)});`
+        );
+        setArpAccepted(false);
+      }
+      return next;
+    });
+  }, [speed, phase, mapReady, injectJs]);
 
   // Gait data simulation
   useEffect(() => {
@@ -103,6 +138,11 @@ export default function AdaptiveRoamScreen() {
 
   const handleStart = () => {
     haptic("medium");
+    // Reset ARP to match newly chosen time, and reset prev state tracker
+    const level = timeToLevel(selectedTime);
+    setArpRouteLevel(level);
+    prevArpStateRef.current = "活跃";
+    setArpAccepted(false);
     setPhase("roaming");
   };
 
@@ -126,15 +166,18 @@ export default function AdaptiveRoamScreen() {
   const [arpModalVisible, setArpModalVisible] = useState(false);
   const [arpAccepted, setArpAccepted]         = useState(false);
 
-  // ARP level derived from real-time gait — slow pace triggers fatigue alert
+  // ARP level derived from real-time gait
   const arpLevel = speed >= 4.0 ? "活跃" : speed >= 2.8 ? "适中" : "疲劳预警";
   const arpColor = speed >= 4.0 ? "#3DAA6F" : speed >= 2.8 ? "#2196F3" : "#E8873A";
   const arpIcon: keyof typeof MaterialCommunityIcons.glyphMap =
     speed >= 4.0 ? "lightning-bolt" : speed >= 2.8 ? "chart-line" : "alert-circle-outline";
 
-  const origKm   = selectedTime <= 1 ? 1.8 : selectedTime <= 2 ? 2.5 : 4.2;
-  const savedKm  = 1.4;
-  const optKm    = +(origKm - savedKm).toFixed(1);
+  // Route info for the ARP modal — uses the live arpRouteLevel
+  const currentRoute  = ROUTE_LEVELS[arpRouteLevel];
+  const baseLevel     = timeToLevel(selectedTime);
+  const baseRoute     = ROUTE_LEVELS[baseLevel];
+  const kmDiff        = +(currentRoute.km - baseRoute.km).toFixed(1);
+  const stopsDiff     = currentRoute.stops - baseRoute.stops;
 
   // ── SETUP PHASE ──────────────────────────────────────────────
   if (phase === "setup") {
@@ -181,11 +224,6 @@ export default function AdaptiveRoamScreen() {
                 </Pressable>
               ))}
             </View>
-            <Text style={styles.cardHint}>
-              {selectedTime <= 1 ? "🟣 短途精华：6个核心景点" :
-               selectedTime <= 2 ? "🟠 中途经典：8个精选景点" :
-                                   "🟢 深度全览：12个特色景点"}
-            </Text>
           </View>
 
           {/* People count */}
@@ -395,20 +433,25 @@ export default function AdaptiveRoamScreen() {
             <View style={styles.arpRouteCard}>
               <View style={styles.arpRouteCol}>
                 <Text style={styles.arpRouteColLabel}>原始路线</Text>
-                <Text style={styles.arpRouteKm}>{origKm}km</Text>
-                <Text style={styles.arpRouteTime}>
-                  -{Math.round(origKm / 4 * 60)} 分钟
-                </Text>
+                <Text style={styles.arpRouteKm}>{baseRoute.km}km</Text>
+                <Text style={styles.arpRouteTime}>{baseRoute.stops}个景点</Text>
               </View>
               <View style={styles.arpRouteDivider} />
               <View style={[styles.arpRouteCol, { alignItems: "flex-end" }]}>
-                <Text style={[styles.arpRouteColLabel, { color: arpColor }]}>优化后</Text>
+                <Text style={[styles.arpRouteColLabel, { color: arpColor }]}>
+                  {arpLevel === "活跃" ? "扩展后" : arpLevel === "疲劳预警" ? "优化后" : "当前路线"}
+                </Text>
                 <View style={styles.arpOptRow}>
-                  <Text style={[styles.arpSavedKm, { color: arpColor }]}>-{savedKm}km</Text>
-                  <Text style={styles.arpRouteKm}>{Math.max(0.5, optKm)}km</Text>
+                  {kmDiff !== 0 && (
+                    <Text style={[styles.arpSavedKm, { color: arpColor }]}>
+                      {kmDiff > 0 ? `+${kmDiff}` : `${kmDiff}`}km
+                    </Text>
+                  )}
+                  <Text style={styles.arpRouteKm}>{currentRoute.km}km</Text>
                 </View>
                 <Text style={[styles.arpRouteTime, { color: arpColor }]}>
-                  -{Math.round(savedKm / 4 * 60)} 分钟
+                  {currentRoute.stops}个景点
+                  {stopsDiff !== 0 ? (stopsDiff > 0 ? ` (+${stopsDiff})` : ` (${stopsDiff})`) : ""}
                 </Text>
               </View>
             </View>
@@ -416,10 +459,10 @@ export default function AdaptiveRoamScreen() {
             {/* Description */}
             <Text style={styles.arpModalDesc}>
               {arpLevel === "疲劳预警"
-                ? `根据您步速放缓、休息频次增加的数据，已将剩余路径缩减 ${savedKm}km，并插入休息节点，避免因疲劳影响游览体验。`
+                ? `根据您步速放缓、休息频次增加的数据，路径已从 ${baseRoute.km}km 缩减至 ${currentRoute.km}km，并插入休息节点，避免疲劳影响游览体验。`
                 : arpLevel === "适中"
                 ? "您在多个景点停留时间延长，系统已识别您对文化类景点的偏好，后续将优先推荐同类人文景点。"
-                : "您步速保持活跃，系统将探索周边评分较高的隐藏景点，为您生成延伸路线推荐。"}
+                : `您步速活跃，系统已为您扩展路线至 ${currentRoute.stops} 个景点 (+${stopsDiff})，推荐探索更多精彩景区。`}
             </Text>
 
             {/* Action button */}
