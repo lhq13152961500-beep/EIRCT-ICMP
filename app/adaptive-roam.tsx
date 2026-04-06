@@ -46,7 +46,6 @@ function pickRoute(hours: number) {
 
 export default function AdaptiveRoamScreen() {
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
 
   const [phase, setPhase]         = useState<"setup" | "roaming">("setup");
   const [selectedTime, setTime]   = useState<number>(1.5);
