@@ -16,6 +16,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import WebView from "react-native-webview";
 import { getApiUrl } from "@/lib/query-client";
+import { roamSession } from "@/lib/roam-session";
 import Colors from "@/constants/colors";
 
 const haptic = (style: "light" | "medium" = "light") => {
@@ -54,15 +55,20 @@ function timeToLevel(hours: number) {
 export default function AdaptiveRoamScreen() {
   const insets = useSafeAreaInsets();
 
-  const [phase, setPhase]         = useState<"setup" | "roaming">("setup");
-  const [selectedTime, setTime]   = useState<number>(1.5);
-  const [people, setPeople]       = useState<number>(2);
+  // Restore session if returning to active roam
+  const savedSession = roamSession.get();
+
+  const [phase, setPhase]         = useState<"setup" | "roaming">(savedSession ? "roaming" : "setup");
+  const [selectedTime, setTime]   = useState<number>(savedSession?.selectedTime ?? 1.5);
+  const [people, setPeople]       = useState<number>(savedSession?.people ?? 2);
 
   const [mapReady, setMapReady]   = useState(false);
   const webViewRef                = useRef<WebView>(null);
 
-  // ARP route level — starts from selectedTime, adjusted dynamically
-  const [arpRouteLevel, setArpRouteLevel] = useState<number>(() => timeToLevel(selectedTime));
+  // ARP route level — restored from session or derived from selectedTime
+  const [arpRouteLevel, setArpRouteLevel] = useState<number>(
+    savedSession?.arpRouteLevel ?? timeToLevel(savedSession?.selectedTime ?? 1.5)
+  );
   const prevArpStateRef = useRef<string>("活跃"); // speed starts at 4.2 = 活跃
 
   // Gait simulation state
@@ -87,6 +93,11 @@ export default function AdaptiveRoamScreen() {
       `window.drawRoute && window.drawRoute(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)});`
     );
   }, [mapReady, phase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep session in sync when arpRouteLevel changes mid-roam
+  useEffect(() => {
+    if (phase === "roaming") roamSession.update({ arpRouteLevel });
+  }, [arpRouteLevel, phase]);
 
   // ARP state transition → update route on map
   useEffect(() => {
@@ -138,18 +149,31 @@ export default function AdaptiveRoamScreen() {
 
   const handleStart = () => {
     haptic("medium");
-    // Reset ARP to match newly chosen time, and reset prev state tracker
     const level = timeToLevel(selectedTime);
     setArpRouteLevel(level);
     prevArpStateRef.current = "活跃";
     setArpAccepted(false);
+    // Persist session so map-guide can show "正在漫游"
+    roamSession.start({ selectedTime, people, arpRouteLevel: level });
     setPhase("roaming");
   };
 
   const handleBack = () => {
-    if (phase === "roaming") { setPhase("setup"); setMapReady(false); return; }
     haptic();
+    // During roaming: keep session alive and return to map-guide
+    if (phase === "roaming") {
+      roamSession.update({ arpRouteLevel });
+      if (router.canGoBack()) router.back(); else router.replace("/map-guide");
+      return;
+    }
     if (router.canGoBack()) router.back(); else router.replace("/");
+  };
+
+  const handleCancel = () => {
+    haptic("medium");
+    // Fully end the roaming session
+    roamSession.stop();
+    if (router.canGoBack()) router.back(); else router.replace("/map-guide");
   };
 
   const handleWebViewMessage = useCallback((e: { nativeEvent: { data: string } }) => {
@@ -323,7 +347,13 @@ export default function AdaptiveRoamScreen() {
             {"  ·  "}{people}人
           </Text>
         </View>
-        <View style={{ width: 40 }} />
+        <Pressable
+          style={styles.cancelBtn}
+          onPress={handleCancel}
+          hitSlop={12}
+        >
+          <Text style={styles.cancelBtnText}>取消</Text>
+        </Pressable>
       </View>
 
       {/* Map WebView */}
@@ -593,6 +623,8 @@ const styles = StyleSheet.create({
   roamStatusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#3DAA6F" },
   roamHeaderTitle: { fontSize: 16, fontWeight: "700", color: Colors.light.text },
   roamHeaderSub: { fontSize: 12, color: Colors.light.textSecondary },
+  cancelBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: "#F5F5F5", minWidth: 52, alignItems: "center" },
+  cancelBtnText: { fontSize: 14, fontWeight: "600", color: "#E53935" },
 
   // Map
   mapArea: { flex: 1, backgroundColor: "#E8E8E8" },

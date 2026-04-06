@@ -17,6 +17,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
+import { roamSession } from "@/lib/roam-session";
 import { WebView } from "react-native-webview";
 import Colors from "@/constants/colors";
 import { useLocation } from "@/contexts/LocationContext";
@@ -149,6 +150,13 @@ export default function MapGuideScreen() {
     locationStatus.state === "located" && locationStatus.accuracy != null
       ? `±${Math.round(locationStatus.accuracy)}m`
       : null;
+
+  const [isRoaming, setIsRoaming] = useState(() => !!roamSession.get());
+
+  // Subscribe to roam session changes (start / stop from adaptive-roam)
+  useEffect(() => {
+    return roamSession.subscribe(() => setIsRoaming(!!roamSession.get()));
+  }, []);
 
   const [activeFilter, setActiveFilter] = useState<FilterKey>("全部");
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -438,20 +446,33 @@ export default function MapGuideScreen() {
               )}
             </View>
 
-            {/* 自适应漫游 button */}
+            {/* 自适应漫游 / 正在漫游 button */}
             <Pressable
               style={styles.adaptiveBtn}
               onPress={() => { haptic("medium"); router.push("/adaptive-roam"); }}
             >
-              <LinearGradient
-                colors={["#3DAA6F", "#1E7E4F"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.adaptiveBtnGradient}
-              >
-                <MaterialCommunityIcons name="walk" size={20} color="#fff" />
-                <Text style={styles.routeBtnText}>自适应漫游</Text>
-              </LinearGradient>
+              {isRoaming ? (
+                <LinearGradient
+                  colors={["#1565C0", "#0D47A1"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.adaptiveBtnGradient}
+                >
+                  <MaterialCommunityIcons name="map-marker-path" size={20} color="#fff" />
+                  <Text style={styles.routeBtnText}>正在漫游</Text>
+                  <View style={styles.roamingDot} />
+                </LinearGradient>
+              ) : (
+                <LinearGradient
+                  colors={["#3DAA6F", "#1E7E4F"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.adaptiveBtnGradient}
+                >
+                  <MaterialCommunityIcons name="walk" size={20} color="#fff" />
+                  <Text style={styles.routeBtnText}>自适应漫游</Text>
+                </LinearGradient>
+              )}
             </Pressable>
           </View>
         </View>
@@ -701,6 +722,7 @@ const styles = StyleSheet.create({
     shadowColor: "#1E7E4F", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 14, elevation: 10,
   },
   adaptiveBtnGradient: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 16, paddingHorizontal: 14 },
+  roamingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#64B5F6", marginLeft: 2 },
   routeBtn: {
     borderRadius: 28, overflow: "hidden",
     shadowColor: "#5C3D1E", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 14, elevation: 10,
