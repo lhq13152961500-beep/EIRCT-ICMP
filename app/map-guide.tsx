@@ -8,8 +8,6 @@ import {
   Animated,
   Dimensions,
   Platform,
-  Modal,
-  TextInput,
   StatusBar,
   ActivityIndicator,
   LayoutChangeEvent,
@@ -85,6 +83,7 @@ interface RouteItem {
   accent: string;
   icon: string;
   tags: string[];
+  poiIds: string[];
 }
 
 const ROUTES: RouteItem[] = [
@@ -99,6 +98,7 @@ const ROUTES: RouteItem[] = [
     accent: "#FFF4E6",
     icon: "⚡",
     tags: ["热门", "古建筑", "美食"],
+    poiIds: ["1", "2", "3", "10", "13", "12", "7", "11"],
   },
   {
     id: "2",
@@ -111,6 +111,7 @@ const ROUTES: RouteItem[] = [
     accent: "#F0FFF4",
     icon: "🎯",
     tags: ["精华", "文化", "非遗"],
+    poiIds: ["12", "7", "4", "5", "8", "9", "1", "2", "3", "10", "6", "11"],
   },
   {
     id: "3",
@@ -123,6 +124,7 @@ const ROUTES: RouteItem[] = [
     accent: "#EEF2FF",
     icon: "🍇",
     tags: ["季节限定", "特产", "体验"],
+    poiIds: ["1", "9", "8", "10", "11", "7"],
   },
 ];
 
@@ -151,10 +153,7 @@ export default function MapGuideScreen() {
   const [activeFilter, setActiveFilter] = useState<FilterKey>("全部");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedPoi, setSelectedPoi] = useState<PoiItem | null>(null);
-  const [aiModalVisible, setAiModalVisible] = useState(false);
-  const [aiQuery, setAiQuery] = useState("");
-  const [aiResponse, setAiResponse] = useState("");
-  const [aiLoading, setAiLoading] = useState(false);
+  const [activeRouteId, setActiveRouteId] = useState<string | null>(null);
   const [mapAreaHeight, setMapAreaHeight] = useState(SCREEN_HEIGHT * 0.62);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState(false);
@@ -234,23 +233,14 @@ export default function MapGuideScreen() {
     outputRange: [SHEET_FULL + 40, 0],
   });
 
-  const handleAiSubmit = () => {
-    if (!aiQuery.trim()) return;
-    setAiLoading(true);
-    setTimeout(() => {
-      setAiResponse(
-        `根据您的需求「${aiQuery}」，为您量身规划：\n\n` +
-        `📍 出发点：景区入口大门\n` +
-        `🕌 第一站：麻扎村古建筑群（约20分钟）\n` +
-        `⛩️ 第二站：吐峪沟清真寺（约15分钟）\n` +
-        `🎨 第三站：非遗文化馆（约30分钟）\n` +
-        `🫓 第四站：烤馕馆体验（约20分钟）\n` +
-        `⛰️ 终点：千年洞窟（约30分钟）\n\n` +
-        `⏱ 预计耗时约2小时\n📏 全程约1.5公里`
-      );
-      setAiLoading(false);
-    }, 1500);
-  };
+  const startRoute = useCallback((route: RouteItem) => {
+    haptic("medium");
+    setActiveRouteId(route.id);
+    injectJs(
+      `window.drawRoute && window.drawRoute(${JSON.stringify(route.poiIds)}, ${JSON.stringify(route.color)});`
+    );
+    closeSheet();
+  }, [injectJs, closeSheet]);
 
   const onMapAreaLayout = useCallback((e: LayoutChangeEvent) => {
     const h = e.nativeEvent.layout.height;
@@ -495,7 +485,7 @@ export default function MapGuideScreen() {
                     </View>
                     <Pressable
                       style={[styles.startBtn, { backgroundColor: route.color }]}
-                      onPress={() => { haptic("medium"); closeSheet(); }}
+                      onPress={() => startRoute(route)}
                     >
                       <Ionicons name="play" size={14} color="#fff" />
                       <Text style={styles.startBtnText}>开始游览</Text>
@@ -507,173 +497,18 @@ export default function MapGuideScreen() {
 
             <View style={[styles.sheetFooter, { paddingBottom: bottomPad + 16 }]}>
               <Text style={styles.sheetFooterLabel}>没有合适的路线？</Text>
-              <View style={styles.sheetFooterBtns}>
-                <Pressable
-                  style={styles.createBtn}
-                  onPress={() => { haptic(); closeSheet(); }}
-                >
-                  <Ionicons name="add-circle-outline" size={16} color={Colors.light.text} />
-                  <Text style={styles.createBtnText}>创建我的行程</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.aiBtn}
-                  onPress={() => { haptic("medium"); setAiModalVisible(true); }}
-                >
-                  <LinearGradient
-                    colors={[Colors.light.primary, Colors.light.primaryLight]}
-                    style={styles.aiBtnGrad}
-                  >
-                    <Text style={styles.aiBtnText}>✨ AI</Text>
-                  </LinearGradient>
-                </Pressable>
-              </View>
+              <Pressable
+                style={styles.createBtn}
+                onPress={() => { haptic(); closeSheet(); }}
+              >
+                <Ionicons name="add-circle-outline" size={16} color={Colors.light.text} />
+                <Text style={styles.createBtnText}>创建我的行程</Text>
+              </Pressable>
             </View>
           </Animated.View>
         </>
       )}
 
-      {/* ── AI Modal ── */}
-      <Modal
-        visible={aiModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => { setAiModalVisible(false); setAiResponse(""); setAiQuery(""); }}
-      >
-        <View style={styles.aiOverlay}>
-          <View style={[styles.aiModal, { paddingBottom: bottomPad + 20 }]}>
-            {/* Header */}
-            <LinearGradient colors={[Colors.light.primary, "#2D8A55"]} style={styles.aiModalHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.aiModalTitle}>✨ AI 智能路线规划</Text>
-                <Text style={styles.aiModalSub}>步态感知 · 多维偏好 · 实时自适应优化</Text>
-              </View>
-              <Pressable onPress={() => { setAiModalVisible(false); setAiResponse(""); setAiQuery(""); }}>
-                <Ionicons name="close-circle" size={26} color="rgba(255,255,255,0.8)" />
-              </Pressable>
-            </LinearGradient>
-
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              {/* ── Feature cards ── */}
-              <View style={styles.aiFeatures}>
-                {/* Card 1: Smart Path Planning */}
-                <View style={styles.aiFeatureCard}>
-                  <View style={styles.aiFeatureCardTop}>
-                    <View style={[styles.aiFeatureIconWrap, { backgroundColor: Colors.light.primary + "18" }]}>
-                      <Ionicons name="git-network-outline" size={18} color={Colors.light.primary} />
-                    </View>
-                    <Text style={styles.aiFeatureTitle}>多维路径智能规划</Text>
-                  </View>
-                  <Text style={styles.aiFeatureDesc}>
-                    融合历史游览步伐速度、景点游览偏好与当日天气等多维信息，动态生成个性化游览路径
-                  </Text>
-                  <View style={styles.aiChips}>
-                    {[
-                      { label: "步伐速度", icon: "walk-outline" },
-                      { label: "景点偏好", icon: "heart-outline" },
-                      { label: "当日天气", icon: "partly-sunny-outline" },
-                    ].map((item) => (
-                      <View key={item.label} style={styles.aiChip}>
-                        <Ionicons name={item.icon as any} size={11} color={Colors.light.primary} />
-                        <Text style={styles.aiChipText}>{item.label}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-
-                {/* Card 2: Gait-Adaptive */}
-                <View style={styles.aiFeatureCard}>
-                  <View style={styles.aiFeatureCardTop}>
-                    <View style={[styles.aiFeatureIconWrap, { backgroundColor: "#FFF3E0" }]}>
-                      <Ionicons name="body-outline" size={18} color="#F57C00" />
-                    </View>
-                    <Text style={styles.aiFeatureTitle}>步态感知自适应调整</Text>
-                  </View>
-                  <Text style={styles.aiFeatureDesc}>
-                    实时分析步长、步频、步速等参数，智能感知游览状态并动态优化路线
-                  </Text>
-                  <View style={styles.aiAdaptRows}>
-                    <View style={styles.aiAdaptRow}>
-                      <View style={[styles.aiAdaptTag, { backgroundColor: "#E8F5E9" }]}>
-                        <Text style={[styles.aiAdaptTagText, { color: "#388E3C" }]}>停留↑</Text>
-                      </View>
-                      <Ionicons name="arrow-forward" size={11} color={Colors.light.textSecondary} />
-                      <Text style={styles.aiAdaptText}>标记高兴趣偏好，优先推荐同类文化景点</Text>
-                    </View>
-                    <View style={styles.aiAdaptRow}>
-                      <View style={[styles.aiAdaptTag, { backgroundColor: "#FBE9E7" }]}>
-                        <Text style={[styles.aiAdaptTagText, { color: "#E64A19" }]}>步速↓</Text>
-                      </View>
-                      <Ionicons name="arrow-forward" size={11} color={Colors.light.textSecondary} />
-                      <Text style={styles.aiAdaptText}>自动缩减路径长度或插入休息节点</Text>
-                    </View>
-                  </View>
-                  <View style={styles.aiChips}>
-                    {[
-                      { label: "步长", icon: "resize-outline" },
-                      { label: "步频", icon: "pulse-outline" },
-                      { label: "步速", icon: "speedometer-outline" },
-                      { label: "停留时长", icon: "time-outline" },
-                    ].map((item) => (
-                      <View key={item.label} style={[styles.aiChip, { backgroundColor: "#FFF3E0" }]}>
-                        <Ionicons name={item.icon as any} size={11} color="#F57C00" />
-                        <Text style={[styles.aiChipText, { color: "#F57C00" }]}>{item.label}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              </View>
-
-              {/* ── Input ── */}
-              <View style={styles.aiBody}>
-                <View style={styles.aiInputLabel}>
-                  <Ionicons name="create-outline" size={14} color={Colors.light.textSecondary} />
-                  <Text style={styles.aiInputLabelText}>描述你的偏好，AI 为你定制专属路线</Text>
-                </View>
-                <TextInput
-                  style={styles.aiInput}
-                  placeholder="例如：我喜欢建筑历史，步行不超过2小时..."
-                  placeholderTextColor={Colors.light.textSecondary}
-                  value={aiQuery}
-                  onChangeText={setAiQuery}
-                  multiline
-                  numberOfLines={3}
-                />
-                <Pressable
-                  style={[styles.aiSubmit, (!aiQuery.trim() || aiLoading) && styles.aiSubmitDisabled]}
-                  onPress={handleAiSubmit}
-                >
-                  {aiLoading ? (
-                    <Text style={styles.aiSubmitText}>🤔 AI 思考中...</Text>
-                  ) : (
-                    <>
-                      <Ionicons name="sparkles" size={16} color="#fff" />
-                      <Text style={styles.aiSubmitText}>生成专属路线</Text>
-                    </>
-                  )}
-                </Pressable>
-
-                {aiResponse ? (
-                  <View style={styles.aiResult}>
-                    <View style={styles.aiResultHeader}>
-                      <Text style={styles.aiResultTitle}>🗺️ 专属路线已生成</Text>
-                    </View>
-                    <ScrollView style={{ maxHeight: 180 }} scrollEnabled>
-                      <Text style={styles.aiResultText}>{aiResponse}</Text>
-                    </ScrollView>
-                    <Pressable
-                      style={styles.aiUseBtn}
-                      onPress={() => { haptic("medium"); setAiModalVisible(false); setAiResponse(""); setAiQuery(""); }}
-                    >
-                      <Ionicons name="checkmark-circle" size={18} color="#fff" />
-                      <Text style={styles.aiUseBtnText}>开始使用此路线</Text>
-                    </Pressable>
-                  </View>
-                ) : null}
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -883,83 +718,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   sheetFooterLabel: { fontSize: 13, color: Colors.light.textSecondary },
-  sheetFooterBtns: { flexDirection: "row", gap: 8, alignItems: "center" },
   createBtn: {
     flexDirection: "row", alignItems: "center", gap: 5,
     paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20,
     backgroundColor: "#F2F2F5",
   },
   createBtnText: { fontSize: 13, fontWeight: "600", color: Colors.light.text },
-  aiBtn: { borderRadius: 20, overflow: "hidden" },
-  aiBtnGrad: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20 },
-  aiBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
-
-  // AI Modal
-  aiOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  aiModal: { backgroundColor: "#F7F8FA", borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: "hidden", maxHeight: "90%" },
-  aiModalHeader: {
-    flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between",
-    padding: 22, paddingTop: 24,
-  },
-  aiModalTitle: { fontSize: 19, fontWeight: "800", color: "#fff" },
-  aiModalSub: { fontSize: 12, color: "rgba(255,255,255,0.78)", marginTop: 4 },
-
-  // Feature cards
-  aiFeatures: { paddingHorizontal: 14, paddingTop: 14, gap: 10 },
-  aiFeatureCard: {
-    backgroundColor: "#fff", borderRadius: 16, padding: 14,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05, shadowRadius: 6, elevation: 2, gap: 10,
-  },
-  aiFeatureCardTop: { flexDirection: "row", alignItems: "center", gap: 10 },
-  aiFeatureIconWrap: {
-    width: 34, height: 34, borderRadius: 17,
-    alignItems: "center", justifyContent: "center",
-  },
-  aiFeatureTitle: { fontSize: 14, fontWeight: "700", color: Colors.light.text },
-  aiFeatureDesc: { fontSize: 12, color: Colors.light.textSecondary, lineHeight: 18 },
-  aiChips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  aiChip: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    backgroundColor: Colors.light.primary + "15",
-    borderRadius: 20, paddingHorizontal: 9, paddingVertical: 4,
-  },
-  aiChipText: { fontSize: 11, fontWeight: "600", color: Colors.light.primary },
-  aiAdaptRows: { gap: 7 },
-  aiAdaptRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  aiAdaptTag: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
-  aiAdaptTagText: { fontSize: 11, fontWeight: "700" },
-  aiAdaptText: { fontSize: 12, color: Colors.light.textSecondary, flex: 1 },
-
-  // Input section
-  aiInputLabel: { flexDirection: "row", alignItems: "center", gap: 5 },
-  aiInputLabelText: { fontSize: 12, color: Colors.light.textSecondary },
-
-  aiBody: { padding: 14, gap: 12, backgroundColor: "#F7F8FA" },
-  aiInput: {
-    backgroundColor: "#fff", borderRadius: 14, padding: 14,
-    fontSize: 14, color: Colors.light.text, minHeight: 80, textAlignVertical: "top",
-    borderWidth: 1.5, borderColor: "#EAEAF0",
-  },
-  aiSubmit: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, backgroundColor: Colors.light.primary, paddingVertical: 14,
-    borderRadius: 16,
-  },
-  aiSubmitDisabled: { opacity: 0.55 },
-  aiSubmitText: { fontSize: 15, fontWeight: "700", color: "#fff" },
-  aiResult: {
-    backgroundColor: "#F0FFF6", borderRadius: 16,
-    borderLeftWidth: 3, borderLeftColor: Colors.light.primary,
-    overflow: "hidden",
-  },
-  aiResultHeader: { backgroundColor: Colors.light.primary + "18", paddingHorizontal: 16, paddingVertical: 10 },
-  aiResultTitle: { fontSize: 14, fontWeight: "700", color: Colors.light.primary },
-  aiResultText: { fontSize: 13, color: Colors.light.text, lineHeight: 22, padding: 16 },
-  aiUseBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, backgroundColor: Colors.light.primary, paddingVertical: 13,
-    marginHorizontal: 16, marginBottom: 16, borderRadius: 14,
-  },
-  aiUseBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
 });
