@@ -210,10 +210,9 @@ map = L.map('map', {
   attributionControl: true,
 });
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+L.tileLayer('/api/tiles/{z}/{x}/{y}', {
   attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   maxZoom: 19,
-  crossOrigin: true,
 }).addTo(map);
 
 map.on('load', function() {

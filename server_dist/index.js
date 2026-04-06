@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import { createHash } from "crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import https from "node:https";
 
 // server/storage.ts
 import { randomUUID } from "crypto";
@@ -599,6 +600,28 @@ async function registerRoutes(app2) {
     } catch (e) {
       return res.status(500).send("Failed to load locate page");
     }
+  });
+  app2.get("/api/tiles/:z/:x/:y", (req, res) => {
+    const { z, x, y } = req.params;
+    const tileUrl = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+    const options = {
+      headers: {
+        "User-Agent": "XiangyinBanlu/1.0 (https://replit.com; cultural-travel-app)",
+        "Referer": "https://www.openstreetmap.org/"
+      }
+    };
+    https.get(tileUrl, options, (upstream) => {
+      if (upstream.statusCode && upstream.statusCode >= 400) {
+        res.status(upstream.statusCode).end();
+        return;
+      }
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      upstream.pipe(res);
+    }).on("error", () => {
+      res.status(502).end();
+    });
   });
   app2.get("/api/map-tuyugou", (_req, res) => {
     const key = process.env.AMAP_API_KEY;
