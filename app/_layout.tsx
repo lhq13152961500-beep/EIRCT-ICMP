@@ -60,7 +60,9 @@ function RootLayoutNav() {
       <Stack.Screen name="account-security" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="map-guide"     options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="adaptive-roam" options={{ headerShown: false, animation: "slide_from_right" }} />
-      <Stack.Screen name="ar-tour"   options={{ headerShown: false, animation: "slide_from_bottom" }} />
+      <Stack.Screen name="ar-tour"          options={{ headerShown: false, animation: "slide_from_bottom" }} />
+      <Stack.Screen name="voice-guide-entry" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="voice-guide"       options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="terminal"         options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="terminal-device" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="(tabs)"   options={{ headerShown: false }} />

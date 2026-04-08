@@ -263,9 +263,9 @@ export default function HomeScreen() {
 
         {/* ── Two feature cards ── */}
         <View style={styles.featureRow}>
-          <Pressable style={[styles.featureCard, { marginRight: CARD_GAP / 2 }]} onPress={haptic}>
+          <Pressable style={[styles.featureCard, { marginRight: CARD_GAP / 2 }]} onPress={() => { haptic(); router.push("/voice-guide-entry"); }}>
             <View style={[styles.featureIconWrap, { backgroundColor: "#FFD9BC" }]}>
-              <Ionicons name="camera-outline" size={30} color="#E07020" />
+              <Ionicons name="mic-outline" size={30} color="#E07020" />
             </View>
             <Text style={styles.featureTitle}>语伴导游</Text>
             <Text style={styles.featureSub}>方言导游 旅游不孤单</Text>
