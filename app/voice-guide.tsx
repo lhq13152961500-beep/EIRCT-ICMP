@@ -174,24 +174,35 @@ export default function VoiceGuide() {
   const [mapError, setMapError]   = useState(false);
 
   /* Detail sheet open/close */
-  const sheetTranslateY = useRef(new Animated.Value(DETAIL_H)).current;
-  const sheetYVal       = useRef(DETAIL_H);
+  const sheetTranslateY  = useRef(new Animated.Value(DETAIL_H)).current;
+  const backdropOpacity  = useRef(new Animated.Value(0)).current;
+  const sheetYVal        = useRef(DETAIL_H);
   const [detailOpen, setDetailOpen] = useState(false);
 
   const openDetail = useCallback(() => {
     setDetailOpen(true);
-    Animated.spring(sheetTranslateY, {
-      toValue: 0, useNativeDriver: true, tension: 70, friction: 13,
-    }).start();
+    Animated.parallel([
+      Animated.spring(sheetTranslateY, {
+        toValue: 0, useNativeDriver: true, tension: 70, friction: 13,
+      }),
+      Animated.timing(backdropOpacity, {
+        toValue: 1, duration: 220, useNativeDriver: true,
+      }),
+    ]).start();
     sheetYVal.current = 0;
-  }, [sheetTranslateY]);
+  }, [sheetTranslateY, backdropOpacity]);
 
   const closeDetail = useCallback(() => {
-    Animated.spring(sheetTranslateY, {
-      toValue: DETAIL_H, useNativeDriver: true, tension: 70, friction: 13,
-    }).start(() => setDetailOpen(false));
+    Animated.parallel([
+      Animated.spring(sheetTranslateY, {
+        toValue: DETAIL_H, useNativeDriver: true, tension: 70, friction: 13,
+      }),
+      Animated.timing(backdropOpacity, {
+        toValue: 0, duration: 200, useNativeDriver: true,
+      }),
+    ]).start(() => setDetailOpen(false));
     sheetYVal.current = DETAIL_H;
-  }, [sheetTranslateY]);
+  }, [sheetTranslateY, backdropOpacity]);
 
   /* PanResponder on detail sheet drag handle */
   const detailPan = useRef(PanResponder.create({
@@ -200,14 +211,22 @@ export default function VoiceGuide() {
     onPanResponderMove: (_, g) => {
       const newY = Math.max(0, g.dy);
       sheetTranslateY.setValue(newY);
+      /* fade backdrop as sheet drags down */
+      backdropOpacity.setValue(Math.max(0, 1 - newY / DETAIL_H));
     },
     onPanResponderRelease: (_, g) => {
       if (g.dy > 80 || g.vy > 0.6) {
         closeDetail();
       } else {
-        Animated.spring(sheetTranslateY, {
-          toValue: 0, useNativeDriver: true, tension: 70, friction: 13,
-        }).start();
+        /* snap back — restore backdrop */
+        Animated.parallel([
+          Animated.spring(sheetTranslateY, {
+            toValue: 0, useNativeDriver: true, tension: 70, friction: 13,
+          }),
+          Animated.timing(backdropOpacity, {
+            toValue: 1, duration: 180, useNativeDriver: true,
+          }),
+        ]).start();
         sheetYVal.current = 0;
       }
     },
@@ -494,13 +513,14 @@ export default function VoiceGuide() {
         </ScrollView>
       </Animated.View>
 
-      {/* ── Detail sheet backdrop ─────────────────────── */}
+      {/* ── Detail sheet backdrop (animated fade) ────────── */}
       {detailOpen && (
-        <Pressable
-          style={styles.backdrop}
-          onPress={closeDetail}
-          pointerEvents="auto"
-        />
+        <Animated.View
+          style={[styles.backdrop, { opacity: backdropOpacity }]}
+          pointerEvents={detailOpen ? "auto" : "none"}
+        >
+          <Pressable style={{ flex: 1 }} onPress={closeDetail} />
+        </Animated.View>
       )}
     </View>
   );
