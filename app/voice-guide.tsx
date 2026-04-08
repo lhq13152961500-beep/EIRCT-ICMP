@@ -223,7 +223,8 @@ export default function VoiceGuide() {
   useEffect(() => {
     if (!mapReady || locationStatus.state !== "located") return;
     const { lat, lng } = locationStatus;
-    injectJs(`window.setMyLocation&&window.setMyLocation(${lng},${lat});`);
+    const acc = (locationStatus as any).accuracy ?? 0;
+    injectJs(`window.setMyLocation&&window.setMyLocation(${lng},${lat},${acc});`);
   }, [locationStatus, mapReady, injectJs]);
 
   /* Map messages */
