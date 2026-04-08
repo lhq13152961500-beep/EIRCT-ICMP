@@ -15,6 +15,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useLocalSearchParams } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
@@ -2137,7 +2138,10 @@ export default function VoiceScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
-  const [mainTab, setMainTab] = useState<"diary" | "postoffice">("diary");
+  const { tab } = useLocalSearchParams<{ tab?: string }>();
+  const [mainTab, setMainTab] = useState<"diary" | "postoffice">(
+    tab === "postoffice" ? "postoffice" : "diary"
+  );
 
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
