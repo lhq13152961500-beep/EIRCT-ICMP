@@ -59,7 +59,7 @@ def run_expo():
     kill_port_8081()
 
     env = os.environ.copy()
-    env['NODE_OPTIONS'] = '--max-old-space-size=4096'
+    env['NODE_OPTIONS'] = '--max-old-space-size=512 --expose-gc'
     env['EXPO_NO_INLINE_SOURCEMAPS'] = '1'
     env['REACT_NATIVE_PACKAGER_HOSTNAME'] = 'localhost'
 
@@ -204,7 +204,7 @@ def main():
             ngrok_fails = 0  # successful connection, reset fail count
             # If OOMs are happening rapidly (< 5 min apart), wait 90s.
             # Otherwise 30s is enough.
-            wait = 90 if since_last < 300 else 30
+            wait = 30 if since_last < 300 else 15
             sys.stdout.write(f'[Metro OOM #{oom_count} — waiting {wait}s before restart...]\n')
             sys.stdout.flush()
             time.sleep(wait)
