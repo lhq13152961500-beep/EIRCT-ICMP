@@ -302,6 +302,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  app.get("/api/map-voice-guide", (_req, res) => {
+    try {
+      const candidates = [
+        join(process.cwd(), "server_dist", "map-voice-guide.html"),
+        join(process.cwd(), "server", "map-voice-guide.html"),
+      ];
+      const htmlPath = candidates.find(p => existsSync(p));
+      if (!htmlPath) return res.status(500).send("map-voice-guide.html not found");
+      const html = readFileSync(htmlPath, "utf-8");
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
+      return res.send(html);
+    } catch (e) {
+      return res.status(500).send("Failed to load map-voice-guide page");
+    }
+  });
+
   app.get("/api/map-tuyugou", (_req, res) => {
     const key = process.env.AMAP_API_KEY;
     const securityKey = process.env.AMAP_SECURITY_KEY || "";

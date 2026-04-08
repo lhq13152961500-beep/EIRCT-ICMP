@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>语伴导游地图</title>
+<link rel="stylesheet" href="/assets/leaflet.min.css"/>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:#e8dcc8}
+  #map{width:100vw;height:100vh}
+  .poi-marker{position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none}
+  .poi-bubble{border-radius:20px;padding:5px 10px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,0.28);display:flex;align-items:center;gap:4px;transition:transform .18s,box-shadow .18s}
+  .poi-bubble.active{transform:scale(1.14);box-shadow:0 4px 16px rgba(0,0,0,0.4)}
+  .poi-stem{width:2px;height:7px;margin:0 auto}
+  .poi-dot{width:7px;height:7px;border-radius:50%;margin:-1px auto 0;border:2px solid white}
+  .leaflet-control-attribution{font-size:8px!important;opacity:0.4!important}
+  .leaflet-control-zoom{display:none}
+  .zone-label{background:transparent;border:none;box-shadow:none}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script src="/assets/leaflet.min.js"></script>
+<script>
+/* ── GCJ-02 → WGS-84 ───────────────────────────────── */
+function gcj2wgs(lng,lat){
+  var a=6378245.0,ee=0.00669342162296594323;
+  var dlat=tlat(lng-105.0,lat-35.0),dlng=tlng(lng-105.0,lat-35.0);
+  var radlat=lat/180.0*Math.PI,magic=Math.sin(radlat);
+  magic=1-ee*magic*magic;var sq=Math.sqrt(magic);
+  dlat=(dlat*180.0)/((a*(1-ee))/(magic*sq)*Math.PI);
+  dlng=(dlng*180.0)/(a/sq*Math.cos(radlat)*Math.PI);
+  return[lng-dlng,lat-dlat];
+}
+function tlat(x,y){
+  var r=-100.0+2.0*x+3.0*y+0.2*y*y+0.1*x*y+0.2*Math.sqrt(Math.abs(x));
+  r+=(20.0*Math.sin(6.0*x*Math.PI)+20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0;
+  r+=(20.0*Math.sin(y*Math.PI)+40.0*Math.sin(y/3.0*Math.PI))*2.0/3.0;
+  r+=(160.0*Math.sin(y/12.0*Math.PI)+320.0*Math.sin(y*Math.PI/30.0))*2.0/3.0;
+  return r;
+}
+function tlng(x,y){
+  var r=300.0+x+2.0*y+0.1*x*x+0.1*x*y+0.1*Math.sqrt(Math.abs(x));
+  r+=(20.0*Math.sin(6.0*x*Math.PI)+20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0;
+  r+=(20.0*Math.sin(x*Math.PI)+40.0*Math.sin(x/3.0*Math.PI))*2.0/3.0;
+  r+=(150.0*Math.sin(x/12.0*Math.PI)+300.0*Math.sin(x/30.0*Math.PI))*2.0/3.0;
+  return r;
+}
+
+/* ── POI dataset (LBS-enabled only, skip WC) ───────── */
+var POIS=[
+  {id:"1", pos:[89.5971,42.8603],name:"景区入口大门",emoji:"🚪",cat:"建筑",
+   intro:"吐峪沟大峡谷景区正门，古朴石砌拱门，始建于清代，是进入峡谷的第一道历史门槛。",
+   story:"相传清代一位维吾尔族商人为感谢神灵庇佑捐建此门，百年来过往行人皆在此驻足祈福。",
+   cultural:"石砌拱门融合了中原与西域建筑风格，是丝路文化交融的实物见证。",
+   radius:60},
+  {id:"2", pos:[89.5998,42.8588],name:"麻扎村",       emoji:"🕌",cat:"建筑",
+   intro:"千年维吾尔族古村落，保留完整的生土建筑群，村内巷道迷宫般蜿蜒，至今居民生活其中。",
+   story:"村中老人说，麻扎村已有1500年历史，曾是丝绸之路上的重要驿站，商旅、僧侣皆在此歇脚。",
+   cultural:"生土建筑冬暖夏凉，是人类与干旱气候和谐共处的智慧结晶，被列入世界文化遗产预备名录。",
+   radius:80},
+  {id:"3", pos:[89.6012,42.8572],name:"吐峪沟清真寺",emoji:"⛩️",cat:"建筑",
+   intro:"历史悠久的伊斯兰建筑，精美木雕装饰令人叹为观止，是新疆保存最完好的古清真寺之一。",
+   story:"传说寺中有一口古井，千年来从未干涸，当地人称之为"圣水井"，每逢斋月香客云集。",
+   cultural:"礼拜大殿的木雕花纹融合了波斯与汉式纹样，是伊斯兰东传与本土文化融合的珍贵遗存。",
+   radius:60},
+  {id:"4", pos:[89.6078,42.8641],name:"千年洞窟",     emoji:"⛰️",cat:"建筑",
+   intro:"公元4世纪佛教石窟群，壁画保存完好，是新疆早期佛教传播的重要遗址。",
+   story:"据史书记载，东晋高僧法显西行取经时曾途经此地，留下"谷中有僧千余人"的记述。",
+   cultural:"石窟壁画兼具犍陀罗与龟兹风格，呈现了佛教艺术东传过程中的演变轨迹。",
+   radius:70},
+  {id:"5", pos:[89.6045,42.8615],name:"古麻扎遗址",   emoji:"🏛️",cat:"建筑",
+   intro:"伊斯兰圣祠遗址，是新疆最古老的麻扎之一，每年吸引众多穆斯林朝拜。",
+   story:"麻扎供奉的是伊斯兰传教先贤，民间传说其圣人能治愈百病，故世代受到敬仰。",
+   cultural:"麻扎文化是中亚伊斯兰信仰的重要组成部分，体现了宗教与民间信仰的融合。",
+   radius:65},
+  {id:"6", pos:[89.6035,42.8560],name:"非遗文化馆",   emoji:"🎨",cat:"展览",
+   intro:"集中展示维吾尔族非物质文化遗产，含木卡姆、都它尔等项目，定时有现场演出。",
+   story:"馆内珍藏的一把都它尔据说有200年历史，是一位盲人艺人毕生演奏的挚爱之物。",
+   cultural:"木卡姆被联合国列入人类非物质文化遗产代表作名录，承载着维吾尔族的精神与记忆。",
+   radius:55},
+  {id:"7", pos:[89.5985,42.8625],name:"民俗体验馆",   emoji:"🖼️",cat:"展览",
+   intro:"原汁原味的维吾尔族传统手工艺展示与互动体验，可亲手尝试土陶制作与地毯编织。",
+   story:"体验馆的老师傅已年过七旬，十二岁便跟随父亲学艺，一生守护这门即将失传的手艺。",
+   cultural:"手工艺不仅是生计，更是文化的活态传承，每一件作品都蕴含着世代相传的生活智慧。",
+   radius:55},
+  {id:"8", pos:[89.6058,42.8625],name:"葡萄晾房",     emoji:"🍇",cat:"特产",
+   intro:"传统土坯晾房，四壁镂空以引入干热风，将鲜葡萄自然风干为葡萄干，是吐鲁番独特农业遗产。",
+   story:"老辈人说，判断葡萄干好坏要看晾房朝向，朝北的晾房风大、晾出的葡萄干最甜最香。",
+   cultural:"晾房建筑是吐鲁番先民因地制宜的农业智慧，将极端气候转化为独特的生产资源。",
+   radius:60},
+  {id:"9", pos:[89.5972,42.8638],name:"特产集市",     emoji:"🎁",cat:"特产",
+   intro:"葡萄干、无花果、馕饼等吐峪沟特色农产品集散地，可以直接从农户手中购买。",
+   story:"集市每逢周五"巴扎日"最为热闹，方圆百里的村民带着自家农产品赶来交易，延续千年传统。",
+   cultural:"巴扎是维吾尔族经济与社会交流的中心，承载着古丝路集市贸易文化的活态记忆。",
+   radius:55},
+  {id:"10",pos:[89.6020,42.8605],name:"烤馕馆",       emoji:"🫓",cat:"美食",
+   intro:"现烤坑炉馕饼，外脆内软，是当地最具特色的主食，制作工艺已传承数百年。",
+   story:"馕师傅说，烤好一个馕需要掌握火候、面团发酵和贴炉手法，学徒通常要学三年才能出师。",
+   cultural:"馕是维吾尔族饮食文化的核心，"宁可三日无肉，不可一日无馕"道出了它在生活中的地位。",
+   radius:50},
+  {id:"11",pos:[89.6048,42.8583],name:"瓜果长廊",     emoji:"🍈",cat:"美食",
+   intro:"种植哈密瓜、白杏等特色瓜果，葡萄架绵延百米，夏秋季节果香扑鼻，可现场品尝。",
+   story:"长廊主人的曾祖父将葡萄种子从苏联带回，如今这个品种只有这一家还在种植。",
+   cultural:"吐鲁番的极端干热气候造就了含糖量极高的瓜果，是大自然与人类共同创造的风土作品。",
+   radius:60},
+  {id:"12",pos:[89.6010,42.8640],name:"游客服务中心",emoji:"ℹ️", cat:"建筑",
+   intro:"提供景区导览、租赁、急救等综合服务，内有休息区与电子导览设备。",
+   story:"服务中心原是一座百年老宅，改建时保留了原有的土坯墙与木格窗，新旧融合别有韵味。",
+   cultural:"将历史建筑活化为公共服务空间，是文化遗产保护与可持续利用的有益探索。",
+   radius:50},
+];
+
+/* ── Category colors ────────────────────────────────── */
+var COLORS={
+  "建筑": {zone:"#E88A2E",fill:"rgba(232,138,46,0.12)",border:"rgba(232,138,46,0.6)",bubble:"#E88A2E",text:"#fff"},
+  "展览": {zone:"#6B7FD4",fill:"rgba(107,127,212,0.12)",border:"rgba(107,127,212,0.6)",bubble:"#6B7FD4",text:"#fff"},
+  "美食": {zone:"#E8514A",fill:"rgba(232,81,74,0.12)", border:"rgba(232,81,74,0.6)",  bubble:"#E8514A",text:"#fff"},
+  "特产": {zone:"#3DAA6F",fill:"rgba(61,170,111,0.12)",border:"rgba(61,170,111,0.6)", bubble:"#3DAA6F",text:"#fff"},
+};
+
+function clr(cat){return COLORS[cat]||{zone:"#888",fill:"rgba(136,136,136,0.1)",border:"rgba(136,136,136,0.5)",bubble:"#888",text:"#fff"};}
+
+/* ── State ──────────────────────────────────────────── */
+var map=null, markerLayer=null, zoneLayer=null;
+var leafletMarkers={}, zoneCircles={};
+var myLocMarker=null;
+var activePoi=null;
+var lastZonePoi=null;
+
+/* ── RN bridge ──────────────────────────────────────── */
+function send(data){
+  try{window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(JSON.stringify(data));}catch(e){}
+}
+
+/* ── Build marker HTML ──────────────────────────────── */
+function markerHtml(poi, isActive){
+  var c=clr(poi.cat);
+  var bg   = isActive ? c.bubble : "#fff";
+  var col  = isActive ? c.text   : c.bubble;
+  var bdr  = isActive ? "none"   : ("2px solid "+c.bubble);
+  var sh   = isActive ? "0 4px 14px rgba(0,0,0,0.4)" : "0 2px 8px rgba(0,0,0,0.22)";
+  var sc   = isActive ? "scale(1.18)" : "scale(1)";
+  return '<div class="poi-marker">'+
+    '<div class="poi-bubble'+(isActive?' active':'')+'" style="background:'+bg+';color:'+col+';border:'+bdr+';box-shadow:'+sh+';transform:'+sc+'">'+
+    poi.emoji+' <span>'+poi.name+'</span></div>'+
+    '<div class="poi-stem" style="background:'+c.bubble+'"></div>'+
+    '<div class="poi-dot" style="background:'+c.bubble+'"></div>'+
+    '</div>';
+}
+
+/* ── Create markers + zones ─────────────────────────── */
+function createMarker(poi){
+  var w=gcj2wgs(poi.pos[0],poi.pos[1]);
+  var wll=[w[1],w[0]];
+  var c=clr(poi.cat);
+
+  /* LBS trigger zone circle */
+  var circle=L.circle(wll,{
+    radius: poi.radius,
+    color: c.zone,
+    weight: 1.5,
+    opacity: 0.55,
+    fillColor: c.zone,
+    fillOpacity: 0.10,
+    dashArray: '5 3',
+  });
+  circle.addTo(zoneLayer);
+  zoneCircles[poi.id]=circle;
+
+  /* POI marker */
+  var icon=L.divIcon({html:markerHtml(poi,false),className:'',iconSize:null,iconAnchor:[36,58]});
+  var m=L.marker(wll,{icon:icon});
+  m.on('click',function(){
+    activatePoi(poi.id);
+    send({type:'poiClick',id:poi.id,name:poi.name,cat:poi.cat,
+          intro:poi.intro,story:poi.story,cultural:poi.cultural,emoji:poi.emoji});
+  });
+  markerLayer.addLayer(m);
+  leafletMarkers[poi.id]=m;
+}
+
+function renderAll(){
+  if(markerLayer){markerLayer.clearLayers();map.removeLayer(markerLayer);}
+  if(zoneLayer){zoneLayer.clearLayers();map.removeLayer(zoneLayer);}
+  zoneLayer=L.layerGroup().addTo(map);
+  markerLayer=L.layerGroup().addTo(map);
+  leafletMarkers={};zoneCircles={};
+  POIS.forEach(createMarker);
+}
+
+/* ── Activate (highlight) a POI ────────────────────── */
+function activatePoi(id){
+  if(activePoi===id)return;
+  activePoi=id;
+  POIS.forEach(function(p){
+    if(!leafletMarkers[p.id])return;
+    var icon=L.divIcon({html:markerHtml(p,p.id===id),className:'',iconSize:null,iconAnchor:[36,58]});
+    leafletMarkers[p.id].setIcon(icon);
+  });
+  /* pulse zone border */
+  Object.keys(zoneCircles).forEach(function(pid){
+    var c=zoneCircles[pid],poi=POIS.find(function(p){return p.id===pid;});
+    if(!poi)return;
+    var cl=clr(poi.cat);
+    if(pid===id){c.setStyle({weight:2.5,opacity:0.9,fillOpacity:0.18});}
+    else{c.setStyle({weight:1.5,opacity:0.55,fillOpacity:0.10});}
+  });
+}
+
+/* ── RN-callable: set user location + zone check ────── */
+window.setMyLocation=function(lng,lat){
+  var w=gcj2wgs(lng,lat);
+  var wll=[w[1],w[0]];
+  if(myLocMarker)myLocMarker.remove();
+  var icon=L.icon({iconUrl:'/assets/loc-pin.png',iconSize:[48,48],iconAnchor:[24,48]});
+  myLocMarker=L.marker(wll,{icon:icon,zIndexOffset:1000}).addTo(map);
+  /* zone proximity check */
+  var nearest=null,nearestDist=Infinity;
+  POIS.forEach(function(p){
+    var pw=gcj2wgs(p.pos[0],p.pos[1]);
+    var d=haversine(w[1],w[0],pw[1],pw[0]);
+    if(d<p.radius&&d<nearestDist){nearestDist=d;nearest=p;}
+  });
+  if(nearest&&nearest.id!==lastZonePoi){
+    lastZonePoi=nearest.id;
+    send({type:'zoneEnter',id:nearest.id,name:nearest.name,cat:nearest.cat,
+          intro:nearest.intro,story:nearest.story,cultural:nearest.cultural,emoji:nearest.emoji,dist:Math.round(nearestDist)});
+  } else if(!nearest){
+    lastZonePoi=null;
+  }
+};
+
+window.activatePoi=function(id){activatePoi(id);};
+
+window.panToPoi=function(id){
+  var poi=POIS.find(function(p){return p.id===id;});
+  if(!poi)return;
+  var w=gcj2wgs(poi.pos[0],poi.pos[1]);
+  map.panTo([w[1],w[0]],{animate:true,duration:0.6});
+};
+
+/* ── Haversine distance in metres ───────────────────── */
+function haversine(lat1,lng1,lat2,lng2){
+  var R=6371000,dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180;
+  var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+/* ── Init map ────────────────────────────────────────── */
+map=L.map('map',{zoomControl:false,attributionControl:true});
+L.tileLayer('/api/tiles/{z}/{x}/{y}',{
+  attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom:19,
+}).addTo(map);
+
+/* scenic area boundary */
+var BDY_GCJ=[[89.5945,42.8650],[89.5975,42.8660],[89.6020,42.8658],[89.6065,42.8652],
+  [89.6100,42.8640],[89.6110,42.8620],[89.6095,42.8595],[89.6080,42.8568],
+  [89.6055,42.8548],[89.6020,42.8543],[89.5985,42.8550],[89.5958,42.8568],
+  [89.5942,42.8595],[89.5940,42.8620],[89.5945,42.8650]];
+var BDY_WGS=BDY_GCJ.map(function(c){var w=gcj2wgs(c[0],c[1]);return[w[1],w[0]];});
+L.polygon(BDY_WGS,{color:'#E88A2E',weight:1.5,opacity:0.5,fillColor:'#F5A623',fillOpacity:0.04,dashArray:'6 4'}).addTo(map);
+
+map.once('load',function(){send({type:'ready'});});
+map.on('click',function(){send({type:'mapClick'});});
+
+renderAll();
+
+/* initial view */
+var allWgs=POIS.map(function(p){var w=gcj2wgs(p.pos[0],p.pos[1]);return[w[1],w[0]];});
+map.fitBounds(L.latLngBounds(allWgs),{padding:[50,50]});
+window.setMyLocation(89.5971,42.8603);
+setTimeout(function(){send({type:'ready'});},2000);
+</script>
+</body>
+</html>
