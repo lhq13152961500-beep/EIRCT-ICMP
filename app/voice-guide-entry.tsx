@@ -138,7 +138,7 @@ export default function VoiceGuideEntry() {
         </Pressable>
         <View style={styles.headerBadge}>
           <Ionicons name="radio-outline" size={13} color={ACCENT} />
-          <Text style={styles.headerBadgeText}>智能语音导览系统</Text>
+          <Text style={styles.headerBadgeText}>LBS情感触发技术</Text>
         </View>
         <View style={{ width: 36 }} />
       </View>

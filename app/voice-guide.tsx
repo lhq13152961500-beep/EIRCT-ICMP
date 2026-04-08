@@ -326,7 +326,7 @@ export default function VoiceGuide() {
           <View style={styles.headerCenter}>
             <View style={styles.headerBadge}>
               <Ionicons name="radio-outline" size={11} color={ACCENT} />
-              <Text style={styles.headerBadgeTxt}>智能语音导览</Text>
+              <Text style={styles.headerBadgeTxt}>LBS情感触发技术</Text>
             </View>
             <Text style={styles.headerTitle}>语伴导游</Text>
           </View>
