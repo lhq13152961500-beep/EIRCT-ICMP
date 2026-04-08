@@ -36,17 +36,33 @@
                 background:rgba(26,115,232,0.18);animation:locPulse 2s ease-out infinite}
   @keyframes locPulse{0%{transform:scale(0.4);opacity:0.9}70%{transform:scale(1);opacity:0.3}100%{transform:scale(1);opacity:0}}
   /* ── Locate-me button ── */
-  #locBtn{position:absolute;bottom:96px;right:12px;z-index:1000;
-          width:40px;height:40px;border-radius:50%;background:#fff;
-          border:none;box-shadow:0 2px 8px rgba(0,0,0,0.25);
+  #locBtn{position:absolute;bottom:168px;right:14px;z-index:1000;
+          width:44px;height:44px;border-radius:50%;
+          background:linear-gradient(145deg,#2196F3,#1565C0);
+          border:none;box-shadow:0 3px 12px rgba(33,150,243,0.45),0 1px 4px rgba(0,0,0,0.18);
           display:flex;align-items:center;justify-content:center;cursor:pointer;
-          font-size:20px;transition:background .15s}
-  #locBtn:active{background:#f0f4ff}
+          transition:transform .15s,box-shadow .15s;padding:0}
+  #locBtn:active{transform:scale(0.91);box-shadow:0 1px 6px rgba(33,150,243,0.35)}
 </style>
 </head>
 <body>
 <div id="map"></div>
-<button id="locBtn" title="回到我的位置" onclick="panToMyLoc()" style="display:none">📍</button>
+<button id="locBtn" title="回到我的位置" onclick="panToMyLoc()" style="display:none">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- outer ring -->
+    <circle cx="12" cy="12" r="7" stroke="white" stroke-width="2"/>
+    <!-- centre dot -->
+    <circle cx="12" cy="12" r="2.2" fill="white"/>
+    <!-- top tick -->
+    <line x1="12" y1="2" x2="12" y2="5" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    <!-- bottom tick -->
+    <line x1="12" y1="19" x2="12" y2="22" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    <!-- left tick -->
+    <line x1="2" y1="12" x2="5" y2="12" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    <!-- right tick -->
+    <line x1="19" y1="12" x2="22" y2="12" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  </svg>
+</button>
 <script src="/assets/leaflet.min.js"></script>
 <script>
 /* ── GCJ-02 → WGS-84 ───────────────────────────────── */
