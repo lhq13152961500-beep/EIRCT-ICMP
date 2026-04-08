@@ -11,8 +11,8 @@ import {
   Easing,
   PanResponder,
   Dimensions,
-  Platform,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,14 +24,14 @@ import { getApiUrl } from "@/lib/query-client";
 import Colors from "@/constants/colors";
 
 const { width: SW, height: SH } = Dimensions.get("window");
-const PRIMARY  = Colors.light.primary;
-const ACCENT   = Colors.light.accent;
+const PRIMARY = Colors.light.primary;
+const ACCENT  = Colors.light.accent;
 
-/* ── Sheet snap positions ───────────────────────────── */
-const SHEET_PEEK   = 152;           // collapsed: just mini-player visible
-const SHEET_FULL   = SH * 0.82;    // expanded: full content
+/* Mini player bar height */
+const MINI_H    = 72;
+/* Detail sheet snap heights */
+const DETAIL_H  = SH * 0.88;
 
-/* ── POI content mirror (same as HTML, for React rendering) */
 type PoiDetail = {
   id: string; name: string; emoji: string; cat: string;
   intro: string; story: string; cultural: string;
@@ -94,111 +94,139 @@ const CAT_IMG: Record<string, ReturnType<typeof require>> = {
   "特产": require("@/assets/images/home_banner2.png"),
   "美食": require("@/assets/images/route-thumb-1.png"),
 };
-const CAT_COLOR: Record<string, { bg: string; text: string }> = {
-  "建筑": { bg: "#FFF4E6", text: "#E88A2E" },
-  "展览": { bg: "#EEF2FF", text: "#6B7FD4" },
-  "特产": { bg: "#F0FFF4", text: "#3DAA6F" },
-  "美食": { bg: "#FFF0F0", text: "#E8514A" },
+const CAT_COLOR: Record<string, { bg: string; text: string; accent: string }> = {
+  "建筑": { bg: "#FFF4E6", text: "#E88A2E", accent: "#E88A2E" },
+  "展览": { bg: "#EEF2FF", text: "#6B7FD4", accent: "#6B7FD4" },
+  "特产": { bg: "#F0FFF4", text: "#3DAA6F", accent: "#3DAA6F" },
+  "美食": { bg: "#FFF0F0", text: "#E8514A", accent: "#E8514A" },
 };
 
-/* ── Stable map URL ─────────────────────────────────── */
 const MAP_URL = (() => {
   try { return new URL("api/map-voice-guide", getApiUrl()).href; } catch { return ""; }
 })();
 const MAP_SOURCE = MAP_URL ? { uri: MAP_URL } : undefined;
 
-/* ── Animated sound wave ────────────────────────────── */
-function SoundWave({ playing, color }: { playing: boolean; color: string }) {
-  const bars = [0.4, 0.75, 1.0, 0.6, 0.85, 0.5, 0.9, 0.65, 1.0, 0.7, 0.45, 0.8];
-  const anims = useRef(bars.map(h => new Animated.Value(h))).current;
+/* ── Animated sound wave bars ───────────────────────── */
+function SoundWave({ playing, color, barCount = 18, height = 28 }: {
+  playing: boolean; color: string; barCount?: number; height?: number;
+}) {
+  const baseHeights = Array.from({ length: barCount }, (_, i) =>
+    0.25 + 0.75 * Math.abs(Math.sin(i * 0.72))
+  );
+  const anims = useRef(baseHeights.map(h => new Animated.Value(h))).current;
   const loopRef = useRef<Animated.CompositeAnimation | null>(null);
+
   useEffect(() => {
     if (playing) {
-      loopRef.current = Animated.loop(Animated.stagger(55, anims.map((a, i) =>
-        Animated.sequence([
-          Animated.timing(a, { toValue: 0.15 + Math.random() * 0.85, duration: 260 + i * 18, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
-          Animated.timing(a, { toValue: bars[i], duration: 260 + i * 18, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
-        ])
-      )));
+      loopRef.current = Animated.loop(
+        Animated.stagger(40, anims.map((a, i) =>
+          Animated.sequence([
+            Animated.timing(a, {
+              toValue: 0.1 + Math.random() * 0.9,
+              duration: 200 + i * 15,
+              easing: Easing.inOut(Easing.sin),
+              useNativeDriver: false,
+            }),
+            Animated.timing(a, {
+              toValue: baseHeights[i],
+              duration: 200 + i * 15,
+              easing: Easing.inOut(Easing.sin),
+              useNativeDriver: false,
+            }),
+          ])
+        ))
+      );
       loopRef.current.start();
     } else {
       loopRef.current?.stop();
-      anims.forEach((a, i) => Animated.timing(a, { toValue: bars[i], duration: 200, useNativeDriver: false }).start());
+      anims.forEach((a, i) =>
+        Animated.timing(a, { toValue: baseHeights[i], duration: 180, useNativeDriver: false }).start()
+      );
     }
     return () => loopRef.current?.stop();
   }, [playing]);
+
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 3, height: 26 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 2, height }}>
       {anims.map((anim, i) => (
         <Animated.View key={i} style={{
-          width: 3, borderRadius: 2, backgroundColor: color,
-          height: anim.interpolate({ inputRange: [0, 1], outputRange: [3, 22] }),
+          width: 2.5, borderRadius: 2, backgroundColor: color,
+          height: anim.interpolate({ inputRange: [0, 1], outputRange: [3, height * 0.85] }),
         }} />
       ))}
     </View>
   );
 }
 
-/* ── Main screen ────────────────────────────────────── */
+/* ── Main ───────────────────────────────────────────── */
 export default function VoiceGuide() {
   const insets = useSafeAreaInsets();
   const { demo } = useLocalSearchParams<{ demo?: string }>();
   const isDemo = demo === "1";
   const { locationStatus } = useLocation();
 
-  /* Current POI */
   const [currentPoi, setCurrentPoi] = useState<PoiDetail>(ALL_POIS[0]);
-  const [lang, setLang]   = useState<"mandarin" | "dialect">("mandarin");
+  const [lang, setLang]     = useState<"mandarin" | "dialect">("mandarin");
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [zoneAlert, setZoneAlert] = useState(false);
-  const [mapReady, setMapReady] = useState(false);
-  const [mapError, setMapError] = useState(false);
+  const [mapReady, setMapReady]   = useState(false);
+  const [mapError, setMapError]   = useState(false);
 
-  /* Bottom sheet */
-  const sheetY    = useRef(new Animated.Value(SH - SHEET_PEEK)).current;
-  const sheetYVal = useRef(SH - SHEET_PEEK);
-  const [expanded, setExpanded] = useState(false);
+  /* Detail sheet open/close */
+  const sheetTranslateY = useRef(new Animated.Value(DETAIL_H)).current;
+  const sheetYVal       = useRef(DETAIL_H);
+  const [detailOpen, setDetailOpen] = useState(false);
 
-  const snapTo = useCallback((open: boolean) => {
-    const toY = open ? SH - SHEET_FULL : SH - SHEET_PEEK;
-    setExpanded(open);
-    Animated.spring(sheetY, { toValue: toY, useNativeDriver: true, tension: 65, friction: 12 }).start();
-    sheetYVal.current = toY;
-  }, [sheetY]);
+  const openDetail = useCallback(() => {
+    setDetailOpen(true);
+    Animated.spring(sheetTranslateY, {
+      toValue: 0, useNativeDriver: true, tension: 70, friction: 13,
+    }).start();
+    sheetYVal.current = 0;
+  }, [sheetTranslateY]);
 
-  /* PanResponder for drag */
-  const panResponder = useRef(PanResponder.create({
+  const closeDetail = useCallback(() => {
+    Animated.spring(sheetTranslateY, {
+      toValue: DETAIL_H, useNativeDriver: true, tension: 70, friction: 13,
+    }).start(() => setDetailOpen(false));
+    sheetYVal.current = DETAIL_H;
+  }, [sheetTranslateY]);
+
+  /* PanResponder on detail sheet drag handle */
+  const detailPan = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 6,
     onPanResponderMove: (_, g) => {
-      const newY = Math.max(SH - SHEET_FULL, Math.min(SH - SHEET_PEEK, sheetYVal.current + g.dy));
-      sheetY.setValue(newY);
+      const newY = Math.max(0, g.dy);
+      sheetTranslateY.setValue(newY);
     },
     onPanResponderRelease: (_, g) => {
-      const curY = sheetYVal.current + g.dy;
-      const openThresh = SH - (SHEET_PEEK + (SHEET_FULL - SHEET_PEEK) * 0.4);
-      snapTo(curY < openThresh || g.vy < -0.5);
+      if (g.dy > 80 || g.vy > 0.6) {
+        closeDetail();
+      } else {
+        Animated.spring(sheetTranslateY, {
+          toValue: 0, useNativeDriver: true, tension: 70, friction: 13,
+        }).start();
+        sheetYVal.current = 0;
+      }
     },
   })).current;
 
-  sheetY.addListener(({ value }) => { sheetYVal.current = value; });
-
-  /* WebView ref */
+  /* WebView */
   const webViewRef = useRef<WebView>(null);
-
   const injectJs = useCallback((js: string) => {
     webViewRef.current?.injectJavaScript(`(function(){${js}})(); true;`);
   }, []);
 
-  /* Sync location to map */
+  /* Sync location */
   useEffect(() => {
     if (!mapReady || locationStatus.state !== "located") return;
     const { lat, lng } = locationStatus;
     injectJs(`window.setMyLocation&&window.setMyLocation(${lng},${lat});`);
   }, [locationStatus, mapReady, injectJs]);
 
-  /* Handle map → RN messages */
+  /* Map messages */
   const onMapMessage = useCallback((e: any) => {
     try {
       const data = JSON.parse(e.nativeEvent.data);
@@ -211,33 +239,31 @@ export default function VoiceGuide() {
           setProgress(0);
           if (data.type === "zoneEnter") {
             setZoneAlert(true);
-            setTimeout(() => setZoneAlert(false), 3000);
+            setTimeout(() => setZoneAlert(false), 3200);
           }
-          if (!expanded) snapTo(false);
         }
       }
     } catch { /* ignore */ }
-  }, [expanded, snapTo]);
+  }, []);
 
-  /* Pan to poi on map when currentPoi changes */
+  /* Pan map to poi */
   useEffect(() => {
     if (!mapReady) return;
     injectJs(`window.panToPoi&&window.panToPoi(${JSON.stringify(currentPoi.id)});`);
   }, [currentPoi.id, mapReady, injectJs]);
 
-  /* Fake progress ticker */
+  /* Fake progress */
   useEffect(() => {
     if (!playing) return;
-    const t = setInterval(() => setProgress(p => p >= 100 ? (setPlaying(false), 0) : p + 0.4), 100);
+    const t = setInterval(() =>
+      setProgress(p => p >= 100 ? (setPlaying(false), 0) : p + 0.4),
+    100);
     return () => clearInterval(t);
   }, [playing]);
 
-  const catColor = CAT_COLOR[currentPoi.cat] ?? { bg: "#F5F5F5", text: "#888" };
+  const catColor = CAT_COLOR[currentPoi.cat] ?? { bg: "#F5F5F5", text: "#888", accent: "#888" };
   const catImg   = CAT_IMG[currentPoi.cat]   ?? require("@/assets/images/hero-landscape.png");
-  const otherPois = ALL_POIS.filter(p => p.id !== currentPoi.id).slice(0, 4);
-
-  /* Sheet content translucency */
-  const sheetExpand = sheetY.interpolate({ inputRange: [SH - SHEET_FULL, SH - SHEET_PEEK], outputRange: [1, 0] });
+  const miniBarBottom = insets.bottom + 12;
 
   return (
     <View style={styles.root}>
@@ -267,9 +293,9 @@ export default function VoiceGuide() {
         )}
       </View>
 
-      {/* ── Header overlay ───────────────────────────── */}
+      {/* ── Header gradient ───────────────────────────── */}
       <LinearGradient
-        colors={["rgba(0,0,0,0.42)", "transparent"]}
+        colors={["rgba(0,0,0,0.48)", "transparent"]}
         style={[styles.headerGrad, { paddingTop: insets.top + 4 }]}
         pointerEvents="box-none"
       >
@@ -279,8 +305,8 @@ export default function VoiceGuide() {
           </Pressable>
           <View style={styles.headerCenter}>
             <View style={styles.headerBadge}>
-              <Ionicons name="radio-outline" size={12} color={ACCENT} />
-              <Text style={styles.headerBadgeTxt}>智能语音导览系统</Text>
+              <Ionicons name="radio-outline" size={11} color={ACCENT} />
+              <Text style={styles.headerBadgeTxt}>智能语音导览</Text>
             </View>
             <Text style={styles.headerTitle}>语伴导游</Text>
           </View>
@@ -292,157 +318,203 @@ export default function VoiceGuide() {
         </View>
       </LinearGradient>
 
-      {/* ── Zone enter alert ─────────────────────────── */}
+      {/* ── Zone enter alert toast ───────────────────── */}
       {zoneAlert && (
-        <Animated.View style={[styles.zoneAlert, { top: insets.top + 76 }]}>
-          <Ionicons name="radio-outline" size={16} color="#fff" />
-          <Text style={styles.zoneAlertTxt}>已进入 {currentPoi.name} 讲解区域，正在播放…</Text>
-        </Animated.View>
+        <View style={[styles.zoneAlert, { top: insets.top + 72 }]}>
+          <View style={styles.zoneAlertDot} />
+          <Text style={styles.zoneAlertTxt}>已进入 {currentPoi.name} 讲解区域</Text>
+          <Ionicons name="volume-high-outline" size={14} color="#fff" />
+        </View>
       )}
 
-      {/* ── Draggable bottom sheet ───────────────────── */}
-      <Animated.View style={[styles.sheet, { transform: [{ translateY: sheetY }] }]}>
-        {/* Drag handle */}
-        <View {...panResponder.panHandlers} style={styles.dragArea}>
+      {/* ── QQ Music style mini player bar ───────────── */}
+      <Pressable
+        style={[styles.miniBar, { bottom: miniBarBottom }]}
+        onPress={openDetail}
+        android_ripple={null}
+      >
+        {/* Left: cover + info */}
+        <View style={styles.miniLeft}>
+          <View style={[styles.miniCover, { backgroundColor: catColor.bg }]}>
+            <Text style={styles.miniEmoji}>{currentPoi.emoji}</Text>
+            {playing && (
+              <View style={styles.miniPlayingDot} />
+            )}
+          </View>
+          <View style={styles.miniInfo}>
+            <Text style={styles.miniName} numberOfLines={1}>{currentPoi.name}</Text>
+            <Text style={styles.miniSub} numberOfLines={1}>
+              {lang === "mandarin" ? "普通话讲解" : "方言讲解"} · {currentPoi.cat}
+            </Text>
+          </View>
+        </View>
+
+        {/* Center: waveform */}
+        <View style={styles.miniWave}>
+          <SoundWave playing={playing} color={playing ? catColor.accent : "#C8C8C8"} barCount={14} height={24} />
+        </View>
+
+        {/* Right: controls */}
+        <View style={styles.miniRight}>
+          {/* Language tap-to-toggle */}
+          <Pressable
+            style={[styles.langPill, { borderColor: catColor.accent }]}
+            onPress={(e) => {
+              e.stopPropagation?.();
+              setLang(l => l === "mandarin" ? "dialect" : "mandarin");
+              setPlaying(false);
+              setProgress(0);
+            }}
+            hitSlop={8}
+          >
+            <Text style={[styles.langPillTxt, { color: catColor.accent }]}>
+              {lang === "mandarin" ? "普" : "方"}
+            </Text>
+          </Pressable>
+
+          {/* Play / pause */}
+          <Pressable
+            style={[styles.playBtn, { backgroundColor: catColor.accent }]}
+            onPress={(e) => {
+              e.stopPropagation?.();
+              setPlaying(p => !p);
+            }}
+            hitSlop={4}
+          >
+            <Ionicons name={playing ? "pause" : "play"} size={18} color="#fff" />
+          </Pressable>
+
+          {/* Expand hint */}
+          <Pressable onPress={openDetail} hitSlop={8}>
+            <Ionicons name="chevron-up" size={18} color="#AAAAAA" />
+          </Pressable>
+        </View>
+      </Pressable>
+
+      {/* Progress bar above mini player */}
+      <View style={[styles.progressBar, { bottom: miniBarBottom + MINI_H - 2 }]}>
+        <View style={[styles.progressFill, { width: `${progress}%` as any, backgroundColor: catColor.accent }]} />
+      </View>
+
+      {/* ── Detail sheet (slides up) ─────────────────── */}
+      <Animated.View
+        style={[
+          styles.detailSheet,
+          { height: DETAIL_H, transform: [{ translateY: sheetTranslateY }] },
+        ]}
+        pointerEvents={detailOpen ? "auto" : "none"}
+      >
+        {/* Drag handle row */}
+        <View {...detailPan.panHandlers} style={styles.dragArea}>
           <View style={styles.dragHandle} />
         </View>
 
-        {/* ── MINI PLAYER (always visible) ───────────── */}
-        <View style={styles.miniPlayer}>
-          <View style={styles.miniPoiInfo}>
-            <View style={[styles.miniEmoji, { backgroundColor: catColor.bg }]}>
-              <Text style={{ fontSize: 20 }}>{currentPoi.emoji}</Text>
+        {/* Close button */}
+        <Pressable style={styles.closeBtn} onPress={closeDetail}>
+          <Ionicons name="chevron-down" size={22} color="#888" />
+        </Pressable>
+
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
+        >
+          {/* Hero image */}
+          <View style={styles.heroWrap}>
+            <Image source={catImg} style={styles.heroImg} resizeMode="cover" />
+            <LinearGradient
+              colors={["transparent", "rgba(0,0,0,0.72)"]}
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            />
+            <View style={[styles.catTag, { backgroundColor: catColor.bg }]}>
+              <Text style={[styles.catTagTxt, { color: catColor.text }]}>{currentPoi.cat}</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.miniPoiName} numberOfLines={1}>{currentPoi.name}</Text>
-              <Text style={styles.miniPoiCat}>{currentPoi.cat}</Text>
+            {/* Language + play controls over hero */}
+            <View style={styles.heroControls}>
+              <Pressable
+                style={[styles.heroLangPill, { borderColor: "rgba(255,255,255,0.7)" }]}
+                onPress={() => {
+                  setLang(l => l === "mandarin" ? "dialect" : "mandarin");
+                  setPlaying(false); setProgress(0);
+                }}
+              >
+                <Ionicons name="swap-horizontal-outline" size={12} color="#fff" />
+                <Text style={styles.heroLangTxt}>
+                  {lang === "mandarin" ? "普通话" : "方言"}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.heroPlayBtn, { backgroundColor: catColor.accent }]}
+                onPress={() => setPlaying(p => !p)}
+              >
+                <Ionicons name={playing ? "pause" : "play"} size={20} color="#fff" />
+                <Text style={styles.heroPlayTxt}>{playing ? "暂停" : "播放讲解"}</Text>
+              </Pressable>
             </View>
+            <Text style={styles.heroName}>{currentPoi.name}</Text>
           </View>
 
-          {/* Language toggle */}
-          <View style={styles.langToggle}>
-            <Pressable
-              style={[styles.langBtn, lang === "mandarin" && styles.langBtnActive]}
-              onPress={() => { setLang("mandarin"); setPlaying(false); setProgress(0); }}
-            >
-              <Text style={[styles.langBtnTxt, lang === "mandarin" && styles.langBtnTxtActive]}>普通话</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.langBtn, lang === "dialect" && styles.langBtnActive]}
-              onPress={() => { setLang("dialect"); setPlaying(false); setProgress(0); }}
-            >
-              <Text style={[styles.langBtnTxt, lang === "dialect" && styles.langBtnTxtActive]}>方言</Text>
-            </Pressable>
+          {/* Progress under hero */}
+          {playing && (
+            <View style={styles.detailProgressWrap}>
+              <View style={styles.detailProgressBg}>
+                <View style={[styles.detailProgressFill, { width: `${progress}%` as any, backgroundColor: catColor.accent }]} />
+              </View>
+              <SoundWave playing={playing} color={catColor.accent} barCount={22} height={32} />
+            </View>
+          )}
+
+          {/* Intro */}
+          <View style={styles.section}>
+            <View style={styles.secHeader}>
+              <View style={[styles.secDot, { backgroundColor: "#6B7FD4" }]} />
+              <Text style={[styles.secTitle, { color: "#6B7FD4" }]}>景点介绍</Text>
+            </View>
+            <Text style={styles.secBody}>{currentPoi.intro}</Text>
           </View>
 
-          {/* Play button */}
-          <Pressable style={[styles.playBtn, playing && styles.playBtnActive]} onPress={() => setPlaying(p => !p)}>
-            <Ionicons name={playing ? "pause" : "play"} size={20} color="#fff" />
-          </Pressable>
-
-          {/* Expand arrow */}
-          <Pressable style={styles.expandBtn} onPress={() => snapTo(!expanded)}>
-            <Ionicons name={expanded ? "chevron-down" : "chevron-up"} size={20} color="#999" />
-          </Pressable>
-        </View>
-
-        {/* Progress bar */}
-        <View style={styles.progressWrap}>
-          <View style={styles.progressBg}>
-            <View style={[styles.progressFill, { width: `${progress}%` as any }]} />
+          {/* Story */}
+          <View style={styles.section}>
+            <View style={styles.secHeader}>
+              <View style={[styles.secDot, { backgroundColor: ACCENT }]} />
+              <Text style={[styles.secTitle, { color: ACCENT }]}>流传故事</Text>
+            </View>
+            <Text style={styles.secBody}>{currentPoi.story}</Text>
           </View>
-          <SoundWave playing={playing} color={playing ? ACCENT : "#D0D0D0"} />
-        </View>
 
-        {/* ── EXPANDED CONTENT ─────────────────────── */}
-        <Animated.View style={{ flex: 1, opacity: sheetExpand }}>
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
-            scrollEnabled={expanded}
-          >
-            {/* Hero image */}
-            <View style={styles.heroWrap}>
-              <Image source={catImg} style={styles.heroImg} resizeMode="cover" />
-              <LinearGradient colors={["transparent", "rgba(0,0,0,0.6)"]} style={StyleSheet.absoluteFill} pointerEvents="none" />
-              <View style={[styles.catTag, { backgroundColor: catColor.bg }]}>
-                <Text style={[styles.catTagTxt, { color: catColor.text }]}>{currentPoi.cat}</Text>
-              </View>
-              <Text style={styles.heroName}>{currentPoi.name}</Text>
+          {/* Cultural */}
+          <View style={styles.section}>
+            <View style={styles.secHeader}>
+              <View style={[styles.secDot, { backgroundColor: PRIMARY }]} />
+              <Text style={[styles.secTitle, { color: PRIMARY }]}>文化价值</Text>
             </View>
-
-            {/* Intro section */}
-            <View style={styles.section}>
-              <View style={styles.secHeader}>
-                <View style={[styles.secDot, { backgroundColor: "#6B7FD4" }]} />
-                <Text style={[styles.secTitle, { color: "#6B7FD4" }]}>景点介绍</Text>
-              </View>
-              <Text style={styles.secBody}>{currentPoi.intro}</Text>
-            </View>
-
-            {/* Story section */}
-            <View style={styles.section}>
-              <View style={styles.secHeader}>
-                <View style={[styles.secDot, { backgroundColor: ACCENT }]} />
-                <Text style={[styles.secTitle, { color: ACCENT }]}>流传故事</Text>
-              </View>
-              <Text style={styles.secBody}>{currentPoi.story}</Text>
-            </View>
-
-            {/* Cultural value */}
-            <View style={styles.section}>
-              <View style={styles.secHeader}>
-                <View style={[styles.secDot, { backgroundColor: PRIMARY }]} />
-                <Text style={[styles.secTitle, { color: PRIMARY }]}>文化价值</Text>
-              </View>
-              <Text style={styles.secBody}>{currentPoi.cultural}</Text>
-            </View>
-
-            {/* Nearby POIs */}
-            <Text style={styles.nearbyTitle}>其他景点</Text>
-            {otherPois.map(poi => {
-              const cc = CAT_COLOR[poi.cat] ?? { bg: "#F5F5F5", text: "#888" };
-              return (
-                <Pressable key={poi.id} style={styles.nearbyRow} onPress={() => {
-                  setCurrentPoi(poi); setPlaying(false); setProgress(0);
-                  injectJs(`window.activatePoi&&window.activatePoi(${JSON.stringify(poi.id)});`);
-                  injectJs(`window.panToPoi&&window.panToPoi(${JSON.stringify(poi.id)});`);
-                  snapTo(false);
-                }}>
-                  <View style={[styles.nearbyEmoji, { backgroundColor: cc.bg }]}>
-                    <Text style={{ fontSize: 22 }}>{poi.emoji}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={styles.nearbyName}>{poi.name}</Text>
-                      <View style={[styles.nearbyTag, { backgroundColor: cc.bg }]}>
-                        <Text style={[styles.nearbyTagTxt, { color: cc.text }]}>{poi.cat}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.nearbyDesc} numberOfLines={1}>{poi.intro}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color="#CCC" />
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </Animated.View>
+            <Text style={styles.secBody}>{currentPoi.cultural}</Text>
+          </View>
+        </ScrollView>
       </Animated.View>
+
+      {/* ── Detail sheet backdrop ─────────────────────── */}
+      {detailOpen && (
+        <Pressable
+          style={styles.backdrop}
+          onPress={closeDetail}
+          pointerEvents="auto"
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#E8DCC8" },
-  map: { flex: 1 },
+  map:  { flex: 1 },
   mapFallback: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   mapFallbackTxt: { fontSize: 14, color: "#888" },
 
   /* Header */
   headerGrad: {
     position: "absolute", top: 0, left: 0, right: 0,
-    paddingHorizontal: 16, paddingBottom: 28,
-    zIndex: 10,
+    paddingHorizontal: 16, paddingBottom: 32, zIndex: 10,
   },
   headerRow: { flexDirection: "row", alignItems: "center" },
   backBtn: {
@@ -457,109 +529,157 @@ const styles = StyleSheet.create({
   demoBadge: { backgroundColor: ACCENT + "33", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   demoBadgeTxt: { fontSize: 11, color: ACCENT, fontWeight: "700" },
 
-  /* Zone alert toast */
+  /* Zone alert */
   zoneAlert: {
     position: "absolute", left: 16, right: 16, zIndex: 20,
-    backgroundColor: "rgba(61,170,111,0.92)", borderRadius: 12,
+    backgroundColor: "rgba(40,160,100,0.93)", borderRadius: 12,
     flexDirection: "row", alignItems: "center", gap: 8,
     paddingVertical: 10, paddingHorizontal: 14,
+    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 8, elevation: 8,
   },
-  zoneAlertTxt: { fontSize: 13, color: "#fff", fontWeight: "600", flex: 1 },
+  zoneAlertDot: {
+    width: 8, height: 8, borderRadius: 4, backgroundColor: "#7FFFC0",
+  },
+  zoneAlertTxt: { flex: 1, fontSize: 13, color: "#fff", fontWeight: "600" },
 
-  /* Bottom sheet */
-  sheet: {
-    position: "absolute", left: 0, right: 0, bottom: 0,
-    height: SHEET_FULL + 24,
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 22, borderTopRightRadius: 22,
-    shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 20,
-    shadowOffset: { width: 0, height: -4 }, elevation: 20,
-  },
-  dragArea: {
-    paddingVertical: 10, alignItems: "center",
-  },
-  dragHandle: {
-    width: 36, height: 4, borderRadius: 2, backgroundColor: "#DCDCDC",
-  },
-
-  /* Mini player */
-  miniPlayer: {
+  /* ── QQ Music mini player bar ─────────────────────── */
+  miniBar: {
+    position: "absolute", left: 14, right: 14,
+    height: MINI_H,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.96)",
     flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 16, gap: 10, marginBottom: 8,
+    paddingHorizontal: 12, gap: 10,
+    zIndex: 30,
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 18,
+    ...(Platform.OS === "ios" ? {} : {}),
   },
-  miniEmoji: {
-    width: 42, height: 42, borderRadius: 10,
-    alignItems: "center", justifyContent: "center",
-  },
-  miniPoiInfo: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
-  miniPoiName: { fontSize: 15, fontWeight: "700", color: "#1A1A1A" },
-  miniPoiCat: { fontSize: 11, color: "#999", marginTop: 1 },
 
-  langToggle: {
-    flexDirection: "row", backgroundColor: "#F0F0F0",
-    borderRadius: 10, padding: 2,
+  miniLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 0 },
+  miniCover: {
+    width: 48, height: 48, borderRadius: 12,
+    alignItems: "center", justifyContent: "center",
+    position: "relative",
   },
-  langBtn: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8 },
-  langBtnActive: { backgroundColor: ACCENT },
-  langBtnTxt: { fontSize: 12, fontWeight: "600", color: "#888" },
-  langBtnTxtActive: { color: "#fff" },
+  miniEmoji: { fontSize: 22 },
+  miniPlayingDot: {
+    position: "absolute", bottom: 3, right: 3,
+    width: 8, height: 8, borderRadius: 4, backgroundColor: ACCENT,
+    borderWidth: 1.5, borderColor: "#fff",
+  },
+  miniInfo: { flex: 1, minWidth: 0 },
+  miniName: { fontSize: 14, fontWeight: "700", color: "#1A1A1A", marginBottom: 2 },
+  miniSub:  { fontSize: 11, color: "#999" },
+
+  miniWave: { alignItems: "center", justifyContent: "center", width: 50 },
+
+  miniRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+
+  langPill: {
+    width: 28, height: 28, borderRadius: 14,
+    borderWidth: 1.5,
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: "transparent",
+  },
+  langPillTxt: { fontSize: 12, fontWeight: "800" },
 
   playBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "#CCC", alignItems: "center", justifyContent: "center",
+    width: 38, height: 38, borderRadius: 19,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 6, elevation: 4,
   },
-  playBtnActive: { backgroundColor: ACCENT },
-  expandBtn: {
+
+  /* Progress bar above mini player */
+  progressBar: {
+    position: "absolute", left: 14, right: 14,
+    height: 2.5, backgroundColor: "rgba(0,0,0,0.08)",
+    borderRadius: 2, overflow: "hidden", zIndex: 29,
+  },
+  progressFill: { height: "100%", borderRadius: 2 },
+
+  /* ── Detail sheet ─────────────────────────────────── */
+  detailSheet: {
+    position: "absolute", left: 0, right: 0, bottom: 0,
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    zIndex: 40,
+    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 24,
+    shadowOffset: { width: 0, height: -6 }, elevation: 24,
+  },
+  dragArea: {
+    paddingTop: 12, paddingBottom: 6, alignItems: "center",
+  },
+  dragHandle: {
+    width: 40, height: 4, borderRadius: 2, backgroundColor: "#E0E0E0",
+  },
+  closeBtn: {
+    position: "absolute", top: 10, right: 16, zIndex: 2,
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: "#F5F5F5", alignItems: "center", justifyContent: "center",
+    backgroundColor: "#F2F2F2",
+    alignItems: "center", justifyContent: "center",
   },
 
-  /* Progress */
-  progressWrap: {
-    paddingHorizontal: 16, gap: 8, marginBottom: 10,
-  },
-  progressBg: { height: 3, backgroundColor: "#F0F0F0", borderRadius: 2 },
-  progressFill: { height: 3, backgroundColor: ACCENT, borderRadius: 2 },
-
-  /* Expanded content */
+  /* Hero */
   heroWrap: {
-    marginHorizontal: 16, borderRadius: 16, overflow: "hidden",
-    height: 160, marginBottom: 14,
-    shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 8, elevation: 3,
+    marginHorizontal: 16, borderRadius: 20, overflow: "hidden",
+    height: 200, marginBottom: 14, marginTop: 8,
   },
   heroImg: { width: "100%", height: "100%" },
   catTag: {
-    position: "absolute", top: 12, left: 12,
-    borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
+    position: "absolute", top: 14, left: 14,
+    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
   },
   catTagTxt: { fontSize: 11, fontWeight: "700" },
   heroName: {
-    position: "absolute", bottom: 12, left: 12,
-    fontSize: 20, fontWeight: "800", color: "#fff",
+    position: "absolute", bottom: 56, left: 14, right: 14,
+    fontSize: 22, fontWeight: "800", color: "#fff",
+    textShadowColor: "rgba(0,0,0,0.4)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
   },
+  heroControls: {
+    position: "absolute", bottom: 14, left: 14, right: 14,
+    flexDirection: "row", alignItems: "center", gap: 10,
+  },
+  heroLangPill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    borderWidth: 1, borderRadius: 16,
+    paddingHorizontal: 10, paddingVertical: 5,
+    backgroundColor: "rgba(0,0,0,0.22)",
+  },
+  heroLangTxt: { fontSize: 12, color: "#fff", fontWeight: "600" },
+  heroPlayBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    height: 38, borderRadius: 19,
+    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 6, elevation: 4,
+  },
+  heroPlayTxt: { fontSize: 14, color: "#fff", fontWeight: "700" },
 
+  /* Detail progress */
+  detailProgressWrap: {
+    marginHorizontal: 16, marginBottom: 14, gap: 6,
+  },
+  detailProgressBg: {
+    height: 3, backgroundColor: "#F0F0F0", borderRadius: 2, overflow: "hidden",
+  },
+  detailProgressFill: { height: "100%", borderRadius: 2 },
+
+  /* Sections */
   section: {
     marginHorizontal: 16, backgroundColor: "#FAFAFA",
-    borderRadius: 14, padding: 14, marginBottom: 10,
+    borderRadius: 16, padding: 16, marginBottom: 10,
   },
-  secHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 },
-  secDot: { width: 4, height: 15, borderRadius: 2 },
-  secTitle: { fontSize: 13, fontWeight: "700" },
+  secHeader: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 9 },
+  secDot: { width: 4, height: 16, borderRadius: 2 },
+  secTitle: { fontSize: 14, fontWeight: "700" },
   secBody: { fontSize: 14, color: "#444", lineHeight: 22 },
 
-  nearbyTitle: { fontSize: 15, fontWeight: "700", color: "#1A1A1A", marginHorizontal: 16, marginBottom: 10 },
-  nearbyRow: {
-    flexDirection: "row", alignItems: "center",
-    marginHorizontal: 16, marginBottom: 8,
-    backgroundColor: "#FAFAFA", borderRadius: 14,
-    padding: 12, gap: 12,
+  /* Backdrop */
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.25)",
+    zIndex: 35,
   },
-  nearbyEmoji: {
-    width: 44, height: 44, borderRadius: 10,
-    alignItems: "center", justifyContent: "center",
-  },
-  nearbyName: { fontSize: 14, fontWeight: "700", color: "#1A1A1A" },
-  nearbyTag: { borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
-  nearbyTagTxt: { fontSize: 11, fontWeight: "600" },
-  nearbyDesc: { fontSize: 12, color: "#666", marginTop: 2, lineHeight: 17 },
 });
