@@ -9,12 +9,19 @@
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{width:100%;height:100%;overflow:hidden;background:#e8dcc8}
   #map{width:100vw;height:100vh}
-  /* transform: translate(-50%,-100%) 让底部中心（小圆点）精确对准地理坐标 */
-  .poi-marker{display:inline-flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;transform:translate(-50%,-100%)}
-  .poi-bubble{border-radius:20px;padding:5px 10px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,0.28);display:flex;align-items:center;gap:4px;transition:transform .18s,box-shadow .18s}
-  .poi-bubble.active{transform:scale(1.14);box-shadow:0 4px 16px rgba(0,0,0,0.4)}
-  .poi-stem{width:2px;height:7px}
-  .poi-dot{width:8px;height:8px;border-radius:50%;border:2px solid white;margin-top:-1px}
+  /* outer wrapper is 0×0, inner content uses absolute positioning so
+     the DOT's centre is exactly at the Leaflet anchor (geographic coord) */
+  .pm-wrap{position:relative;width:0;height:0;overflow:visible}
+  .pm-inner{position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+            display:flex;flex-direction:column;align-items:center;
+            cursor:pointer;user-select:none;pointer-events:auto}
+  .pm-bubble{border-radius:20px;padding:5px 10px;font-size:12px;font-weight:700;
+             white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.26);
+             display:flex;align-items:center;gap:4px;
+             transition:transform .18s,box-shadow .18s}
+  .pm-bubble.active{transform:scale(1.14);box-shadow:0 4px 16px rgba(0,0,0,0.4)}
+  .pm-stem{width:2px;height:8px}
+  .pm-dot{width:8px;height:8px;border-radius:50%;border:2px solid #fff;margin-top:-1px}
   .leaflet-control-attribution{font-size:8px!important;opacity:0.4!important}
   .leaflet-control-zoom{display:none}
   .zone-label{background:transparent;border:none;box-shadow:none}
@@ -136,19 +143,27 @@ function send(data){
 }
 
 /* ── Build marker HTML ──────────────────────────────── */
+/* Structure:
+   .pm-wrap  (0×0, overflow:visible, geographic anchor)
+     .pm-inner (position:absolute;bottom:0;left:50%;translateX(-50%))
+       .pm-bubble  ← label
+       .pm-stem
+       .pm-dot  ← bottom-center sits exactly on the geographic coord
+*/
 function markerHtml(poi, isActive){
   var c=clr(poi.cat);
-  var bg   = isActive ? c.bubble : "#fff";
-  var col  = isActive ? c.text   : c.bubble;
-  var bdr  = isActive ? "none"   : ("2px solid "+c.bubble);
-  var sh   = isActive ? "0 4px 14px rgba(0,0,0,0.4)" : "0 2px 8px rgba(0,0,0,0.22)";
-  var sc   = isActive ? "scale(1.18)" : "scale(1)";
-  return '<div class="poi-marker">'+
-    '<div class="poi-bubble'+(isActive?' active':'')+'" style="background:'+bg+';color:'+col+';border:'+bdr+';box-shadow:'+sh+';transform:'+sc+'">'+
-    poi.emoji+' <span>'+poi.name+'</span></div>'+
-    '<div class="poi-stem" style="background:'+c.bubble+'"></div>'+
-    '<div class="poi-dot" style="background:'+c.bubble+'"></div>'+
-    '</div>';
+  var bg  = isActive ? c.bubble : "#fff";
+  var col = isActive ? c.text   : c.bubble;
+  var bdr = isActive ? "none"   : ("2px solid "+c.bubble);
+  return '<div class="pm-wrap">'+
+    '<div class="pm-inner">'+
+      '<div class="pm-bubble'+(isActive?' active':'')+'" style="background:'+bg+';color:'+col+';border:'+bdr+'">'+
+        poi.emoji+' '+poi.name+
+      '</div>'+
+      '<div class="pm-stem" style="background:'+c.bubble+'"></div>'+
+      '<div class="pm-dot"  style="background:'+c.bubble+'"></div>'+
+    '</div>'+
+  '</div>';
 }
 
 /* ── Create markers + zones ─────────────────────────── */
