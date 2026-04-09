@@ -164,7 +164,7 @@ export default function XiaoxiangAiScreen() {
     {
       id: "0",
       role: "assistant",
-      content: "你好呀！我是小乡，你的专属旅行伴游～今天想去哪里逛逛呢？我可以给你讲当地的故事、美食，还有那些藏在巷子里的宝藏小店！",
+      content: "你好呀！我是“小乡”，你的专属旅行伴游～今天想去哪里逛逛呢？我可以给你讲当地的故事、美食，还有那些藏在巷子里的宝藏小店！",
       time: nowTime(),
     },
   ]);
