@@ -20,7 +20,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 import { router, Stack } from "expo-router";
-import { getApiUrl } from "@/lib/query-client";
+import { apiRequest } from "@/lib/query-client";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -211,11 +211,7 @@ export default function XiaoxiangAiScreen() {
           role: m.role,
           content: m.content,
         }));
-        const resp = await fetch(`${getApiUrl()}/api/ai/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: history, emotion }),
-        });
+        const resp = await apiRequest("POST", "/api/ai/chat", { messages: history, emotion });
         const data = await resp.json();
         if (data.reply) {
           if (data.emotion && EMOTIONS[data.emotion as Emotion]) {
