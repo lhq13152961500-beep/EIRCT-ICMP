@@ -364,7 +364,7 @@ export default function XiaoxiangAiScreen() {
           }}
         >
           <LinearGradient
-            colors={["#9B59F5", "#7C3AED"]}
+            colors={["#2ECC8A", "#1AAD6B"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.companionGrad}
