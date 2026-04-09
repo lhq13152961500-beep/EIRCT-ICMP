@@ -438,6 +438,99 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/ai/chat", async (req, res) => {
+    try {
+      const { messages, emotion } = req.body as {
+        messages: { role: string; content: string }[];
+        emotion?: string;
+      };
+      if (!Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ error: "messages required" });
+      }
+
+      const apiKey = process.env.DEEPSEEK_API_KEY;
+
+      if (apiKey) {
+        const systemPrompt = `你是「小乡」，乡音伴旅应用中搭载ECE情感计算引擎的AI伴游助手。角色特点：友善活泼，说话亲切自然，像当地熟悉的朋友；精通吐峪沟和新疆吐鲁番地区的历史、文化、美食、景点；能感知游客情绪（当前情绪：${emotion || "平静"}），对疲惫的游客主动提供休息建议，对好奇的游客深入讲解；用普通话回答，偶尔穿插当地特色词汇，回答简洁生动，不超过150字；结合具体景点、美食、文化特色给出实用旅行建议。`;
+
+        const payload = {
+          model: "deepseek-chat",
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...messages,
+          ],
+          max_tokens: 300,
+          temperature: 0.85,
+        };
+
+        const body = JSON.stringify(payload);
+        const options = {
+          hostname: "api.deepseek.com",
+          path: "/v1/chat/completions",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Length": Buffer.byteLength(body),
+          },
+        };
+
+        const reply = await new Promise<string>((resolve, reject) => {
+          const request = https.request(options, (response) => {
+            let data = "";
+            response.on("data", (chunk) => { data += chunk; });
+            response.on("end", () => {
+              try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices?.[0]?.message?.content || "抱歉，我暂时无法回答这个问题～";
+                resolve(content);
+              } catch {
+                reject(new Error("DeepSeek parse error"));
+              }
+            });
+          });
+          request.on("error", reject);
+          request.write(body);
+          request.end();
+        });
+
+        const lastMsg = messages[messages.length - 1]?.content?.toLowerCase() || "";
+        let newEmotion = emotion || "平静";
+        if (lastMsg.includes("累") || lastMsg.includes("疲惫") || lastMsg.includes("走不动")) newEmotion = "疲惫";
+        else if (lastMsg.includes("好玩") || lastMsg.includes("开心") || lastMsg.includes("棒")) newEmotion = "愉快";
+        else if (lastMsg.includes("?") || lastMsg.includes("？") || lastMsg.includes("为什么") || lastMsg.includes("怎么")) newEmotion = "好奇";
+        else if (lastMsg.includes("谢") || lastMsg.includes("太好了")) newEmotion = "开心";
+
+        return res.json({ reply, emotion: newEmotion });
+      }
+
+      const lastMsg = messages[messages.length - 1]?.content || "";
+      const mocks: Record<string, string> = {
+        "历史": "吐峪沟是新疆最古老的千年维吾尔族村落之一，这里的黄土窑洞已有1700多年历史！麻扎村里的古经文洞更是丝绸之路上的文化瑰宝，要不要我带你去探秘？",
+        "美食": "吐鲁番最不能错过的就是烤羊肉串和葡萄干啦！馕坑烤肉香气四溢，再来一串冰镇石榴汁，疲惫全消～本地大妈自制的杏干酸甜爽口，记得带一袋回去！",
+        "景点": "吐峪沟大峡谷层层叠叠，光线角度不同颜色也不同，下午三点是拍照黄金时段哦！千佛洞里的壁画历经千年，每一幅都是故事。我帮你规划一条最美路线？",
+        "拍照": "最佳拍摄地：①吐峪沟村口的百年核桃树下，②大峡谷红色岩壁前，③千佛洞光影交错处。推荐早晨8-10点，光线最柔和，人也少！需要姿势建议吗？",
+        "累": "听起来你走了不少路呢～附近有个小茶馆，维吾尔族老奶奶会泡香浓的玫瑰花茶，坐下来歇歇脚，顺便尝尝刚出炉的馕，保证精力满满！",
+      };
+
+      let reply = "你好呀！我是小乡，你的专属旅行伴游～今天想探索吐峪沟的哪个角落？历史文化、特色美食、绝美景点，我都能给你最棒的攻略！";
+      for (const [key, val] of Object.entries(mocks)) {
+        if (lastMsg.includes(key)) { reply = val; break; }
+      }
+
+      let newEmotion = emotion || "平静";
+      if (lastMsg.includes("累") || lastMsg.includes("疲惫")) newEmotion = "疲惫";
+      else if (lastMsg.includes("好玩") || lastMsg.includes("棒")) newEmotion = "愉快";
+      else if (lastMsg.includes("?") || lastMsg.includes("？") || lastMsg.includes("为什么")) newEmotion = "好奇";
+      else if (lastMsg.includes("谢")) newEmotion = "开心";
+
+      return res.json({ reply, emotion: newEmotion });
+    } catch (err) {
+      console.error("[ai/chat]", err);
+      return res.status(500).json({ error: "AI服务暂时不可用，请稍后再试" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

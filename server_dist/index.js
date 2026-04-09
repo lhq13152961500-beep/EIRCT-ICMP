@@ -751,6 +751,89 @@ async function registerRoutes(app2) {
       return res.status(500).json({ error: "Failed to serve comment voice" });
     }
   });
+  app2.post("/api/ai/chat", async (req, res) => {
+    try {
+      const { messages, emotion } = req.body;
+      if (!Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ error: "messages required" });
+      }
+      const apiKey = process.env.DEEPSEEK_API_KEY;
+      if (apiKey) {
+        const systemPrompt = `\u4F60\u662F\u300C\u5C0F\u4E61\u300D\uFF0C\u4E61\u97F3\u4F34\u65C5\u5E94\u7528\u4E2D\u642D\u8F7DECE\u60C5\u611F\u8BA1\u7B97\u5F15\u64CE\u7684AI\u4F34\u6E38\u52A9\u624B\u3002\u89D2\u8272\u7279\u70B9\uFF1A\u53CB\u5584\u6D3B\u6CFC\uFF0C\u8BF4\u8BDD\u4EB2\u5207\u81EA\u7136\uFF0C\u50CF\u5F53\u5730\u719F\u6089\u7684\u670B\u53CB\uFF1B\u7CBE\u901A\u5410\u5CEA\u6C9F\u548C\u65B0\u7586\u5410\u9C81\u756A\u5730\u533A\u7684\u5386\u53F2\u3001\u6587\u5316\u3001\u7F8E\u98DF\u3001\u666F\u70B9\uFF1B\u80FD\u611F\u77E5\u6E38\u5BA2\u60C5\u7EEA\uFF08\u5F53\u524D\u60C5\u7EEA\uFF1A${emotion || "\u5E73\u9759"}\uFF09\uFF0C\u5BF9\u75B2\u60EB\u7684\u6E38\u5BA2\u4E3B\u52A8\u63D0\u4F9B\u4F11\u606F\u5EFA\u8BAE\uFF0C\u5BF9\u597D\u5947\u7684\u6E38\u5BA2\u6DF1\u5165\u8BB2\u89E3\uFF1B\u7528\u666E\u901A\u8BDD\u56DE\u7B54\uFF0C\u5076\u5C14\u7A7F\u63D2\u5F53\u5730\u7279\u8272\u8BCD\u6C47\uFF0C\u56DE\u7B54\u7B80\u6D01\u751F\u52A8\uFF0C\u4E0D\u8D85\u8FC7150\u5B57\uFF1B\u7ED3\u5408\u5177\u4F53\u666F\u70B9\u3001\u7F8E\u98DF\u3001\u6587\u5316\u7279\u8272\u7ED9\u51FA\u5B9E\u7528\u65C5\u884C\u5EFA\u8BAE\u3002`;
+        const payload = {
+          model: "deepseek-chat",
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...messages
+          ],
+          max_tokens: 300,
+          temperature: 0.85
+        };
+        const body = JSON.stringify(payload);
+        const options = {
+          hostname: "api.deepseek.com",
+          path: "/v1/chat/completions",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Length": Buffer.byteLength(body)
+          }
+        };
+        const reply2 = await new Promise((resolve2, reject) => {
+          const request = https.request(options, (response) => {
+            let data = "";
+            response.on("data", (chunk) => {
+              data += chunk;
+            });
+            response.on("end", () => {
+              try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices?.[0]?.message?.content || "\u62B1\u6B49\uFF0C\u6211\u6682\u65F6\u65E0\u6CD5\u56DE\u7B54\u8FD9\u4E2A\u95EE\u9898\uFF5E";
+                resolve2(content);
+              } catch {
+                reject(new Error("DeepSeek parse error"));
+              }
+            });
+          });
+          request.on("error", reject);
+          request.write(body);
+          request.end();
+        });
+        const lastMsg2 = messages[messages.length - 1]?.content?.toLowerCase() || "";
+        let newEmotion2 = emotion || "\u5E73\u9759";
+        if (lastMsg2.includes("\u7D2F") || lastMsg2.includes("\u75B2\u60EB") || lastMsg2.includes("\u8D70\u4E0D\u52A8")) newEmotion2 = "\u75B2\u60EB";
+        else if (lastMsg2.includes("\u597D\u73A9") || lastMsg2.includes("\u5F00\u5FC3") || lastMsg2.includes("\u68D2")) newEmotion2 = "\u6109\u5FEB";
+        else if (lastMsg2.includes("?") || lastMsg2.includes("\uFF1F") || lastMsg2.includes("\u4E3A\u4EC0\u4E48") || lastMsg2.includes("\u600E\u4E48")) newEmotion2 = "\u597D\u5947";
+        else if (lastMsg2.includes("\u8C22") || lastMsg2.includes("\u592A\u597D\u4E86")) newEmotion2 = "\u5F00\u5FC3";
+        return res.json({ reply: reply2, emotion: newEmotion2 });
+      }
+      const lastMsg = messages[messages.length - 1]?.content || "";
+      const mocks = {
+        "\u5386\u53F2": "\u5410\u5CEA\u6C9F\u662F\u65B0\u7586\u6700\u53E4\u8001\u7684\u5343\u5E74\u7EF4\u543E\u5C14\u65CF\u6751\u843D\u4E4B\u4E00\uFF0C\u8FD9\u91CC\u7684\u9EC4\u571F\u7A91\u6D1E\u5DF2\u67091700\u591A\u5E74\u5386\u53F2\uFF01\u9EBB\u624E\u6751\u91CC\u7684\u53E4\u7ECF\u6587\u6D1E\u66F4\u662F\u4E1D\u7EF8\u4E4B\u8DEF\u4E0A\u7684\u6587\u5316\u7470\u5B9D\uFF0C\u8981\u4E0D\u8981\u6211\u5E26\u4F60\u53BB\u63A2\u79D8\uFF1F",
+        "\u7F8E\u98DF": "\u5410\u9C81\u756A\u6700\u4E0D\u80FD\u9519\u8FC7\u7684\u5C31\u662F\u70E4\u7F8A\u8089\u4E32\u548C\u8461\u8404\u5E72\u5566\uFF01\u9995\u5751\u70E4\u8089\u9999\u6C14\u56DB\u6EA2\uFF0C\u518D\u6765\u4E00\u4E32\u51B0\u9547\u77F3\u69B4\u6C41\uFF0C\u75B2\u60EB\u5168\u6D88\uFF5E\u672C\u5730\u5927\u5988\u81EA\u5236\u7684\u674F\u5E72\u9178\u751C\u723D\u53E3\uFF0C\u8BB0\u5F97\u5E26\u4E00\u888B\u56DE\u53BB\uFF01",
+        "\u666F\u70B9": "\u5410\u5CEA\u6C9F\u5927\u5CE1\u8C37\u5C42\u5C42\u53E0\u53E0\uFF0C\u5149\u7EBF\u89D2\u5EA6\u4E0D\u540C\u989C\u8272\u4E5F\u4E0D\u540C\uFF0C\u4E0B\u5348\u4E09\u70B9\u662F\u62CD\u7167\u9EC4\u91D1\u65F6\u6BB5\u54E6\uFF01\u5343\u4F5B\u6D1E\u91CC\u7684\u58C1\u753B\u5386\u7ECF\u5343\u5E74\uFF0C\u6BCF\u4E00\u5E45\u90FD\u662F\u6545\u4E8B\u3002\u6211\u5E2E\u4F60\u89C4\u5212\u4E00\u6761\u6700\u7F8E\u8DEF\u7EBF\uFF1F",
+        "\u62CD\u7167": "\u6700\u4F73\u62CD\u6444\u5730\uFF1A\u2460\u5410\u5CEA\u6C9F\u6751\u53E3\u7684\u767E\u5E74\u6838\u6843\u6811\u4E0B\uFF0C\u2461\u5927\u5CE1\u8C37\u7EA2\u8272\u5CA9\u58C1\u524D\uFF0C\u2462\u5343\u4F5B\u6D1E\u5149\u5F71\u4EA4\u9519\u5904\u3002\u63A8\u8350\u65E9\u66688-10\u70B9\uFF0C\u5149\u7EBF\u6700\u67D4\u548C\uFF0C\u4EBA\u4E5F\u5C11\uFF01\u9700\u8981\u59FF\u52BF\u5EFA\u8BAE\u5417\uFF1F",
+        "\u7D2F": "\u542C\u8D77\u6765\u4F60\u8D70\u4E86\u4E0D\u5C11\u8DEF\u5462\uFF5E\u9644\u8FD1\u6709\u4E2A\u5C0F\u8336\u9986\uFF0C\u7EF4\u543E\u5C14\u65CF\u8001\u5976\u5976\u4F1A\u6CE1\u9999\u6D53\u7684\u73AB\u7470\u82B1\u8336\uFF0C\u5750\u4E0B\u6765\u6B47\u6B47\u811A\uFF0C\u987A\u4FBF\u5C1D\u5C1D\u521A\u51FA\u7089\u7684\u9995\uFF0C\u4FDD\u8BC1\u7CBE\u529B\u6EE1\u6EE1\uFF01"
+      };
+      let reply = "\u4F60\u597D\u5440\uFF01\u6211\u662F\u5C0F\u4E61\uFF0C\u4F60\u7684\u4E13\u5C5E\u65C5\u884C\u4F34\u6E38\uFF5E\u4ECA\u5929\u60F3\u63A2\u7D22\u5410\u5CEA\u6C9F\u7684\u54EA\u4E2A\u89D2\u843D\uFF1F\u5386\u53F2\u6587\u5316\u3001\u7279\u8272\u7F8E\u98DF\u3001\u7EDD\u7F8E\u666F\u70B9\uFF0C\u6211\u90FD\u80FD\u7ED9\u4F60\u6700\u68D2\u7684\u653B\u7565\uFF01";
+      for (const [key, val] of Object.entries(mocks)) {
+        if (lastMsg.includes(key)) {
+          reply = val;
+          break;
+        }
+      }
+      let newEmotion = emotion || "\u5E73\u9759";
+      if (lastMsg.includes("\u7D2F") || lastMsg.includes("\u75B2\u60EB")) newEmotion = "\u75B2\u60EB";
+      else if (lastMsg.includes("\u597D\u73A9") || lastMsg.includes("\u68D2")) newEmotion = "\u6109\u5FEB";
+      else if (lastMsg.includes("?") || lastMsg.includes("\uFF1F") || lastMsg.includes("\u4E3A\u4EC0\u4E48")) newEmotion = "\u597D\u5947";
+      else if (lastMsg.includes("\u8C22")) newEmotion = "\u5F00\u5FC3";
+      return res.json({ reply, emotion: newEmotion });
+    } catch (err) {
+      console.error("[ai/chat]", err);
+      return res.status(500).json({ error: "AI\u670D\u52A1\u6682\u65F6\u4E0D\u53EF\u7528\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5" });
+    }
+  });
   const httpServer = createServer(app2);
   return httpServer;
 }
