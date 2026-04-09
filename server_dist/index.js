@@ -787,16 +787,26 @@ async function registerRoutes(app2) {
               data += chunk;
             });
             response.on("end", () => {
+              console.log("[DeepSeek] status:", response.statusCode, "body:", data.slice(0, 300));
               try {
                 const parsed = JSON.parse(data);
+                if (parsed.error) {
+                  console.error("[DeepSeek] API error:", parsed.error);
+                  resolve2("\u62B1\u6B49\uFF0C\u5C0F\u4E61\u6682\u65F6\u6709\u70B9\u5FD9\uFF5E\u8BF7\u7A0D\u540E\u518D\u8BD5\uFF01");
+                  return;
+                }
                 const content = parsed.choices?.[0]?.message?.content || "\u62B1\u6B49\uFF0C\u6211\u6682\u65F6\u65E0\u6CD5\u56DE\u7B54\u8FD9\u4E2A\u95EE\u9898\uFF5E";
                 resolve2(content);
-              } catch {
+              } catch (e) {
+                console.error("[DeepSeek] parse error:", e, "raw:", data.slice(0, 200));
                 reject(new Error("DeepSeek parse error"));
               }
             });
           });
-          request.on("error", reject);
+          request.on("error", (e) => {
+            console.error("[DeepSeek] request error:", e);
+            reject(e);
+          });
           request.write(body);
           request.end();
         });

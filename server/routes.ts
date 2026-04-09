@@ -480,16 +480,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
             let data = "";
             response.on("data", (chunk) => { data += chunk; });
             response.on("end", () => {
+              console.log("[DeepSeek] status:", response.statusCode, "body:", data.slice(0, 300));
               try {
                 const parsed = JSON.parse(data);
+                if (parsed.error) {
+                  console.error("[DeepSeek] API error:", parsed.error);
+                  resolve("抱歉，小乡暂时有点忙～请稍后再试！");
+                  return;
+                }
                 const content = parsed.choices?.[0]?.message?.content || "抱歉，我暂时无法回答这个问题～";
                 resolve(content);
-              } catch {
+              } catch (e) {
+                console.error("[DeepSeek] parse error:", e, "raw:", data.slice(0, 200));
                 reject(new Error("DeepSeek parse error"));
               }
             });
           });
-          request.on("error", reject);
+          request.on("error", (e) => { console.error("[DeepSeek] request error:", e); reject(e); });
           request.write(body);
           request.end();
         });
