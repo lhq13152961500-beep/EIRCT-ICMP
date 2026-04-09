@@ -11,7 +11,6 @@ import {
   Platform,
   ScrollView,
   Animated,
-  Alert,
   ActivityIndicator,
   Dimensions,
 } from "react-native";
@@ -20,7 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
+import { router, Stack } from "expo-router";
 import { getApiUrl } from "@/lib/query-client";
 
 const { width: SCREEN_W } = Dimensions.get("window");
@@ -171,6 +170,7 @@ export default function XiaoxiangAiScreen() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showMediaPanel, setShowMediaPanel] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -248,29 +248,25 @@ export default function XiaoxiangAiScreen() {
     [messages, emotion, loading]
   );
 
-  const handleUpload = useCallback(async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert("上传内容", "选择来源", [
-      {
-        text: "拍照",
-        onPress: async () => {
-          const perm = await ImagePicker.requestCameraPermissionsAsync();
-          if (!perm.granted) return;
-          const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
-          if (!result.canceled) sendMessage("[图片] 帮我介绍一下这里");
-        },
-      },
-      {
-        text: "相册",
-        onPress: async () => {
-          const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!perm.granted) return;
-          const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7 });
-          if (!result.canceled) sendMessage("[图片] 帮我介绍一下这里");
-        },
-      },
-      { text: "取消", style: "cancel" },
-    ]);
+  const handleCamera = useCallback(async () => {
+    setShowMediaPanel(false);
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) return;
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+    if (!result.canceled) sendMessage("[图片] 帮我介绍一下这里");
+  }, [sendMessage]);
+
+  const handleAlbum = useCallback(async () => {
+    setShowMediaPanel(false);
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7 });
+    if (!result.canceled) sendMessage("[图片] 帮我介绍一下这里");
+  }, [sendMessage]);
+
+  const handleFile = useCallback(async () => {
+    setShowMediaPanel(false);
+    sendMessage("[文件] 请帮我分析这个内容");
   }, [sendMessage]);
 
   const emotionInfo = EMOTIONS[emotion];
@@ -281,6 +277,7 @@ export default function XiaoxiangAiScreen() {
         colors={["#FFF4EE", "#FFE8DC", "#FFF0EA"]}
         style={[styles.welcomeRoot, { paddingTop: insets.top + 20 }]}
       >
+        <Stack.Screen options={{ headerShown: false }} />
         <Pressable
           style={styles.backBtn}
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
@@ -335,6 +332,7 @@ export default function XiaoxiangAiScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
     >
+      <Stack.Screen options={{ headerShown: false }} />
       <LinearGradient
         colors={["#FFF4EE", "#FFF9F6"]}
         style={StyleSheet.absoluteFill}
@@ -366,12 +364,12 @@ export default function XiaoxiangAiScreen() {
           }}
         >
           <LinearGradient
-            colors={["#FF8C5A", "#F97340"]}
+            colors={["#9B59F5", "#7C3AED"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.companionGrad}
           >
-            <Ionicons name="heart-outline" size={13} color="white" />
+            <Ionicons name="hardware-chip-outline" size={14} color="white" />
             <Text style={styles.companionText}>情感伴游</Text>
           </LinearGradient>
         </Pressable>
@@ -447,9 +445,45 @@ export default function XiaoxiangAiScreen() {
         }
       />
 
+      {showMediaPanel && (
+        <View style={styles.mediaPanel}>
+          <Pressable style={styles.mediaPanelItem} onPress={handleCamera}>
+            <View style={[styles.mediaPanelIcon, { backgroundColor: "#FFE8DC" }]}>
+              <Ionicons name="camera-outline" size={22} color="#F97340" />
+            </View>
+            <Text style={styles.mediaPanelLabel}>拍照</Text>
+          </Pressable>
+          <Pressable style={styles.mediaPanelItem} onPress={handleAlbum}>
+            <View style={[styles.mediaPanelIcon, { backgroundColor: "#DDE8FF" }]}>
+              <Ionicons name="images-outline" size={22} color="#4271DD" />
+            </View>
+            <Text style={styles.mediaPanelLabel}>相册</Text>
+          </Pressable>
+          <Pressable style={styles.mediaPanelItem} onPress={handleFile}>
+            <View style={[styles.mediaPanelIcon, { backgroundColor: "#EDE8FF" }]}>
+              <Ionicons name="document-outline" size={22} color="#7C3AED" />
+            </View>
+            <Text style={styles.mediaPanelLabel}>文件</Text>
+          </Pressable>
+          <Pressable style={styles.mediaPanelItem} onPress={() => { setShowMediaPanel(false); sendMessage("[位置] 我在这里"); }}>
+            <View style={[styles.mediaPanelIcon, { backgroundColor: "#D6F0E3" }]}>
+              <Ionicons name="location-outline" size={22} color="#2E9E60" />
+            </View>
+            <Text style={styles.mediaPanelLabel}>位置</Text>
+          </Pressable>
+        </View>
+      )}
+
       <View style={[styles.inputBar, { paddingBottom: insets.bottom + 8 }]}>
-        <Pressable style={styles.uploadBtn} onPress={handleUpload}>
-          <Ionicons name="add-circle-outline" size={26} color="#F97340" />
+        <Pressable
+          style={styles.uploadBtn}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowMediaPanel((v) => !v); }}
+        >
+          <Ionicons
+            name={showMediaPanel ? "close-circle-outline" : "add-circle-outline"}
+            size={26}
+            color={showMediaPanel ? "#7C3AED" : "#F97340"}
+          />
         </Pressable>
         <TextInput
           style={styles.inputField}
@@ -461,6 +495,7 @@ export default function XiaoxiangAiScreen() {
           maxLength={300}
           onSubmitEditing={() => sendMessage(input)}
           returnKeyType="send"
+          onFocus={() => setShowMediaPanel(false)}
         />
         <Pressable
           style={[styles.sendBtn, (!input.trim() || loading) && styles.sendBtnDisabled]}
@@ -800,5 +835,31 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+  },
+  mediaPanel: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: "white",
+    borderTopWidth: 1,
+    borderTopColor: "#FFF0E8",
+  },
+  mediaPanelItem: {
+    alignItems: "center",
+    gap: 6,
+  },
+  mediaPanelIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mediaPanelLabel: {
+    fontSize: 12,
+    color: "#5A3020",
+    fontWeight: "500",
   },
 });
