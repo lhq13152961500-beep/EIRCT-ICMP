@@ -25,7 +25,7 @@ import { router, Stack } from "expo-router";
 import { apiRequest } from "@/lib/query-client";
 import { useLocation } from "@/contexts/LocationContext";
 import { Audio } from "expo-av";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
