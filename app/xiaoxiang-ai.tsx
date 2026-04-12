@@ -224,8 +224,6 @@ export default function XiaoxiangAiScreen() {
         setInput("（录音失败，请重试）");
         return;
       }
-      const info = await FileSystem.getInfoAsync(uri);
-      console.log("[Voice] file size:", (info as any).size, "bytes");
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
       console.log("[Voice] base64 length:", base64.length);
       const resp = await apiRequest("POST", "/api/ai/transcribe", { audio: base64, mime: "audio/m4a" });
