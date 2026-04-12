@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import Markdown from "react-native-markdown-display";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 import { router, Stack } from "expo-router";
@@ -424,9 +425,11 @@ export default function XiaoxiangAiScreen() {
                 item.role === "user" ? styles.bubbleUser : styles.bubbleAI,
               ]}
             >
-              <Text style={item.role === "user" ? styles.msgTextUser : styles.msgTextAI}>
-                {item.content}
-              </Text>
+              {item.role === "user" ? (
+                <Text style={styles.msgTextUser}>{item.content}</Text>
+              ) : (
+                <Markdown style={mdStyles}>{item.content}</Markdown>
+              )}
               <Text style={styles.msgTime}>{item.time}</Text>
             </View>
           </View>
@@ -864,3 +867,51 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 });
+
+const mdStyles: any = {
+  body: {
+    fontSize: 14,
+    color: "#2A1810",
+    lineHeight: 21,
+    backgroundColor: "transparent",
+  },
+  strong: {
+    fontWeight: "700",
+    color: "#2A1810",
+  },
+  em: {
+    fontStyle: "italic",
+    color: "#2A1810",
+  },
+  bullet_list: {
+    marginVertical: 2,
+  },
+  ordered_list: {
+    marginVertical: 2,
+  },
+  list_item: {
+    marginVertical: 1,
+  },
+  paragraph: {
+    marginVertical: 2,
+  },
+  heading1: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#2A1810",
+    marginVertical: 4,
+  },
+  heading2: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#2A1810",
+    marginVertical: 3,
+  },
+  code_inline: {
+    backgroundColor: "#F5EDE8",
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    fontSize: 13,
+    color: "#C0442A",
+  },
+};
