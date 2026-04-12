@@ -280,14 +280,12 @@ export default function HomeScreen() {
               <XiaoxiangFace size={64} emotion={emotion} animate />
             </View>
             <View style={styles.xiangMid}>
-              <Text style={styles.xiangName}>小乡 AI 伴游</Text>
-              <Text style={styles.xiangHint}>{activityHint} · 点击开始对话</Text>
-              <View style={styles.xiangEmoBadge}>
-                <Text style={styles.xiangEmoText}>
-                  {emotion === "疲惫" ? "😴 " : emotion === "平静" ? "😊 " : emotion === "好奇" ? "🤔 " : emotion === "开心" ? "😄 " : "🥳 "}
-                  {emotion}
-                </Text>
-              </View>
+              <Text style={styles.xiangName}>小乡 · AI伴游助手</Text>
+              <Text style={styles.xiangEmoLine} numberOfLines={1}>
+                {emotion === "疲惫" ? "😴" : emotion === "平静" ? "😊" : emotion === "好奇" ? "🤔" : emotion === "开心" ? "😄" : "🥳"}
+                {"  "}{emotion} · {activityHint}
+              </Text>
+              <Text style={styles.xiangHint}>点击与小乡开始对话 →</Text>
             </View>
             <View style={styles.xiangRight}>
               <Ionicons name="chevron-forward" size={20} color="#E07830" />
@@ -535,19 +533,11 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   xiangLeft: { alignItems: "center", justifyContent: "center" },
-  xiangMid: { flex: 1, gap: 4 },
+  xiangMid: { flex: 1, gap: 3, overflow: "hidden" },
   xiangRight: { paddingLeft: 4 },
-  xiangName: { fontSize: 16, fontWeight: "700", color: "#5A2D10" },
-  xiangHint: { fontSize: 12, color: "#A06030" },
-  xiangEmoBadge: {
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(249,115,64,0.12)",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginTop: 2,
-  },
-  xiangEmoText: { fontSize: 12, color: "#E07030", fontWeight: "600" },
+  xiangName: { fontSize: 15, fontWeight: "700", color: "#5A2D10" },
+  xiangEmoLine: { fontSize: 13, color: "#C05A10", fontWeight: "600" },
+  xiangHint: { fontSize: 11, color: "#A06030" },
 
   /* ── Feature cards ── */
   featureRow: { flexDirection: "row" },
