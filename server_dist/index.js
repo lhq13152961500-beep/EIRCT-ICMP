@@ -774,7 +774,7 @@ async function registerRoutes(app2) {
     res.json({ available: hasKey });
   });
   app2.post("/api/ai/transcribe", async (req, res) => {
-    const { audio, mime } = req.body;
+    const { audio, mime, prompt: clientPrompt } = req.body;
     if (!audio) return res.status(400).json({ error: "audio required" });
     const groqKey = process.env.GROQ_API_KEY;
     const openaiKey = process.env.OPENAI_API_KEY;
@@ -782,6 +782,8 @@ async function registerRoutes(app2) {
       console.log("[Transcribe] No STT API key configured (GROQ_API_KEY or OPENAI_API_KEY)");
       return res.json({ text: "", error: "no_key" });
     }
+    const geoContext = "\u5410\u5CEA\u6C9F\uFF0C\u5410\u9C81\u756A\uFF0C\u65B0\u7586\uFF0C\u9EBB\u624E\u6751\uFF0C\u7EF4\u543E\u5C14\u65CF\uFF0C\u574E\u513F\u4E95\uFF0C\u8461\u8404\u6C9F\uFF0C\u706B\u7130\u5C71\uFF0C\u67CF\u5B5C\u514B\u91CC\u514B\uFF0C\u4EA4\u6CB3\u53E4\u57CE\uFF0C\u912F\u5584\u53BF\uFF0C\u514B\u62C9\u739B\u4F9D\uFF0C\u4E4C\u9C81\u6728\u9F50\uFF0C\u5929\u5C71\uFF0C\u4F0A\u7281\uFF0C\u5580\u4EC0\uFF0C\u548C\u7530";
+    const finalPrompt = clientPrompt ? `${clientPrompt}\u3002${geoContext}` : geoContext;
     try {
       const client = groqKey ? new OpenAI({ apiKey: groqKey, baseURL: "https://api.groq.com/openai/v1" }) : new OpenAI({ apiKey: openaiKey });
       const model = groqKey ? "whisper-large-v3" : "whisper-1";
@@ -791,9 +793,9 @@ async function registerRoutes(app2) {
         file,
         model,
         language: "zh",
-        prompt: "\u5410\u5CEA\u6C9F\uFF0C\u5410\u9C81\u756A\uFF0C\u65B0\u7586\uFF0C\u9EBB\u624E\u6751\uFF0C\u7EF4\u543E\u5C14\u65CF\uFF0C\u574E\u513F\u4E95\uFF0C\u8461\u8404\u6C9F\uFF0C\u706B\u7130\u5C71\uFF0C\u67CF\u5B5C\u514B\u91CC\u514B\uFF0C\u4EA4\u6CB3\u53E4\u57CE\uFF0C\u912F\u5584\u53BF\uFF0C\u514B\u62C9\u739B\u4F9D\uFF0C\u4E4C\u9C81\u6728\u9F50\uFF0C\u5929\u5C71\uFF0C\u4F0A\u7281\uFF0C\u5580\u4EC0\uFF0C\u548C\u7530"
+        prompt: finalPrompt
       });
-      console.log(`[Transcribe] text="${transcription.text}"`);
+      console.log(`[Transcribe] text="${transcription.text}" prompt_len=${finalPrompt.length}`);
       return res.json({ text: transcription.text });
     } catch (err) {
       console.error("[Transcribe] error:", err?.message);

@@ -29,6 +29,7 @@ import { XiaoxiangFace } from "@/components/XiaoxiangFace";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Speech from "expo-speech";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -184,6 +185,7 @@ export default function XiaoxiangAiScreen() {
     const { granted } = await Audio.requestPermissionsAsync();
     if (!granted) { Alert.alert("需要麦克风权限"); return; }
     // Stop companion mode and its active recording immediately
+    Speech.stop();
     if (companionActiveRef.current) {
       companionActiveRef.current = false;
       setIsCompanionActive(false);
@@ -248,9 +250,33 @@ export default function XiaoxiangAiScreen() {
     }
   }, []);
 
+  // Whisper hallucination phrases to ignore
+  const NOISE_PHRASES = [
+    "谢谢观看", "请订阅", "感谢收看", "感谢观看", "谢谢收看",
+    "bye", "thank you", "thanks", "okay", "ok", "um", "uh",
+    "字幕", "翻译", "请关注", "请点赞",
+  ];
+
+  const isNoise = (text: string): boolean => {
+    if (!text || text.length < 3) return true;
+    // Only punctuation / numbers
+    if (/^[\s\d\p{P}.,!?。，！？、…]+$/u.test(text)) return true;
+    const lower = text.toLowerCase().trim();
+    if (NOISE_PHRASES.some((p) => lower === p.toLowerCase() || lower.includes(p.toLowerCase()))) return true;
+    // Less than 2 Chinese chars in a Chinese context = likely noise
+    const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+    if (chineseChars < 2 && text.length < 8) return true;
+    return false;
+  };
+
   const runCompanionLoop = useCallback(async (currentEmotion: Emotion, currentActivityHint: string, currentPrompt: string) => {
     while (companionActiveRef.current) {
       try {
+        // Make sure any speech is done before recording (prevent feedback loop)
+        if (await Speech.isSpeakingAsync()) {
+          Speech.stop();
+          await new Promise<void>((r) => setTimeout(r, 500));
+        }
         setCompanionStatus("listening");
         await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
         const { recording } = await Audio.Recording.createAsync({
@@ -259,7 +285,7 @@ export default function XiaoxiangAiScreen() {
           web: {},
         });
         companionRecordingRef.current = recording;
-        await new Promise<void>((resolve) => setTimeout(resolve, 4000));
+        await new Promise<void>((resolve) => setTimeout(resolve, 5000));
         companionRecordingRef.current = null;
         if (!companionActiveRef.current) { try { await recording.stopAndUnloadAsync(); } catch {} break; }
         await recording.stopAndUnloadAsync();
@@ -269,11 +295,13 @@ export default function XiaoxiangAiScreen() {
         setCompanionStatus("processing");
         const tResp = await apiRequest("POST", "/api/ai/transcribe", {
           audio: base64, mime: "audio/m4a",
-          prompt: currentPrompt || "吐峪沟 吐鲁番 游览 景点",
+          prompt: currentPrompt || "吐峪沟 吐鲁番 游览 景点 旅行",
         });
         const tData = await (tResp as any).json();
         const text: string = tData.text?.trim() ?? "";
-        if (!text || text.length < 2 || !companionActiveRef.current) {
+        console.log("[Companion] transcribed:", text);
+        // Filter noise / silence
+        if (isNoise(text) || !companionActiveRef.current) {
           setCompanionStatus("listening");
           continue;
         }
@@ -289,7 +317,18 @@ export default function XiaoxiangAiScreen() {
         if (reply && companionActiveRef.current) {
           setCompanionResponse(reply);
           if (aiData.emotion) setEmotion(aiData.emotion as Emotion);
-          await new Promise<void>((resolve) => setTimeout(resolve, 6000));
+          // Switch audio mode for playback, then speak
+          await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+          await new Promise<void>((resolve) => {
+            Speech.speak(reply, {
+              language: "zh-CN",
+              rate: 0.95,
+              pitch: 1.05,
+              onDone: resolve,
+              onError: resolve,
+              onStopped: resolve,
+            });
+          });
           setCompanionResponse("");
         }
       } catch (e) {
@@ -297,6 +336,7 @@ export default function XiaoxiangAiScreen() {
         await new Promise<void>((resolve) => setTimeout(resolve, 2000));
       }
     }
+    Speech.stop();
     setCompanionStatus("idle");
   }, [locationStatus]);
 
@@ -519,6 +559,7 @@ export default function XiaoxiangAiScreen() {
       setIsCompanionActive(false);
       setCompanionStatus("idle");
       setCompanionResponse("");
+      Speech.stop();
     } else {
       if (voiceAvailable === false) {
         Alert.alert("语音功能未配置", "伴游模式需要配置 GROQ_API_KEY，请联系管理员。");

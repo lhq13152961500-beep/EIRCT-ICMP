@@ -463,7 +463,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/ai/transcribe", async (req, res) => {
-    const { audio, mime } = req.body as { audio?: string; mime?: string };
+    const { audio, mime, prompt: clientPrompt } = req.body as { audio?: string; mime?: string; prompt?: string };
     if (!audio) return res.status(400).json({ error: "audio required" });
 
     const groqKey = process.env.GROQ_API_KEY;
@@ -473,6 +473,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log("[Transcribe] No STT API key configured (GROQ_API_KEY or OPENAI_API_KEY)");
       return res.json({ text: "", error: "no_key" });
     }
+
+    // Merge geo-context terms with user's enrolled voice prompt for better recognition
+    const geoContext = "吐峪沟，吐鲁番，新疆，麻扎村，维吾尔族，坎儿井，葡萄沟，火焰山，柏孜克里克，交河古城，鄯善县，克拉玛依，乌鲁木齐，天山，伊犁，喀什，和田";
+    const finalPrompt = clientPrompt ? `${clientPrompt}。${geoContext}` : geoContext;
 
     try {
       const client = groqKey
@@ -485,9 +489,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         file,
         model,
         language: "zh",
-        prompt: "吐峪沟，吐鲁番，新疆，麻扎村，维吾尔族，坎儿井，葡萄沟，火焰山，柏孜克里克，交河古城，鄯善县，克拉玛依，乌鲁木齐，天山，伊犁，喀什，和田",
+        prompt: finalPrompt,
       });
-      console.log(`[Transcribe] text="${transcription.text}"`);
+      console.log(`[Transcribe] text="${transcription.text}" prompt_len=${finalPrompt.length}`);
       return res.json({ text: transcription.text });
     } catch (err: any) {
       console.error("[Transcribe] error:", err?.message);
