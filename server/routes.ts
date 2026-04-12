@@ -613,7 +613,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/ai/chat", async (req, res) => {
     try {
       const { messages, emotion, userLocation, activityData } = req.body as {
-        messages: { role: string; content: string }[];
+        messages: { role: string; content: any }[];
         emotion?: string;
         userLocation?: { name: string; lat: number; lng: number } | null;
         activityData?: { hint: string; stepRate: number } | null;
@@ -622,7 +622,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "messages required" });
       }
 
-      const apiKey = process.env.DEEPSEEK_API_KEY;
+      const apiKey = process.env.ARK_API_KEY;
 
       if (apiKey) {
         // Fetch real-time weather for Turpan from Amap
@@ -704,30 +704,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
 - 回答简洁生动，控制在200字以内
 - 如果问题与吐峪沟/吐鲁番无关，引导话题回到旅游相关内容`;
 
-        const deepseekClient = new OpenAI({
-          baseURL: "https://api.deepseek.com",
+        const doubaoClient = new OpenAI({
+          baseURL: "https://ark.cn-beijing.volces.com/api/v3",
           apiKey,
         });
 
-        const completion = await deepseekClient.chat.completions.create({
-          model: "deepseek-chat",
+        const formattedMessages = (messages as { role: string; content: any }[]).map((m) => {
+          if (Array.isArray(m.content)) {
+            return {
+              role: m.role as "user" | "assistant",
+              content: m.content.map((part: any) => {
+                if (part.type === "image_url") {
+                  return { type: "image_url", image_url: { url: part.image_url.url } };
+                }
+                return { type: "text", text: part.text };
+              }),
+            };
+          }
+          return { role: m.role as "user" | "assistant", content: m.content as string };
+        });
+
+        const hasImage = messages.some((m) => Array.isArray(m.content) && m.content.some((p: any) => p.type === "image_url"));
+        const model = hasImage ? "doubao-1-5-vision-pro-32k-250115" : "doubao-1-5-pro-32k-250115";
+
+        const completion = await doubaoClient.chat.completions.create({
+          model,
           messages: [
             { role: "system", content: systemPrompt },
-            ...messages as { role: "user" | "assistant"; content: string }[],
+            ...formattedMessages,
           ],
           max_tokens: 300,
           temperature: 0.85,
         });
 
-        console.log("[DeepSeek] usage:", completion.usage);
+        console.log("[Doubao] model:", model, "usage:", completion.usage);
         const reply = completion.choices[0]?.message?.content || "抱歉，我暂时无法回答这个问题～";
 
-        const lastMsg = messages[messages.length - 1]?.content?.toLowerCase() || "";
+        const lastContent = messages[messages.length - 1]?.content;
+        const lastText = (Array.isArray(lastContent)
+          ? lastContent.filter((p: any) => p.type === "text").map((p: any) => p.text).join(" ")
+          : (lastContent as string) || "").toLowerCase();
         let newEmotion = emotion || "平静";
-        if (lastMsg.includes("累") || lastMsg.includes("疲惫") || lastMsg.includes("走不动")) newEmotion = "疲惫";
-        else if (lastMsg.includes("好玩") || lastMsg.includes("开心") || lastMsg.includes("棒")) newEmotion = "愉快";
-        else if (lastMsg.includes("?") || lastMsg.includes("？") || lastMsg.includes("为什么") || lastMsg.includes("怎么")) newEmotion = "好奇";
-        else if (lastMsg.includes("谢") || lastMsg.includes("太好了")) newEmotion = "开心";
+        if (lastText.includes("累") || lastText.includes("疲惫") || lastText.includes("走不动")) newEmotion = "疲惫";
+        else if (lastText.includes("好玩") || lastText.includes("开心") || lastText.includes("棒")) newEmotion = "愉快";
+        else if (lastText.includes("?") || lastText.includes("？") || lastText.includes("为什么") || lastText.includes("怎么")) newEmotion = "好奇";
+        else if (lastText.includes("谢") || lastText.includes("太好了")) newEmotion = "开心";
 
         return res.json({ reply, emotion: newEmotion });
       }

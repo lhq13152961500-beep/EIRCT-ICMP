@@ -585,7 +585,7 @@ export default function XiaoxiangAiScreen() {
   }, [screen]);
 
   const sendMessage = useCallback(
-    async (text: string, isVoice = false) => {
+    async (text: string, isVoice = false, imageBase64?: string, imageMime?: string) => {
       const trimmed = text.trim();
       if (!trimmed || loading) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -614,6 +614,19 @@ export default function XiaoxiangAiScreen() {
           ? { name: locationStatus.locationName, lat: locationStatus.lat, lng: locationStatus.lng }
           : null;
         const activityData = { hint: activityHint, stepRate };
+
+        if (imageBase64 && history.length > 0) {
+          const mime = imageMime || "image/jpeg";
+          const lastIdx = history.length - 1;
+          history[lastIdx] = {
+            role: history[lastIdx].role,
+            content: [
+              { type: "image_url", image_url: { url: `data:${mime};base64,${imageBase64}` } },
+              { type: "text", text: history[lastIdx].content as string },
+            ] as any,
+          };
+        }
+
         const resp = await apiRequest("POST", "/api/ai/chat", { messages: history, emotion, userLocation, activityData });
         const data = await resp.json();
         if (data.reply) {
@@ -652,16 +665,34 @@ export default function XiaoxiangAiScreen() {
     setShowMediaPanel(false);
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) return;
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
-    if (!result.canceled) sendMessage("[图片] 帮我介绍一下这里");
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.7, base64: true });
+    if (!result.canceled && result.assets?.[0]) {
+      const asset = result.assets[0];
+      const mime = asset.mimeType || "image/jpeg";
+      if (asset.base64) {
+        sendMessage("帮我介绍一下这张图片里的景色或内容", false, asset.base64, mime);
+      } else {
+        const b64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
+        sendMessage("帮我介绍一下这张图片里的景色或内容", false, b64, mime);
+      }
+    }
   }, [sendMessage]);
 
   const handleAlbum = useCallback(async () => {
     setShowMediaPanel(false);
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) return;
-    const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7 });
-    if (!result.canceled) sendMessage("[图片] 帮我介绍一下这里");
+    const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, base64: true });
+    if (!result.canceled && result.assets?.[0]) {
+      const asset = result.assets[0];
+      const mime = asset.mimeType || "image/jpeg";
+      if (asset.base64) {
+        sendMessage("帮我介绍一下这张图片里的景色或内容", false, asset.base64, mime);
+      } else {
+        const b64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
+        sendMessage("帮我介绍一下这张图片里的景色或内容", false, b64, mime);
+      }
+    }
   }, [sendMessage]);
 
   const handleFile = useCallback(async () => {

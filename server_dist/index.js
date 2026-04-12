@@ -1312,7 +1312,7 @@ async function registerRoutes(app2) {
       if (!Array.isArray(messages) || messages.length === 0) {
         return res.status(400).json({ error: "messages required" });
       }
-      const apiKey = process.env.DEEPSEEK_API_KEY;
+      const apiKey = process.env.ARK_API_KEY;
       if (apiKey) {
         let weatherInfo = "\u6682\u65E0\u5B9E\u65F6\u5929\u6C14\u6570\u636E";
         const amapKey = process.env.AMAP_SERVER_KEY;
@@ -1391,27 +1391,44 @@ async function registerRoutes(app2) {
 - \u7ED3\u5408\u4EE5\u4E0A\u5177\u4F53\u666F\u70B9\u4FE1\u606F\u7ED9\u51FA\u5B9E\u7528\u5EFA\u8BAE
 - \u56DE\u7B54\u7B80\u6D01\u751F\u52A8\uFF0C\u63A7\u5236\u5728200\u5B57\u4EE5\u5185
 - \u5982\u679C\u95EE\u9898\u4E0E\u5410\u5CEA\u6C9F/\u5410\u9C81\u756A\u65E0\u5173\uFF0C\u5F15\u5BFC\u8BDD\u9898\u56DE\u5230\u65C5\u6E38\u76F8\u5173\u5185\u5BB9`;
-        const deepseekClient = new OpenAI({
-          baseURL: "https://api.deepseek.com",
+        const doubaoClient = new OpenAI({
+          baseURL: "https://ark.cn-beijing.volces.com/api/v3",
           apiKey
         });
-        const completion = await deepseekClient.chat.completions.create({
-          model: "deepseek-chat",
+        const formattedMessages = messages.map((m) => {
+          if (Array.isArray(m.content)) {
+            return {
+              role: m.role,
+              content: m.content.map((part) => {
+                if (part.type === "image_url") {
+                  return { type: "image_url", image_url: { url: part.image_url.url } };
+                }
+                return { type: "text", text: part.text };
+              })
+            };
+          }
+          return { role: m.role, content: m.content };
+        });
+        const hasImage = messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p.type === "image_url"));
+        const model = hasImage ? "doubao-1-5-vision-pro-32k-250115" : "doubao-1-5-pro-32k-250115";
+        const completion = await doubaoClient.chat.completions.create({
+          model,
           messages: [
             { role: "system", content: systemPrompt },
-            ...messages
+            ...formattedMessages
           ],
           max_tokens: 300,
           temperature: 0.85
         });
-        console.log("[DeepSeek] usage:", completion.usage);
+        console.log("[Doubao] model:", model, "usage:", completion.usage);
         const reply2 = completion.choices[0]?.message?.content || "\u62B1\u6B49\uFF0C\u6211\u6682\u65F6\u65E0\u6CD5\u56DE\u7B54\u8FD9\u4E2A\u95EE\u9898\uFF5E";
-        const lastMsg2 = messages[messages.length - 1]?.content?.toLowerCase() || "";
+        const lastContent = messages[messages.length - 1]?.content;
+        const lastText = (Array.isArray(lastContent) ? lastContent.filter((p) => p.type === "text").map((p) => p.text).join(" ") : lastContent || "").toLowerCase();
         let newEmotion2 = emotion || "\u5E73\u9759";
-        if (lastMsg2.includes("\u7D2F") || lastMsg2.includes("\u75B2\u60EB") || lastMsg2.includes("\u8D70\u4E0D\u52A8")) newEmotion2 = "\u75B2\u60EB";
-        else if (lastMsg2.includes("\u597D\u73A9") || lastMsg2.includes("\u5F00\u5FC3") || lastMsg2.includes("\u68D2")) newEmotion2 = "\u6109\u5FEB";
-        else if (lastMsg2.includes("?") || lastMsg2.includes("\uFF1F") || lastMsg2.includes("\u4E3A\u4EC0\u4E48") || lastMsg2.includes("\u600E\u4E48")) newEmotion2 = "\u597D\u5947";
-        else if (lastMsg2.includes("\u8C22") || lastMsg2.includes("\u592A\u597D\u4E86")) newEmotion2 = "\u5F00\u5FC3";
+        if (lastText.includes("\u7D2F") || lastText.includes("\u75B2\u60EB") || lastText.includes("\u8D70\u4E0D\u52A8")) newEmotion2 = "\u75B2\u60EB";
+        else if (lastText.includes("\u597D\u73A9") || lastText.includes("\u5F00\u5FC3") || lastText.includes("\u68D2")) newEmotion2 = "\u6109\u5FEB";
+        else if (lastText.includes("?") || lastText.includes("\uFF1F") || lastText.includes("\u4E3A\u4EC0\u4E48") || lastText.includes("\u600E\u4E48")) newEmotion2 = "\u597D\u5947";
+        else if (lastText.includes("\u8C22") || lastText.includes("\u592A\u597D\u4E86")) newEmotion2 = "\u5F00\u5FC3";
         return res.json({ reply: reply2, emotion: newEmotion2 });
       }
       const lastMsg = messages[messages.length - 1]?.content || "";
