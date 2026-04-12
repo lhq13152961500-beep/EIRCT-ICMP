@@ -280,7 +280,7 @@ export default function HomeScreen() {
               <XiaoxiangFace size={64} emotion={emotion} animate />
             </View>
             <View style={styles.xiangMid}>
-              <Text style={styles.xiangName}>小乡 · AI伴游</Text>
+              <Text style={styles.xiangName}>小乡 · AI陪伴</Text>
               <Text style={styles.xiangEmoLine} numberOfLines={1}>
                 {emotion === "疲惫" ? "😴" : emotion === "平静" ? "😊" : emotion === "好奇" ? "🤔" : emotion === "开心" ? "😄" : "🥳"}
                 {"  "}{emotion} · {activityHint}

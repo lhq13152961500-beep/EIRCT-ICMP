@@ -373,21 +373,10 @@ export default function XiaoxiangAiScreen() {
 
   if (screen === "welcome") {
     const ew = EMOTION_WELCOME[emotion] ?? EMOTION_WELCOME["平静"];
-    const accentColor = emotion === "疲惫" ? "#4A7AE0"
-      : emotion === "好奇" ? "#7A4AE0"
-      : emotion === "开心" ? "#D0A020"
-      : "#E05A3A";
-    const btnColors: [string, string, string] = emotion === "疲惫"
-      ? ["#6A9AFF", "#4A7AE0", "#3060C0"]
-      : emotion === "好奇"
-      ? ["#A07AFF", "#7A5AE0", "#5A3AC0"]
-      : emotion === "开心"
-      ? ["#F0C040", "#D0A020", "#B08000"]
-      : ["#FF8C5A", "#F97340", "#E86030"];
 
     return (
       <LinearGradient
-        colors={ew.bg}
+        colors={["#FFF4EE", "#FFE8DC", "#FFF0EA"]}
         style={[styles.welcomeRoot, { paddingTop: insets.top + 20 }]}
       >
         <Stack.Screen options={{ headerShown: false }} />
@@ -395,25 +384,23 @@ export default function XiaoxiangAiScreen() {
           style={styles.backBtn}
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
         >
-          <Ionicons name="chevron-back" size={24} color={accentColor} />
+          <Ionicons name="chevron-back" size={24} color="#E05A3A" />
         </Pressable>
 
         <View style={styles.welcomeFaceWrap}>
           <XiaoxiangFace size={120} emotion={emotion} animate />
           <View style={styles.starDeco1}><Text style={{ fontSize: 18 }}>✦</Text></View>
-          <View style={styles.heartDeco}><Ionicons name="heart" size={14} color={accentColor} /></View>
+          <View style={styles.heartDeco}><Ionicons name="heart" size={14} color="#F97340" /></View>
         </View>
 
-        <Text style={[styles.welcomeTitle, { color: emotion === "疲惫" ? "#2A4A8A" : emotion === "好奇" ? "#4A2A8A" : emotion === "开心" ? "#7A6010" : "#C04020" }]}>
-          {ew.title}
-        </Text>
+        <Text style={styles.welcomeTitle}>{ew.title}</Text>
         <Text style={styles.welcomeSub}>{ew.sub}</Text>
 
         <View style={styles.featureList}>
           {ew.features.map((f, i) => (
             <View key={i} style={styles.featureItem}>
-              <View style={[styles.featureIconWrap, { backgroundColor: emotion === "疲惫" ? "#D0DFFF" : emotion === "好奇" ? "#D8D0FF" : emotion === "开心" ? "#FFF0C0" : "#FFE4D5" }]}>
-                <Ionicons name={f.icon as any} size={18} color={accentColor} />
+              <View style={styles.featureIconWrap}>
+                <Ionicons name={f.icon as any} size={18} color="#F97340" />
               </View>
               <Text style={styles.featureText}>{f.text}</Text>
             </View>
@@ -428,14 +415,12 @@ export default function XiaoxiangAiScreen() {
           }}
         >
           <LinearGradient
-            colors={btnColors}
+            colors={["#FF8C5A", "#F97340", "#E86030"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.startBtn}
           >
-            <Text style={styles.startBtnText}>
-              {emotion === "疲惫" ? "去找休息点" : emotion === "好奇" ? "开始探索" : emotion === "开心" ? "出发打卡" : "开始旅程"}
-            </Text>
+            <Text style={styles.startBtnText}>开始旅程</Text>
             <Ionicons name="arrow-forward" size={18} color="white" style={{ marginLeft: 6 }} />
           </LinearGradient>
         </Pressable>
