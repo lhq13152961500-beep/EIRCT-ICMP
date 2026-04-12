@@ -397,7 +397,7 @@ export default function XiaoxiangAiScreen() {
           continue;
         }
 
-        // ── Fallback chain: Whisper ASR → DeepSeek LLM → Doubao TTS ──
+        // ── Fallback chain: Whisper ASR → Doubao LLM → Doubao TTS ──
         let text = "";
         const tResp = await apiRequest("POST", "/api/ai/transcribe", {
           audio: base64, mime: "audio/m4a",

@@ -151,16 +151,16 @@ async function convertM4aToPcm(m4aPath: string, pcmPath: string): Promise<void> 
   });
 }
 
-// DeepSeek LLM fallback — used when Dialog API fires InvalidSpeaker before LLM text arrives
-async function callDeepSeekLLM(userText: string, systemRole: string): Promise<string> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+// Doubao ARK LLM fallback — used when Dialog API fires InvalidSpeaker before LLM text arrives
+async function callDoubaoLLM(userText: string, systemRole: string): Promise<string> {
+  const apiKey = process.env.ARK_API_KEY;
   if (!apiKey) return "";
   try {
-    const resp = await fetch("https://api.deepseek.com/v1/chat/completions", {
+    const resp = await fetch("https://ark.cn-beijing.volces.com/api/v3/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: "deepseek-chat",
+        model: "doubao-1-5-pro-32k-250115",
         messages: [{ role: "system", content: systemRole }, { role: "user", content: userText }],
         max_tokens: 100,
         temperature: 0.85,
@@ -168,10 +168,10 @@ async function callDeepSeekLLM(userText: string, systemRole: string): Promise<st
     });
     const data = await resp.json() as { choices?: { message?: { content?: string } }[] };
     const text = data.choices?.[0]?.message?.content || "";
-    console.log(`[DeepSeekFallback] response="${text.slice(0, 60)}"`);
+    console.log(`[DoubaoLLMFallback] response="${text.slice(0, 60)}"`);
     return text;
   } catch (e: any) {
-    console.error("[DeepSeekFallback] error:", e.message);
+    console.error("[DoubaoLLMFallback] error:", e.message);
     return "";
   }
 }
@@ -302,9 +302,9 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
     let aiResponseText = result.aiText;
 
     if (!aiResponseText && result.transcript) {
-      // LLM didn't get to respond before TTS errored — call DeepSeek as fallback
-      console.log(`[DoubaoS2S] No aiText, calling DeepSeek for transcript: "${result.transcript}"`);
-      aiResponseText = await callDeepSeekLLM(result.transcript, systemRole);
+      // LLM didn't get to respond before TTS errored — call Doubao ARK as fallback
+      console.log(`[DoubaoS2S] No aiText, calling Doubao LLM for transcript: "${result.transcript}"`);
+      aiResponseText = await callDoubaoLLM(result.transcript, systemRole);
     }
 
     if (!aiResponseText) {

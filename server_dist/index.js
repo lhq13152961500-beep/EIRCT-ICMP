@@ -481,15 +481,15 @@ async function convertM4aToPcm(m4aPath, pcmPath) {
     );
   });
 }
-async function callDeepSeekLLM(userText, systemRole) {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+async function callDoubaoLLM(userText, systemRole) {
+  const apiKey = process.env.ARK_API_KEY;
   if (!apiKey) return "";
   try {
-    const resp = await fetch("https://api.deepseek.com/v1/chat/completions", {
+    const resp = await fetch("https://ark.cn-beijing.volces.com/api/v3/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: "deepseek-chat",
+        model: "doubao-1-5-pro-32k-250115",
         messages: [{ role: "system", content: systemRole }, { role: "user", content: userText }],
         max_tokens: 100,
         temperature: 0.85
@@ -497,10 +497,10 @@ async function callDeepSeekLLM(userText, systemRole) {
     });
     const data = await resp.json();
     const text = data.choices?.[0]?.message?.content || "";
-    console.log(`[DeepSeekFallback] response="${text.slice(0, 60)}"`);
+    console.log(`[DoubaoLLMFallback] response="${text.slice(0, 60)}"`);
     return text;
   } catch (e) {
-    console.error("[DeepSeekFallback] error:", e.message);
+    console.error("[DoubaoLLMFallback] error:", e.message);
     return "";
   }
 }
@@ -598,8 +598,8 @@ async function doublaoRealtimeTurn(req) {
     }
     let aiResponseText = result.aiText;
     if (!aiResponseText && result.transcript) {
-      console.log(`[DoubaoS2S] No aiText, calling DeepSeek for transcript: "${result.transcript}"`);
-      aiResponseText = await callDeepSeekLLM(result.transcript, systemRole);
+      console.log(`[DoubaoS2S] No aiText, calling Doubao LLM for transcript: "${result.transcript}"`);
+      aiResponseText = await callDoubaoLLM(result.transcript, systemRole);
     }
     if (!aiResponseText) {
       return { audioBase64: "", format: "mp3", transcript: result.transcript, aiText: "" };

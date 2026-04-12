@@ -166,13 +166,13 @@ postgresql://用户名:密码@主机:5432/数据库名
 
 ---
 
-#### 3. DeepSeek AI（小乡 AI 对话）
+#### 3. 豆包方舟 AI（小乡 AI 对话 + 语音伴游 LLM）
 
 | 变量名 | 申请地址 | 说明 |
 |--------|----------|------|
-| `DEEPSEEK_API_KEY` | https://platform.deepseek.com/api_keys | 注册后创建 API Key，有免费额度 |
+| `ARK_API_KEY` | https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey | 注册火山引擎后创建 API Key |
 
-> 申请步骤：注册 → 控制台 → API Keys → 创建新的 Key → 复制以 `sk-` 开头的字符串
+> 申请步骤：注册火山引擎 → 方舟控制台 → API Key 管理 → 创建 API Key → 复制密钥字符串
 
 ---
 
@@ -221,7 +221,7 @@ EXPO_PUBLIC_DOMAIN=$REPLIT_DEV_DOMAIN python3 scripts/expo-start.py
 | 后端 | Node.js / Express / TypeScript |
 | 数据库 | PostgreSQL（Replit 内置 / Neon / Supabase） |
 | 地图 | 高德地图 JS API v2 |
-| AI 对话 | DeepSeek Chat API |
+| AI 对话 | 豆包方舟 API（doubao-1-5-pro / vision） |
 | 语音识别 | Groq Whisper API |
 | 传感器 | expo-sensors（加速度计情感检测） |
 
@@ -255,7 +255,7 @@ EXPO_PUBLIC_DOMAIN=$REPLIT_DEV_DOMAIN python3 scripts/expo-start.py
 ## 主要功能
 
 - **首页**：景区发现、地图、活动推荐
-- **小乡 AI**：基于 DeepSeek 的旅游伴游助手，支持文字 + 语音输入
+- **小乡 AI**：基于豆包方舟 API 的旅游伴游助手，支持文字、语音、图片输入
 - **情感检测**：加速度计实时感知游览状态（疲惫/平静/好奇/开心/愉快），AI 自动调整对话风格
 - **语伴导游**：方言语音导览
 - **AR 导览**：增强现实景点介绍
