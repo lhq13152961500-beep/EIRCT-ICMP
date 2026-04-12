@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import https from "node:https";
+import OpenAI from "openai";
 import { storage, type InsertRecording } from "./storage";
 
 const PW_SALT = "xiangyin_banlu_2026";
@@ -494,53 +495,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 - 回答简洁生动，控制在200字以内
 - 如果问题与吐峪沟/吐鲁番无关，引导话题回到旅游相关内容`;
 
-        const payload = {
+        const deepseekClient = new OpenAI({
+          baseURL: "https://api.deepseek.com",
+          apiKey,
+        });
+
+        const completion = await deepseekClient.chat.completions.create({
           model: "deepseek-chat",
           messages: [
             { role: "system", content: systemPrompt },
-            ...messages,
+            ...messages as { role: "user" | "assistant"; content: string }[],
           ],
           max_tokens: 300,
           temperature: 0.85,
-        };
-
-        const body = JSON.stringify(payload);
-        const options = {
-          hostname: "api.deepseek.com",
-          path: "/v1/chat/completions",
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Length": Buffer.byteLength(body),
-          },
-        };
-
-        const reply = await new Promise<string>((resolve, reject) => {
-          const request = https.request(options, (response) => {
-            let data = "";
-            response.on("data", (chunk) => { data += chunk; });
-            response.on("end", () => {
-              console.log("[DeepSeek] status:", response.statusCode, "body:", data.slice(0, 300));
-              try {
-                const parsed = JSON.parse(data);
-                if (parsed.error) {
-                  console.error("[DeepSeek] API error:", parsed.error);
-                  resolve("抱歉，小乡暂时有点忙～请稍后再试！");
-                  return;
-                }
-                const content = parsed.choices?.[0]?.message?.content || "抱歉，我暂时无法回答这个问题～";
-                resolve(content);
-              } catch (e) {
-                console.error("[DeepSeek] parse error:", e, "raw:", data.slice(0, 200));
-                reject(new Error("DeepSeek parse error"));
-              }
-            });
-          });
-          request.on("error", (e) => { console.error("[DeepSeek] request error:", e); reject(e); });
-          request.write(body);
-          request.end();
         });
+
+        console.log("[DeepSeek] usage:", completion.usage);
+        const reply = completion.choices[0]?.message?.content || "抱歉，我暂时无法回答这个问题～";
 
         const lastMsg = messages[messages.length - 1]?.content?.toLowerCase() || "";
         let newEmotion = emotion || "平静";

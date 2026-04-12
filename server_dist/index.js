@@ -7,6 +7,7 @@ import { createHash } from "crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import https from "node:https";
+import OpenAI from "openai";
 
 // server/storage.ts
 import { randomUUID } from "crypto";
@@ -798,7 +799,11 @@ async function registerRoutes(app2) {
 - \u7ED3\u5408\u4EE5\u4E0A\u5177\u4F53\u666F\u70B9\u4FE1\u606F\u7ED9\u51FA\u5B9E\u7528\u5EFA\u8BAE
 - \u56DE\u7B54\u7B80\u6D01\u751F\u52A8\uFF0C\u63A7\u5236\u5728200\u5B57\u4EE5\u5185
 - \u5982\u679C\u95EE\u9898\u4E0E\u5410\u5CEA\u6C9F/\u5410\u9C81\u756A\u65E0\u5173\uFF0C\u5F15\u5BFC\u8BDD\u9898\u56DE\u5230\u65C5\u6E38\u76F8\u5173\u5185\u5BB9`;
-        const payload = {
+        const deepseekClient = new OpenAI({
+          baseURL: "https://api.deepseek.com",
+          apiKey
+        });
+        const completion = await deepseekClient.chat.completions.create({
           model: "deepseek-chat",
           messages: [
             { role: "system", content: systemPrompt },
@@ -806,48 +811,9 @@ async function registerRoutes(app2) {
           ],
           max_tokens: 300,
           temperature: 0.85
-        };
-        const body = JSON.stringify(payload);
-        const options = {
-          hostname: "api.deepseek.com",
-          path: "/v1/chat/completions",
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Length": Buffer.byteLength(body)
-          }
-        };
-        const reply2 = await new Promise((resolve2, reject) => {
-          const request = https.request(options, (response) => {
-            let data = "";
-            response.on("data", (chunk) => {
-              data += chunk;
-            });
-            response.on("end", () => {
-              console.log("[DeepSeek] status:", response.statusCode, "body:", data.slice(0, 300));
-              try {
-                const parsed = JSON.parse(data);
-                if (parsed.error) {
-                  console.error("[DeepSeek] API error:", parsed.error);
-                  resolve2("\u62B1\u6B49\uFF0C\u5C0F\u4E61\u6682\u65F6\u6709\u70B9\u5FD9\uFF5E\u8BF7\u7A0D\u540E\u518D\u8BD5\uFF01");
-                  return;
-                }
-                const content = parsed.choices?.[0]?.message?.content || "\u62B1\u6B49\uFF0C\u6211\u6682\u65F6\u65E0\u6CD5\u56DE\u7B54\u8FD9\u4E2A\u95EE\u9898\uFF5E";
-                resolve2(content);
-              } catch (e) {
-                console.error("[DeepSeek] parse error:", e, "raw:", data.slice(0, 200));
-                reject(new Error("DeepSeek parse error"));
-              }
-            });
-          });
-          request.on("error", (e) => {
-            console.error("[DeepSeek] request error:", e);
-            reject(e);
-          });
-          request.write(body);
-          request.end();
         });
+        console.log("[DeepSeek] usage:", completion.usage);
+        const reply2 = completion.choices[0]?.message?.content || "\u62B1\u6B49\uFF0C\u6211\u6682\u65F6\u65E0\u6CD5\u56DE\u7B54\u8FD9\u4E2A\u95EE\u9898\uFF5E";
         const lastMsg2 = messages[messages.length - 1]?.content?.toLowerCase() || "";
         let newEmotion2 = emotion || "\u5E73\u9759";
         if (lastMsg2.includes("\u7D2F") || lastMsg2.includes("\u75B2\u60EB") || lastMsg2.includes("\u8D70\u4E0D\u52A8")) newEmotion2 = "\u75B2\u60EB";
