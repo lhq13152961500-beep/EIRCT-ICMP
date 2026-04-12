@@ -280,15 +280,27 @@ export default function HomeScreen() {
               <XiaoxiangFace size={64} emotion={emotion} animate />
             </View>
             <View style={styles.xiangMid}>
-              <Text style={styles.xiangName}>小乡 · AI陪伴</Text>
-              <Text style={styles.xiangEmoLine} numberOfLines={1}>
-                {emotion === "疲惫" ? "😴" : emotion === "平静" ? "😊" : emotion === "好奇" ? "🤔" : emotion === "开心" ? "😄" : "🥳"}
-                {"  "}{emotion} · {activityHint}
-              </Text>
-              <Text style={styles.xiangHint}>点击与小乡开始对话 →</Text>
+              <Text style={styles.xiangName}>小乡 · AI伴游助手</Text>
+              <View style={styles.xiangStatusRow}>
+                <Ionicons
+                  name={
+                    emotion === "疲惫" ? "moon-outline" :
+                    emotion === "好奇" ? "search-outline" :
+                    emotion === "开心" ? "sunny-outline" :
+                    emotion === "感快" ? "star-outline" :
+                    "leaf-outline"
+                  }
+                  size={12}
+                  color="#C06828"
+                />
+                <Text style={styles.xiangStatusText} numberOfLines={1}>
+                  {emotion}{"  ·  "}{activityHint}
+                </Text>
+              </View>
+              <Text style={styles.xiangHint}>点击与小乡开始对话</Text>
             </View>
             <View style={styles.xiangRight}>
-              <Ionicons name="chevron-forward" size={20} color="#E07830" />
+              <Ionicons name="chevron-forward" size={18} color="#D07030" />
             </View>
           </LinearGradient>
         </Pressable>
@@ -533,11 +545,12 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   xiangLeft: { alignItems: "center", justifyContent: "center" },
-  xiangMid: { flex: 1, gap: 3, overflow: "hidden" },
+  xiangMid: { flex: 1, gap: 4, overflow: "hidden" },
   xiangRight: { paddingLeft: 4 },
   xiangName: { fontSize: 15, fontWeight: "700", color: "#5A2D10" },
-  xiangEmoLine: { fontSize: 13, color: "#C05A10", fontWeight: "600" },
-  xiangHint: { fontSize: 11, color: "#A06030" },
+  xiangStatusRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  xiangStatusText: { fontSize: 12, color: "#B05820", fontWeight: "500", flexShrink: 1 },
+  xiangHint: { fontSize: 11, color: "#C08050" },
 
   /* ── Feature cards ── */
   featureRow: { flexDirection: "row" },
