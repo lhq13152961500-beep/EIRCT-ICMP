@@ -481,6 +481,58 @@ async function convertM4aToPcm(m4aPath, pcmPath) {
     );
   });
 }
+async function callDeepSeekLLM(userText, systemRole) {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) return "";
+  try {
+    const resp = await fetch("https://api.deepseek.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [{ role: "system", content: systemRole }, { role: "user", content: userText }],
+        max_tokens: 100,
+        temperature: 0.85
+      })
+    });
+    const data = await resp.json();
+    const text = data.choices?.[0]?.message?.content || "";
+    console.log(`[DeepSeekFallback] response="${text.slice(0, 60)}"`);
+    return text;
+  } catch (e) {
+    console.error("[DeepSeekFallback] error:", e.message);
+    return "";
+  }
+}
+async function callDoubaoHttpTts(text, appId, token) {
+  const attempts = [
+    { cluster: "volcano_mega", voice_type: "BV700_V2_streaming" },
+    { cluster: "volcano_tts", voice_type: "BV700_streaming" }
+  ];
+  for (const { cluster, voice_type } of attempts) {
+    const payload = {
+      app: { appid: appId, token, cluster },
+      user: { uid: "xiaoxiang_companion" },
+      audio: { voice_type, encoding: "mp3", speed_ratio: 1, volume_ratio: 1, pitch_ratio: 1 },
+      request: { reqid: randomUUID2(), text: text.slice(0, 2e3), text_type: "plain", operation: "query" }
+    };
+    try {
+      const resp = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
+        method: "POST",
+        headers: { Authorization: `Bearer;${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+      console.log(`[DoubaoTTS-HTTP] cluster=${cluster} voice=${voice_type} code=${data.code} msg=${data.message}`);
+      if (data.code === 3e3 && data.data) {
+        return Buffer.from(data.data, "base64");
+      }
+    } catch (e) {
+      console.error("[DoubaoTTS-HTTP] fetch error:", e.message);
+    }
+  }
+  throw new Error("HTTP TTS failed all clusters");
+}
 async function convertPcmToMp3(pcmBuffer, sampleRate = 24e3) {
   const id = randomUUID2();
   const tmpIn = join(tmpdir(), `dbs_pcm_${id}.pcm`);
@@ -539,12 +591,22 @@ async function doublaoRealtimeTurn(req) {
     const result = await attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPayload);
     if (result === null) throw new Error("Doubao S2S failed \u2014 check credentials and API access");
     const allPcm = Buffer.concat(result.audioChunks);
-    console.log(`[DoubaoS2S] Done: ${allPcm.length}B PCM, transcript="${result.transcript}"`);
-    if (allPcm.length === 0) {
+    console.log(`[DoubaoS2S] Done: ${allPcm.length}B PCM, transcript="${result.transcript}", aiText="${result.aiText.slice(0, 40)}"`);
+    if (allPcm.length > 0) {
+      const mp32 = await convertPcmToMp3(allPcm, 24e3);
+      return { audioBase64: mp32.toString("base64"), format: "mp3", transcript: result.transcript, aiText: result.aiText };
+    }
+    let aiResponseText = result.aiText;
+    if (!aiResponseText && result.transcript) {
+      console.log(`[DoubaoS2S] No aiText, calling DeepSeek for transcript: "${result.transcript}"`);
+      aiResponseText = await callDeepSeekLLM(result.transcript, systemRole);
+    }
+    if (!aiResponseText) {
       return { audioBase64: "", format: "mp3", transcript: result.transcript, aiText: "" };
     }
-    const mp3 = await convertPcmToMp3(allPcm, 24e3);
-    return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: result.aiText };
+    console.log(`[DoubaoS2S] HTTP TTS for: "${aiResponseText.slice(0, 60)}"`);
+    const mp3 = await callDoubaoHttpTts(aiResponseText, appId, accessToken);
+    return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: aiResponseText };
   } finally {
     unlink(tmpM4a).catch(() => {
     });
@@ -581,10 +643,17 @@ async function attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPay
     const CHUNK_SIZE = 640;
     const CHUNK_MS = 20;
     const timer = setTimeout(() => {
-      console.warn(`[DoubaoS2S] Timeout \u2014 collected ${audioChunks.length} chunks`);
+      console.warn(`[DoubaoS2S] Timeout \u2014 ${audioChunks.length} audio chunks, transcript="${transcript}", aiText="${aiText.slice(0, 40)}"`);
       ws.terminate();
-      settle(audioChunks.length > 0 ? { audioChunks, transcript, aiText } : null);
-    }, 25e3);
+      if (audioChunks.length > 0) {
+        settle({ audioChunks, transcript, aiText });
+      } else if (aiText || transcript) {
+        console.log("[DoubaoS2S] Timeout with text \u2014 handing off to HTTP TTS pipeline");
+        settle({ audioChunks: [], transcript, aiText });
+      } else {
+        settle(null);
+      }
+    }, 12e3);
     ws.on("open", () => {
       console.log("[DoubaoS2S] WS open \u2192 StartConnection (seq=1)");
       ws.send(buildConnectEvent(EVT_START_CONN, nextSeq()));
@@ -592,8 +661,19 @@ async function attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPay
     ws.on("message", (raw) => {
       const msg = parseServerMsg(raw);
       if (msg.msgType === MT_ERROR) {
+        const errText = msg.errorText || "";
         ws.terminate();
-        settle(null);
+        if (errText.includes("InvalidSpeaker")) {
+          console.log(`[DoubaoS2S] InvalidSpeaker \u2014 transcript="${transcript}", aiText="${aiText.slice(0, 40)}"`);
+          if (aiText || transcript) {
+            settle({ audioChunks: [], transcript, aiText });
+          } else {
+            console.log("[DoubaoS2S] InvalidSpeaker with no text yet \u2014 awaiting timeout");
+          }
+        } else {
+          console.error(`[DoubaoS2S] fatal error, settling null`);
+          settle(null);
+        }
         return;
       }
       if (msg.msgType === MT_AUDIO_SERVER && Buffer.isBuffer(msg.payload) && msg.payload.length > 0) {
@@ -662,7 +742,14 @@ async function attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPay
     ws.on("close", (code) => {
       console.log(`[DoubaoS2S] WS closed code=${code}`);
       if (!settled) {
-        settle(audioChunks.length > 0 ? { audioChunks, transcript, aiText } : null);
+        if (audioChunks.length > 0) {
+          settle({ audioChunks, transcript, aiText });
+        } else if (aiText || transcript) {
+          console.log("[DoubaoS2S] WS closed with text \u2014 handing off to HTTP TTS pipeline");
+          settle({ audioChunks: [], transcript, aiText });
+        } else {
+          settle(null);
+        }
       }
     });
     function streamPcm() {

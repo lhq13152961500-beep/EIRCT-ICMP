@@ -317,17 +317,31 @@ export default function XiaoxiangAiScreen() {
           await new Promise<void>((r) => setTimeout(r, 400));
         }
 
-        // Release→acquire audio mode to flush any lingering native recorder state
-        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
-        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-
         setCompanionStatus("listening");
-        const result = await Audio.Recording.createAsync({
+
+        // Retry loop: Android native MediaRecorder may not release immediately
+        const REC_OPTIONS: Audio.RecordingOptions = {
           android: { extension: ".m4a", outputFormat: 2, audioEncoder: 3, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000 },
           ios: { extension: ".m4a", audioQuality: 127, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000, linearPCMBitDepth: 16, linearPCMIsBigEndian: false, linearPCMIsFloat: false },
           web: {},
-        });
-        recording = result.recording;
+        };
+        for (let attempt = 0; attempt < 4; attempt++) {
+          try {
+            await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+            await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+            const result = await Audio.Recording.createAsync(REC_OPTIONS);
+            recording = result.recording;
+            break;
+          } catch (createErr: any) {
+            if (createErr?.message?.includes("Only one Recording") && attempt < 3) {
+              console.warn(`[Recording] attempt ${attempt + 1} failed — waiting 800ms`);
+              await new Promise<void>((r) => setTimeout(r, 800));
+            } else {
+              throw createErr;
+            }
+          }
+        }
+        if (!recording) throw new Error("Failed to create recording after retries");
         companionRecordingRef.current = recording;
         await new Promise<void>((resolve) => setTimeout(resolve, 5000));
         if (!companionActiveRef.current) break; // finally will stop recording

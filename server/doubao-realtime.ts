@@ -151,6 +151,62 @@ async function convertM4aToPcm(m4aPath: string, pcmPath: string): Promise<void> 
   });
 }
 
+// DeepSeek LLM fallback — used when Dialog API fires InvalidSpeaker before LLM text arrives
+async function callDeepSeekLLM(userText: string, systemRole: string): Promise<string> {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) return "";
+  try {
+    const resp = await fetch("https://api.deepseek.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [{ role: "system", content: systemRole }, { role: "user", content: userText }],
+        max_tokens: 100,
+        temperature: 0.85,
+      }),
+    });
+    const data = await resp.json() as { choices?: { message?: { content?: string } }[] };
+    const text = data.choices?.[0]?.message?.content || "";
+    console.log(`[DeepSeekFallback] response="${text.slice(0, 60)}"`);
+    return text;
+  } catch (e: any) {
+    console.error("[DeepSeekFallback] error:", e.message);
+    return "";
+  }
+}
+
+// HTTP TTS fallback — used when Dialog API TTS returns InvalidSpeaker
+async function callDoubaoHttpTts(text: string, appId: string, token: string): Promise<Buffer> {
+  const attempts = [
+    { cluster: "volcano_mega", voice_type: "BV700_V2_streaming" },
+    { cluster: "volcano_tts",  voice_type: "BV700_streaming" },
+  ];
+  for (const { cluster, voice_type } of attempts) {
+    const payload = {
+      app: { appid: appId, token, cluster },
+      user: { uid: "xiaoxiang_companion" },
+      audio: { voice_type, encoding: "mp3", speed_ratio: 1.0, volume_ratio: 1.0, pitch_ratio: 1.0 },
+      request: { reqid: randomUUID(), text: text.slice(0, 2000), text_type: "plain", operation: "query" },
+    };
+    try {
+      const resp = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
+        method: "POST",
+        headers: { Authorization: `Bearer;${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json() as { code?: number; message?: string; data?: string };
+      console.log(`[DoubaoTTS-HTTP] cluster=${cluster} voice=${voice_type} code=${data.code} msg=${data.message}`);
+      if (data.code === 3000 && data.data) {
+        return Buffer.from(data.data, "base64");
+      }
+    } catch (e: any) {
+      console.error("[DoubaoTTS-HTTP] fetch error:", e.message);
+    }
+  }
+  throw new Error("HTTP TTS failed all clusters");
+}
+
 async function convertPcmToMp3(pcmBuffer: Buffer, sampleRate = 24000): Promise<Buffer> {
   const id = randomUUID();
   const tmpIn = join(tmpdir(), `dbs_pcm_${id}.pcm`);
@@ -234,14 +290,32 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
     if (result === null) throw new Error("Doubao S2S failed — check credentials and API access");
 
     const allPcm = Buffer.concat(result.audioChunks);
-    console.log(`[DoubaoS2S] Done: ${allPcm.length}B PCM, transcript="${result.transcript}"`);
+    console.log(`[DoubaoS2S] Done: ${allPcm.length}B PCM, transcript="${result.transcript}", aiText="${result.aiText.slice(0, 40)}"`);
 
-    if (allPcm.length === 0) {
+    // ── Path 1: S2S TTS worked ──
+    if (allPcm.length > 0) {
+      const mp3 = await convertPcmToMp3(allPcm, 24000);
+      return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: result.aiText };
+    }
+
+    // ── Path 2: S2S TTS failed (InvalidSpeaker) — AI text may or may not exist ──
+    let aiResponseText = result.aiText;
+
+    if (!aiResponseText && result.transcript) {
+      // LLM didn't get to respond before TTS errored — call DeepSeek as fallback
+      console.log(`[DoubaoS2S] No aiText, calling DeepSeek for transcript: "${result.transcript}"`);
+      aiResponseText = await callDeepSeekLLM(result.transcript, systemRole);
+    }
+
+    if (!aiResponseText) {
+      // Nothing to say — silence (user probably said nothing meaningful)
       return { audioBase64: "", format: "mp3", transcript: result.transcript, aiText: "" };
     }
 
-    const mp3 = await convertPcmToMp3(allPcm, 24000);
-    return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: result.aiText };
+    // Use HTTP TTS for natural Doubao female voice
+    console.log(`[DoubaoS2S] HTTP TTS for: "${aiResponseText.slice(0, 60)}"`);
+    const mp3 = await callDoubaoHttpTts(aiResponseText, appId, accessToken);
+    return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: aiResponseText };
   } finally {
     unlink(tmpM4a).catch(() => {});
     unlink(tmpPcm).catch(() => {});
@@ -295,10 +369,18 @@ async function attemptS2STurn(
     const CHUNK_MS = 20;
 
     const timer = setTimeout(() => {
-      console.warn(`[DoubaoS2S] Timeout — collected ${audioChunks.length} chunks`);
+      console.warn(`[DoubaoS2S] Timeout — ${audioChunks.length} audio chunks, transcript="${transcript}", aiText="${aiText.slice(0, 40)}"`);
       ws.terminate();
-      settle(audioChunks.length > 0 ? { audioChunks, transcript, aiText } : null);
-    }, 25000);
+      if (audioChunks.length > 0) {
+        settle({ audioChunks, transcript, aiText });
+      } else if (aiText || transcript) {
+        // S2S got text (aiText or at least transcript) — caller will handle LLM + HTTP TTS
+        console.log("[DoubaoS2S] Timeout with text — handing off to HTTP TTS pipeline");
+        settle({ audioChunks: [], transcript, aiText });
+      } else {
+        settle(null);
+      }
+    }, 12000); // 12s — we know InvalidSpeaker errors come quickly
 
     ws.on("open", () => {
       console.log("[DoubaoS2S] WS open → StartConnection (seq=1)");
@@ -309,8 +391,21 @@ async function attemptS2STurn(
       const msg = parseServerMsg(raw);
 
       if (msg.msgType === MT_ERROR) {
+        const errText = msg.errorText || "";
         ws.terminate();
-        settle(null);
+        if (errText.includes("InvalidSpeaker")) {
+          // TTS speaker unavailable; hand off whatever text we have to HTTP TTS pipeline
+          console.log(`[DoubaoS2S] InvalidSpeaker — transcript="${transcript}", aiText="${aiText.slice(0, 40)}"`);
+          if (aiText || transcript) {
+            settle({ audioChunks: [], transcript, aiText });
+          } else {
+            // Nothing yet — let timeout handle (12s is sufficient)
+            console.log("[DoubaoS2S] InvalidSpeaker with no text yet — awaiting timeout");
+          }
+        } else {
+          console.error(`[DoubaoS2S] fatal error, settling null`);
+          settle(null);
+        }
         return;
       }
 
@@ -386,7 +481,14 @@ async function attemptS2STurn(
     ws.on("close", (code) => {
       console.log(`[DoubaoS2S] WS closed code=${code}`);
       if (!settled) {
-        settle(audioChunks.length > 0 ? { audioChunks, transcript, aiText } : null);
+        if (audioChunks.length > 0) {
+          settle({ audioChunks, transcript, aiText });
+        } else if (aiText || transcript) {
+          console.log("[DoubaoS2S] WS closed with text — handing off to HTTP TTS pipeline");
+          settle({ audioChunks: [], transcript, aiText });
+        } else {
+          settle(null);
+        }
       }
     });
 
