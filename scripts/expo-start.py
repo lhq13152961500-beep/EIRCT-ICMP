@@ -215,15 +215,21 @@ def main():
             # OOM = bundle was served successfully; Metro ran out of memory.
             # Each restart opens a new Ngrok tunnel — too many rapid restarts
             # exhaust Ngrok's rate-limit window and cause cascading failures.
-            # Use generous waits to keep tunnel creation rate low.
+            # Scale wait with consecutive rapid OOMs to protect Ngrok quota.
             oom_count += 1
             now = time.time()
             since_last = now - last_oom_time
             last_oom_time = now
             ngrok_fails = 0  # successful connection, reset fail count
-            # Rapid OOMs (< 8 min): wait 150s so Ngrok window can breathe.
-            # Infrequent OOM: 60s is enough.
-            wait = 150 if since_last < 480 else 60
+            if since_last < 1200:  # rapid OOM (< 20 min): longer wait
+                rapid_oom_count = getattr(main, '_rapid_oom', 0) + 1
+                main._rapid_oom = rapid_oom_count
+                # Escalating: 300s, 420s, 600s, 900s (cap)
+                wait = min(300 * (1 + (rapid_oom_count - 1) * 0.5), 900)
+                wait = int(wait)
+            else:
+                main._rapid_oom = 0
+                wait = 120  # infrequent OOM: 2-min cooldown is enough
             sys.stdout.write(f'[Metro OOM #{oom_count} — waiting {wait}s before restart...]\n')
             sys.stdout.flush()
             time.sleep(wait)
