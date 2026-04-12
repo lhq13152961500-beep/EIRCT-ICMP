@@ -725,7 +725,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         const hasImage = messages.some((m) => Array.isArray(m.content) && m.content.some((p: any) => p.type === "image_url"));
-        const model = hasImage ? "doubao-1-5-vision-pro-32k-250115" : "doubao-1-5-pro-32k-250115";
+        const model = hasImage ? "doubao-seed-2-0-lite-260215" : "doubao-1-5-pro-32k-250115";
 
         const completion = await doubaoClient.chat.completions.create({
           model,
