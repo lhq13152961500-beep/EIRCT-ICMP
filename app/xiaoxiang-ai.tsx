@@ -28,6 +28,7 @@ import { useActivity } from "@/contexts/ActivityContext";
 import { XiaoxiangFace } from "@/components/XiaoxiangFace";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -129,6 +130,15 @@ export default function XiaoxiangAiScreen() {
   const [screen, setScreen] = useState<Screen>(companion === "1" ? "companion" : "welcome");
   const [emotion, setEmotion] = useState<Emotion>(activityEmotion);
   const companionTriggered = useRef(false);
+  const [isCompanionActive, setIsCompanionActive] = useState(false);
+  const [companionStatus, setCompanionStatus] = useState<"idle" | "listening" | "processing">("idle");
+  const [voiceEnrolled, setVoiceEnrolled] = useState(false);
+  const [enrolledPrompt, setEnrolledPrompt] = useState("");
+  const [isEnrolling, setIsEnrolling] = useState(false);
+  const [enrollCountdown, setEnrollCountdown] = useState(0);
+  const [companionResponse, setCompanionResponse] = useState("");
+  const companionActiveRef = useRef(false);
+  const enrollRecordingRef = useRef<Audio.Recording | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "0",
@@ -158,6 +168,113 @@ export default function XiaoxiangAiScreen() {
   useEffect(() => {
     setEmotion(activityEmotion);
   }, [activityEmotion]);
+
+  useEffect(() => {
+    AsyncStorage.getItem("voiceEnrollPrompt").then((val) => {
+      if (val) { setVoiceEnrolled(true); setEnrolledPrompt(val); }
+    });
+  }, []);
+
+  const startEnrollment = useCallback(async () => {
+    if (voiceAvailable === false) {
+      Alert.alert("语音功能未配置", "需要配置 GROQ_API_KEY 才能使用语音功能。");
+      return;
+    }
+    const { granted } = await Audio.requestPermissionsAsync();
+    if (!granted) { Alert.alert("需要麦克风权限"); return; }
+    await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+    const { recording } = await Audio.Recording.createAsync({
+      android: { extension: ".m4a", outputFormat: 2, audioEncoder: 3, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000 },
+      ios: { extension: ".m4a", audioQuality: 127, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000, linearPCMBitDepth: 16, linearPCMIsBigEndian: false, linearPCMIsFloat: false },
+      web: {},
+    });
+    enrollRecordingRef.current = recording;
+    setIsEnrolling(true);
+    setEnrollCountdown(5);
+    let count = 5;
+    const timer = setInterval(() => {
+      count -= 1;
+      setEnrollCountdown(count);
+      if (count <= 0) {
+        clearInterval(timer);
+        stopEnrollment();
+      }
+    }, 1000);
+  }, [voiceAvailable]);
+
+  const stopEnrollment = useCallback(async () => {
+    const rec = enrollRecordingRef.current;
+    if (!rec) { setIsEnrolling(false); return; }
+    try {
+      await rec.stopAndUnloadAsync();
+      enrollRecordingRef.current = null;
+      const uri = rec.getURI();
+      if (!uri) { setIsEnrolling(false); return; }
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      const resp = await apiRequest("POST", "/api/ai/transcribe", { audio: base64, mime: "audio/m4a" });
+      const data = await (resp as any).json();
+      const prompt = data.text?.trim() ?? "";
+      setEnrolledPrompt(prompt);
+      setVoiceEnrolled(true);
+      await AsyncStorage.setItem("voiceEnrollPrompt", prompt || "吐峪沟 吐鲁番 小乡");
+      Alert.alert("录入成功", "小乡已记住你的声音特征，伴游模式下将优先识别你的声音");
+    } catch {
+      Alert.alert("录入失败", "请重试");
+    } finally {
+      setIsEnrolling(false);
+      setEnrollCountdown(0);
+    }
+  }, []);
+
+  const runCompanionLoop = useCallback(async (currentEmotion: Emotion, currentActivityHint: string, currentPrompt: string) => {
+    while (companionActiveRef.current) {
+      try {
+        setCompanionStatus("listening");
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+        const { recording } = await Audio.Recording.createAsync({
+          android: { extension: ".m4a", outputFormat: 2, audioEncoder: 3, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000 },
+          ios: { extension: ".m4a", audioQuality: 127, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000, linearPCMBitDepth: 16, linearPCMIsBigEndian: false, linearPCMIsFloat: false },
+          web: {},
+        });
+        await new Promise<void>((resolve) => setTimeout(resolve, 4000));
+        if (!companionActiveRef.current) { await recording.stopAndUnloadAsync(); break; }
+        await recording.stopAndUnloadAsync();
+        const uri = recording.getURI();
+        if (!uri) continue;
+        const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+        setCompanionStatus("processing");
+        const tResp = await apiRequest("POST", "/api/ai/transcribe", {
+          audio: base64, mime: "audio/m4a",
+          prompt: currentPrompt || "吐峪沟 吐鲁番 游览 景点",
+        });
+        const tData = await (tResp as any).json();
+        const text: string = tData.text?.trim() ?? "";
+        if (!text || text.length < 2 || !companionActiveRef.current) {
+          setCompanionStatus("listening");
+          continue;
+        }
+        const loc = locationStatus.state === "located" ? { name: locationStatus.locationName, lat: 0, lng: 0 } : null;
+        const aiResp = await apiRequest("POST", "/api/ai/chat", {
+          messages: [{ role: "user", content: text }],
+          emotion: currentEmotion,
+          activityData: { hint: currentActivityHint, stepRate: 0 },
+          userLocation: loc,
+        });
+        const aiData = await (aiResp as any).json();
+        const reply: string = aiData.reply || "";
+        if (reply && companionActiveRef.current) {
+          setCompanionResponse(reply);
+          if (aiData.emotion) setEmotion(aiData.emotion as Emotion);
+          await new Promise<void>((resolve) => setTimeout(resolve, 6000));
+          setCompanionResponse("");
+        }
+      } catch (e) {
+        console.error("[Companion] loop error:", e);
+        await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+      }
+    }
+    setCompanionStatus("idle");
+  }, [locationStatus]);
 
   useEffect(() => {
     if (!isListening) { micAnim.setValue(1); return; }
@@ -371,6 +488,26 @@ export default function XiaoxiangAiScreen() {
     sendMessage("[文件] 请帮我分析这个内容");
   }, [sendMessage]);
 
+  const toggleCompanionMode = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (isCompanionActive) {
+      companionActiveRef.current = false;
+      setIsCompanionActive(false);
+      setCompanionStatus("idle");
+      setCompanionResponse("");
+    } else {
+      if (voiceAvailable === false) {
+        Alert.alert("语音功能未配置", "伴游模式需要配置 GROQ_API_KEY，请联系管理员。");
+        return;
+      }
+      const { granted } = await Audio.requestPermissionsAsync();
+      if (!granted) { Alert.alert("需要麦克风权限", "请在设置中开启麦克风权限"); return; }
+      companionActiveRef.current = true;
+      setIsCompanionActive(true);
+      runCompanionLoop(emotion, activityHint, enrolledPrompt);
+    }
+  }, [isCompanionActive, voiceAvailable, emotion, activityHint, enrolledPrompt, runCompanionLoop]);
+
   const emotionInfo = EMOTIONS[emotion];
 
   if (screen === "welcome") {
@@ -431,78 +568,167 @@ export default function XiaoxiangAiScreen() {
   }
 
   if (screen === "companion") {
-    const ew = EMOTION_WELCOME[emotion] ?? EMOTION_WELCOME["\u5e73\u9759"];
+    const ew = EMOTION_WELCOME[emotion] ?? EMOTION_WELCOME["平静"];
     const COMPANION_CHIPS = [
       "时间有限，帮我规划新路线",
       "我有点累，推荐附近休息点",
       "讲个吐峪沟的历史故事",
       "吐峪沟有什么特色美食",
     ];
+
+    const statusText =
+      companionStatus === "listening" ? "小乡正在聆听..." :
+      companionStatus === "processing" ? "小乡正在思考..." :
+      isCompanionActive ? "小乡已开启，说话就行" : "";
+
     return (
       <LinearGradient
         colors={["#FFF4EE", "#FFE8DC", "#FFF0EA"]}
-        style={[styles.welcomeRoot, { paddingTop: insets.top + 16 }]}
+        style={[styles.companionRoot, { paddingTop: insets.top }]}
       >
         <Stack.Screen options={{ headerShown: false }} />
-        <Pressable
-          style={styles.backBtn}
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
-        >
-          <Ionicons name="chevron-back" size={24} color="#E05A3A" />
-        </Pressable>
 
-        <View style={styles.companionPageHeader}>
-          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-            <XiaoxiangFace size={96} emotion={emotion} animate />
-          </Animated.View>
-          <View style={[styles.emotionBadgeLarge, { backgroundColor: emotionInfo.bg }]}>
+        {/* Header */}
+        <View style={styles.companionHeader}>
+          <Pressable
+            style={styles.backBtn}
+            onPress={() => {
+              if (isCompanionActive) {
+                companionActiveRef.current = false;
+                setIsCompanionActive(false);
+                setCompanionStatus("idle");
+              }
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.back();
+            }}
+          >
+            <Ionicons name="chevron-back" size={24} color="#E05A3A" />
+          </Pressable>
+          <Text style={styles.companionHeaderTitle}>情感伴游</Text>
+          <Pressable
+            style={[styles.enrollBtn, voiceEnrolled && styles.enrollBtnDone]}
+            onPress={isEnrolling ? stopEnrollment : startEnrollment}
+          >
+            <Ionicons
+              name={voiceEnrolled ? "checkmark-circle" : isEnrolling ? "stop-circle-outline" : "mic-outline"}
+              size={14}
+              color={voiceEnrolled ? "#1AAD6B" : "#E05A3A"}
+            />
+            <Text style={[styles.enrollBtnText, voiceEnrolled && { color: "#1AAD6B" }]}>
+              {isEnrolling ? `停止录入 ${enrollCountdown}s` : voiceEnrolled ? "已录入" : "录入我的声音"}
+            </Text>
+          </Pressable>
+        </View>
+
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.companionScroll}
+        >
+          {/* Face + emotion */}
+          <View style={styles.companionFaceWrap}>
+            <Animated.View style={{
+              transform: [{ scale: isCompanionActive ? pulseAnim : new Animated.Value(1) }]
+            }}>
+              <XiaoxiangFace size={120} emotion={emotion} animate={isCompanionActive} />
+            </Animated.View>
+            {isCompanionActive && (
+              <View style={styles.listeningRing} />
+            )}
+          </View>
+
+          <View style={[styles.emotionBadgeLarge, { backgroundColor: emotionInfo.bg, alignSelf: "center", marginBottom: 4 }]}>
             <Ionicons name="heart" size={12} color={emotionInfo.color} />
             <Text style={[styles.emotionBadgeLargeText, { color: emotionInfo.color }]}>{emotion}</Text>
           </View>
-        </View>
 
-        <Text style={styles.companionPageTitle}>\u60c5\u611f\u4f34\u6e38</Text>
-        <Text style={styles.companionPageSub}>{ew.sub}</Text>
-        <Text style={styles.companionActivityHint}>{activityHint}</Text>
+          <Text style={styles.companionPageTitle}>小乡伴游模式</Text>
+          <Text style={styles.companionPageSub}>{ew.sub}</Text>
+          <Text style={styles.companionActivityHint}>{activityHint}</Text>
 
-        <View style={styles.companionChipGrid}>
-          {COMPANION_CHIPS.map((text, i) => (
-            <Pressable
-              key={i}
-              style={styles.companionChip}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setScreen("chat");
-                setTimeout(() => sendMessage(text), 300);
-              }}
+          {/* Status badge */}
+          {isCompanionActive && (
+            <View style={styles.companionStatusBadge}>
+              <Animated.View style={[styles.companionStatusDot, {
+                opacity: companionStatus === "listening" ? pulseAnim : 1,
+                backgroundColor: companionStatus === "processing" ? "#F97340" : "#1AAD6B",
+              }]} />
+              <Text style={styles.companionStatusText}>{statusText}</Text>
+            </View>
+          )}
+
+          {/* AI response bubble */}
+          {!!companionResponse && (
+            <View style={styles.companionResponseBubble}>
+              <XiaoxiangFace size={28} emotion={emotion} />
+              <View style={styles.companionResponseText}>
+                <Text style={styles.companionResponseContent}>{companionResponse}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Main toggle button */}
+          <Pressable style={styles.companionToggleWrap} onPress={toggleCompanionMode}>
+            <LinearGradient
+              colors={isCompanionActive ? ["#888", "#666"] : ["#FF8C5A", "#F97340", "#E86030"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.companionToggleBtn}
             >
-              <Text style={styles.companionChipText}>{text}</Text>
-            </Pressable>
-          ))}
-        </View>
+              <Ionicons
+                name={isCompanionActive ? "pause-circle-outline" : "radio-outline"}
+                size={22}
+                color="white"
+              />
+              <Text style={styles.companionToggleText}>
+                {isCompanionActive ? "暂停伴游" : "开启伴游模式"}
+              </Text>
+            </LinearGradient>
+          </Pressable>
 
-        <Pressable
-          style={styles.startBtnWrap}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            setScreen("chat");
-            setTimeout(() => sendMessage("\u6211\u9700\u8981\u4f60\u7684\u966a\u4f34\uff0c\u5e2e\u6211\u63a8\u8350\u4e00\u4e9b\u653e\u677e\u7684\u65b9\u5f0f"), 300);
-          }}
-        >
-          <LinearGradient
-            colors={["#FF8C5A", "#F97340", "#E86030"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.startBtn}
-          >
-            <Ionicons name="heart-outline" size={18} color="white" />
-            <Text style={[styles.startBtnText, { marginLeft: 6 }]}>\u5f00\u59cb\u5bf9\u8bdd</Text>
-          </LinearGradient>
-        </Pressable>
+          {!isCompanionActive && (
+            <Text style={styles.companionToggleHint}>
+              开启后小乡将持续聆听，随时与你聊天
+            </Text>
+          )}
+
+          {/* Quick chips */}
+          <View style={styles.companionChipGrid}>
+            {COMPANION_CHIPS.map((text, i) => (
+              <Pressable
+                key={i}
+                style={styles.companionChip}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setScreen("chat");
+                  setTimeout(() => sendMessage(text), 300);
+                }}
+              >
+                <Text style={styles.companionChipText}>{text}</Text>
+                <Ionicons name="chevron-forward" size={14} color="#C08060" />
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
+
+        {/* Enrollment overlay */}
+        {isEnrolling && (
+          <View style={styles.enrollOverlay}>
+            <View style={styles.enrollCard}>
+              <XiaoxiangFace size={64} emotion="平静" animate />
+              <Text style={styles.enrollTitle}>请说一段话，录入声纹</Text>
+              <Text style={styles.enrollSub}>小乡正在记录你的声音特征</Text>
+              <View style={styles.enrollCountdownCircle}>
+                <Text style={styles.enrollCountdownText}>{enrollCountdown}</Text>
+              </View>
+              <Pressable style={styles.enrollStopBtn} onPress={stopEnrollment}>
+                <Text style={styles.enrollStopText}>提前停止</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
       </LinearGradient>
     );
   }
-
   return (
     <KeyboardAvoidingView
       style={[styles.chatRoot, { paddingTop: insets.top }]}
@@ -547,7 +773,7 @@ export default function XiaoxiangAiScreen() {
             style={styles.companionGrad}
           >
             <Ionicons name="heart-outline" size={14} color="white" />
-            <Text style={styles.companionText}>情感伴游</Text>
+            <Text style={styles.companionText}>小乡陪伴</Text>
           </LinearGradient>
         </Pressable>
       </View>
@@ -931,6 +1157,136 @@ const styles = StyleSheet.create({
     color: "#C05818",
     fontWeight: "600",
   },
+  companionRoot: { flex: 1 },
+  companionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  companionHeaderTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#8A3010",
+    textAlign: "center",
+    marginLeft: -8,
+  },
+  enrollBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(224,90,58,0.1)",
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: "rgba(224,90,58,0.2)",
+  },
+  enrollBtnDone: {
+    backgroundColor: "rgba(26,173,107,0.1)",
+    borderColor: "rgba(26,173,107,0.3)",
+  },
+  enrollBtnText: { fontSize: 11, color: "#E05A3A", fontWeight: "600" },
+  companionScroll: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    alignItems: "center",
+  },
+  companionFaceWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: 16,
+    position: "relative",
+  },
+  listeningRing: {
+    position: "absolute",
+    width: 144,
+    height: 144,
+    borderRadius: 72,
+    borderWidth: 2,
+    borderColor: "rgba(249,115,64,0.4)",
+    borderStyle: "dashed",
+  },
+  companionStatusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginBottom: 12,
+    shadowColor: "#F97340",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  companionStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  companionStatusText: { fontSize: 13, color: "#5A3020", fontWeight: "500" },
+  companionResponseBubble: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: "white",
+    borderRadius: 18,
+    padding: 12,
+    marginBottom: 16,
+    width: "100%",
+    shadowColor: "#F97340",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  companionResponseText: { flex: 1 },
+  companionResponseContent: { fontSize: 14, color: "#3A1A10", lineHeight: 20 },
+  companionToggleWrap: { width: "100%", borderRadius: 28, overflow: "hidden", marginBottom: 8 },
+  companionToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 18,
+    borderRadius: 28,
+  },
+  companionToggleText: { fontSize: 17, fontWeight: "800", color: "white", letterSpacing: 0.5 },
+  companionToggleHint: { fontSize: 12, color: "#B08060", marginBottom: 20, textAlign: "center" },
+  enrollOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 100,
+  },
+  enrollCard: {
+    backgroundColor: "white",
+    borderRadius: 24,
+    padding: 28,
+    alignItems: "center",
+    gap: 12,
+    width: "80%",
+  },
+  enrollTitle: { fontSize: 16, fontWeight: "700", color: "#3A1A10", textAlign: "center" },
+  enrollSub: { fontSize: 13, color: "#A07050", textAlign: "center" },
+  enrollCountdownCircle: {
+    width: 70, height: 70, borderRadius: 35,
+    backgroundColor: "#FFF4EE",
+    borderWidth: 3, borderColor: "#F97340",
+    alignItems: "center", justifyContent: "center",
+  },
+  enrollCountdownText: { fontSize: 28, fontWeight: "800", color: "#F97340" },
+  enrollStopBtn: {
+    backgroundColor: "#F97340",
+    borderRadius: 16, paddingHorizontal: 20, paddingVertical: 8,
+  },
+  enrollStopText: { color: "white", fontWeight: "600", fontSize: 14 },
   companionPageHeader: {
     alignItems: "center",
     gap: 10,
