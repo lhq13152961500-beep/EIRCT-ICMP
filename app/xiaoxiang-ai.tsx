@@ -32,7 +32,7 @@ import * as FileSystem from "expo-file-system/legacy";
 const { width: SCREEN_W } = Dimensions.get("window");
 
 type Emotion = "愉快" | "开心" | "平静" | "好奇" | "疲惫";
-type Screen = "welcome" | "chat";
+type Screen = "welcome" | "chat" | "companion";
 type Message = {
   id: string;
   role: "user" | "assistant";
@@ -126,7 +126,7 @@ export default function XiaoxiangAiScreen() {
   const { companion } = useLocalSearchParams<{ companion?: string }>();
   const { locationStatus } = useLocation();
   const { emotion: activityEmotion, activityHint, stepRate, overrideEmotion } = useActivity();
-  const [screen, setScreen] = useState<Screen>(companion === "1" ? "chat" : "welcome");
+  const [screen, setScreen] = useState<Screen>(companion === "1" ? "companion" : "welcome");
   const [emotion, setEmotion] = useState<Emotion>(activityEmotion);
   const companionTriggered = useRef(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -371,16 +371,6 @@ export default function XiaoxiangAiScreen() {
     sendMessage("[文件] 请帮我分析这个内容");
   }, [sendMessage]);
 
-  useEffect(() => {
-    if (companion === "1" && !companionTriggered.current) {
-      companionTriggered.current = true;
-      const timer = setTimeout(() => {
-        sendMessage("\u6211\u9700\u8981\u4f60\u7684\u966a\u4f34\u548c\u652f\u6301\uff0c\u5e2e\u6211\u63a8\u8350\u4e00\u4e9b\u653e\u677e\u7684\u6d3b\u52a8");
-      }, 600);
-      return () => clearTimeout(timer);
-    }
-  }, [companion, sendMessage]);
-
   const emotionInfo = EMOTIONS[emotion];
 
   if (screen === "welcome") {
@@ -440,6 +430,79 @@ export default function XiaoxiangAiScreen() {
     );
   }
 
+  if (screen === "companion") {
+    const ew = EMOTION_WELCOME[emotion] ?? EMOTION_WELCOME["\u5e73\u9759"];
+    const COMPANION_CHIPS = [
+      "时间有限，帮我规划新路线",
+      "我有点累，推荐附近休息点",
+      "讲个吐峪沟的历史故事",
+      "吐峪沟有什么特色美食",
+    ];
+    return (
+      <LinearGradient
+        colors={["#FFF4EE", "#FFE8DC", "#FFF0EA"]}
+        style={[styles.welcomeRoot, { paddingTop: insets.top + 16 }]}
+      >
+        <Stack.Screen options={{ headerShown: false }} />
+        <Pressable
+          style={styles.backBtn}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
+        >
+          <Ionicons name="chevron-back" size={24} color="#E05A3A" />
+        </Pressable>
+
+        <View style={styles.companionPageHeader}>
+          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+            <XiaoxiangFace size={96} emotion={emotion} animate />
+          </Animated.View>
+          <View style={[styles.emotionBadgeLarge, { backgroundColor: emotionInfo.bg }]}>
+            <Ionicons name="heart" size={12} color={emotionInfo.color} />
+            <Text style={[styles.emotionBadgeLargeText, { color: emotionInfo.color }]}>{emotion}</Text>
+          </View>
+        </View>
+
+        <Text style={styles.companionPageTitle}>\u60c5\u611f\u4f34\u6e38</Text>
+        <Text style={styles.companionPageSub}>{ew.sub}</Text>
+        <Text style={styles.companionActivityHint}>{activityHint}</Text>
+
+        <View style={styles.companionChipGrid}>
+          {COMPANION_CHIPS.map((text, i) => (
+            <Pressable
+              key={i}
+              style={styles.companionChip}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setScreen("chat");
+                setTimeout(() => sendMessage(text), 300);
+              }}
+            >
+              <Text style={styles.companionChipText}>{text}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Pressable
+          style={styles.startBtnWrap}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setScreen("chat");
+            setTimeout(() => sendMessage("\u6211\u9700\u8981\u4f60\u7684\u966a\u4f34\uff0c\u5e2e\u6211\u63a8\u8350\u4e00\u4e9b\u653e\u677e\u7684\u65b9\u5f0f"), 300);
+          }}
+        >
+          <LinearGradient
+            colors={["#FF8C5A", "#F97340", "#E86030"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.startBtn}
+          >
+            <Ionicons name="heart-outline" size={18} color="white" />
+            <Text style={[styles.startBtnText, { marginLeft: 6 }]}>\u5f00\u59cb\u5bf9\u8bdd</Text>
+          </LinearGradient>
+        </Pressable>
+      </LinearGradient>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       style={[styles.chatRoot, { paddingTop: insets.top }]}
@@ -474,7 +537,7 @@ export default function XiaoxiangAiScreen() {
           style={styles.companionBtn}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            sendMessage("我需要你的陪伴和支持，帮我推荐一些放松的活动");
+            setScreen("companion");
           }}
         >
           <LinearGradient
@@ -483,7 +546,7 @@ export default function XiaoxiangAiScreen() {
             end={{ x: 1, y: 0 }}
             style={styles.companionGrad}
           >
-            <Ionicons name="hardware-chip-outline" size={14} color="white" />
+            <Ionicons name="heart-outline" size={14} color="white" />
             <Text style={styles.companionText}>情感伴游</Text>
           </LinearGradient>
         </Pressable>
@@ -839,26 +902,92 @@ const styles = StyleSheet.create({
     borderBottomColor: "#FFF0E8",
   },
   chipsContent: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     gap: 8,
+    alignItems: "center",
   },
   chip: {
-    flexDirection: "column",
+    flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    marginRight: 4,
+    gap: 6,
+    backgroundColor: "#FFF4EE",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: "#FFD8BE",
   },
   chipIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
   chipLabel: {
-    fontSize: 11,
-    color: "#5A3020",
+    fontSize: 13,
+    color: "#C05818",
+    fontWeight: "600",
+  },
+  companionPageHeader: {
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 8,
+  },
+  emotionBadgeLarge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 16,
+  },
+  emotionBadgeLargeText: { fontSize: 13, fontWeight: "700" },
+  companionPageTitle: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#C04020",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  companionPageSub: {
+    fontSize: 14,
+    color: "#A05030",
+    textAlign: "center",
+    paddingHorizontal: 28,
+    lineHeight: 20,
+    marginBottom: 6,
+  },
+  companionActivityHint: {
+    fontSize: 12,
+    color: "#C09070",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  companionChipGrid: {
+    width: "100%",
+    paddingHorizontal: 20,
+    gap: 10,
+    marginBottom: 24,
+  },
+  companionChip: {
+    backgroundColor: "rgba(255,255,255,0.85)",
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: "#FFDCC8",
+    shadowColor: "#F97340",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  companionChipText: {
+    fontSize: 14,
+    color: "#6A3010",
     fontWeight: "500",
   },
   messageList: {
