@@ -14,8 +14,9 @@ const MT_AUDIO_CLIENT = 0x2;
 const MT_AUDIO_SERVER = 0xb;
 const MT_ERROR = 0xf;
 
-const FL_SEQ_NON_TERM = 0x1;
-const FL_LAST_WITH_SEQ = 0x3;
+// Flags
+const FL_SEQ_NON_TERM = 0x1; // has sequence, not last
+const FL_LAST_WITH_SEQ = 0x3; // has sequence, is last
 const FL_HAS_EVENT = 0x4;
 
 const EVT_START_CONN = 1;
@@ -25,7 +26,9 @@ const EVT_FINISH_SESSION = 102;
 const EVT_TASK_REQUEST = 200;
 const EVT_CONN_STARTED = 50;
 const EVT_TTS_ENDED = 359;
-const EVT_DIALOG_ERROR = 599;
+
+// O2.0 default voice — can be overridden per-request
+export const DEFAULT_SPEAKER = "zh_female_vv_jupiter_bigtts";
 
 function int32BE(n: number): Buffer {
   const b = Buffer.alloc(4);
@@ -38,16 +41,24 @@ function lenStr(s: string): Buffer {
   return Buffer.concat([int32BE(sb.length), sb]);
 }
 
-function buildConnectEvent(eventId: number): Buffer {
-  const hdr = Buffer.from([BYTE0, (MT_FULL_CLIENT << 4) | FL_HAS_EVENT, 0x10, 0x00]);
+// ── All client messages MUST carry an incrementing sequence number ──
+// seq=1: StartConnection
+// seq=2: StartSession
+// seq=3+: audio chunks
+// seq=N: FinishSession / FinishConnection
+
+function buildConnectEvent(eventId: number, seq: number): Buffer {
+  const flags = FL_HAS_EVENT | FL_SEQ_NON_TERM;
+  const hdr = Buffer.from([BYTE0, (MT_FULL_CLIENT << 4) | flags, 0x10, 0x00]);
   const pl = Buffer.from("{}");
-  return Buffer.concat([hdr, int32BE(eventId), int32BE(pl.length), pl]);
+  return Buffer.concat([hdr, int32BE(seq), int32BE(eventId), int32BE(pl.length), pl]);
 }
 
-function buildSessionEvent(eventId: number, sid: string, payload: object): Buffer {
-  const hdr = Buffer.from([BYTE0, (MT_FULL_CLIENT << 4) | FL_HAS_EVENT, 0x10, 0x00]);
+function buildSessionEvent(eventId: number, seq: number, sid: string, payload: object): Buffer {
+  const flags = FL_HAS_EVENT | FL_SEQ_NON_TERM;
+  const hdr = Buffer.from([BYTE0, (MT_FULL_CLIENT << 4) | flags, 0x10, 0x00]);
   const pl = Buffer.from(JSON.stringify(payload));
-  return Buffer.concat([hdr, int32BE(eventId), lenStr(sid), int32BE(pl.length), pl]);
+  return Buffer.concat([hdr, int32BE(seq), int32BE(eventId), lenStr(sid), int32BE(pl.length), pl]);
 }
 
 function buildAudioChunk(pcm: Buffer, seq: number, sid: string): Buffer {
@@ -56,10 +67,10 @@ function buildAudioChunk(pcm: Buffer, seq: number, sid: string): Buffer {
   return Buffer.concat([hdr, int32BE(seq), int32BE(EVT_TASK_REQUEST), lenStr(sid), int32BE(pcm.length), pcm]);
 }
 
-function buildLastAudioChunk(sid: string): Buffer {
+function buildLastAudioChunk(seq: number, sid: string): Buffer {
   const flags = FL_HAS_EVENT | FL_LAST_WITH_SEQ;
   const hdr = Buffer.from([BYTE0, (MT_AUDIO_CLIENT << 4) | flags, 0x00, 0x00]);
-  return Buffer.concat([hdr, int32BE(-1), int32BE(EVT_TASK_REQUEST), lenStr(sid), int32BE(0)]);
+  return Buffer.concat([hdr, int32BE(seq), int32BE(EVT_TASK_REQUEST), lenStr(sid), int32BE(0)]);
 }
 
 interface ParsedMsg {
@@ -78,10 +89,8 @@ function parseServerMsg(raw: Buffer): ParsedMsg {
   const flags = byte1 & 0xf;
   let off = 4;
 
-  // ── Error packet (msgType = 0xF) ──
   if (msgType === MT_ERROR) {
     let errorCode = 0;
-    // Error packets always include a 4-byte code
     if (off + 4 <= raw.length) { errorCode = raw.readInt32BE(off); off += 4; }
     let plSize = 0;
     if (off + 4 <= raw.length) { plSize = raw.readUInt32BE(off); off += 4; }
@@ -89,42 +98,33 @@ function parseServerMsg(raw: Buffer): ParsedMsg {
     if (plSize > 0 && off + plSize <= raw.length) {
       errorText = raw.subarray(off, off + plSize).toString("utf-8");
     }
-    // If we couldn't parse a reasonable errorCode, try treating it as a direct JSON payload
-    if (errorCode === 0 && raw.length > 4) {
-      try {
-        const rawJson = raw.subarray(4).toString("utf-8").replace(/^\0+/, "");
-        const parsed = JSON.parse(rawJson);
-        errorText = JSON.stringify(parsed);
-      } catch {}
-    }
-    console.error(`[DoubaoS2S] ERROR frame: code=${errorCode} hex=${raw.toString("hex")} text=${errorText}`);
+    console.error(`[DoubaoS2S] ERROR code=${errorCode} msg=${errorText || raw.toString("hex")}`);
     return { msgType, eventId: 0, payload: Buffer.alloc(0), errorCode, errorText };
   }
 
-  // ── Sequence ──
-  if ((flags & 0x3) === 0x1 || (flags & 0x3) === 0x3) {
+  // sequence (optional)
+  if ((flags & 0x3) !== 0) {
     if (off + 4 <= raw.length) off += 4;
   }
 
-  // ── Event ID ──
+  // event id (optional)
   let eventId = 0;
   if (flags & 0x4) {
     if (off + 4 <= raw.length) { eventId = raw.readInt32BE(off); off += 4; }
   }
 
-  // ── Session ID (session events, eventId > 52) ──
-  if (eventId > 52 && off + 4 <= raw.length) {
+  // session_id for session events (eventId in 100-600 range)
+  if (eventId > 52 && eventId < 700 && off + 4 <= raw.length) {
     const sidLen = raw.readUInt32BE(off);
-    if (sidLen >= 1 && sidLen <= 128 && off + 4 + sidLen <= raw.length) {
+    if (sidLen >= 1 && sidLen <= 256 && off + 4 + sidLen <= raw.length) {
       off += 4 + sidLen;
     }
   }
 
-  // ── Payload ──
+  // payload
   let payload: Buffer | Record<string, unknown> = Buffer.alloc(0);
   if (off + 4 <= raw.length) {
-    const plSize = raw.readUInt32BE(off);
-    off += 4;
+    const plSize = raw.readUInt32BE(off); off += 4;
     if (plSize > 0 && off + plSize <= raw.length) {
       const plBuf = raw.subarray(off, off + plSize);
       if (msgType === MT_AUDIO_SERVER) {
@@ -175,6 +175,7 @@ export interface DoubaoS2SRequest {
   systemRole?: string;
   emotion?: string;
   location?: string;
+  speaker?: string;
 }
 
 export interface DoubaoS2SResponse {
@@ -200,46 +201,41 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
     console.log(`[DoubaoS2S] PCM: ${pcmData.length}B (~${(pcmData.length / 32000).toFixed(1)}s)`);
 
     const sessionId = randomUUID();
+    const speaker = req.speaker || DEFAULT_SPEAKER;
     const systemRole =
       req.systemRole ||
       `你是「小乡」，乡音伴旅App的AI伴游导游，性格活泼热情，擅长介绍新疆文化地理美食民俗。当前用户情感：${req.emotion || "平静"}。位置：${req.location || "新疆"}。请用简短自然口语回答，每次不超过50字。`;
 
-    // Try O2.0 first (2.2.0.0), fall back to O (1.2.1.1) on error
-    const models = ["2.2.0.0", "1.2.1.1"];
-
-    for (const model of models) {
-      const sessionPayload = {
-        tts: {
-          speaker: "zh_female_vv_jupiter_bigtts",
-          audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24000 },
+    const sessionPayload = {
+      tts: {
+        speaker,
+        audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24000 },
+      },
+      dialog: {
+        bot_name: "小乡",
+        system_role: systemRole,
+        speaking_style: "说话活泼可爱，像熟悉新疆文化的年轻导游朋友。",
+        extra: {
+          input_mod: "audio_file",
+          model: "2.2.0.0",
         },
-        dialog: {
-          bot_name: "小乡",
-          system_role: systemRole,
-          speaking_style: "说话活泼可爱，像熟悉新疆文化的年轻导游朋友。",
-          extra: {
-            input_mod: "audio_file",
-            model,
-          },
-        },
-      };
+      },
+    };
 
-      console.log(`[DoubaoS2S] Trying model=${model}`);
+    console.log(`[DoubaoS2S] model=2.2.0.0 speaker=${speaker}`);
+    const result = await attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPayload);
 
-      const result = await attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPayload);
-      if (result !== null) {
-        const allPcm = Buffer.concat(result.audioChunks);
-        console.log(`[DoubaoS2S] Got ${allPcm.length}B PCM with model=${model}`);
-        if (allPcm.length === 0) {
-          return { audioBase64: "", format: "mp3", transcript: result.transcript, aiText: "" };
-        }
-        const mp3 = await convertPcmToMp3(allPcm, 24000);
-        return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: result.aiText };
-      }
-      console.warn(`[DoubaoS2S] model=${model} failed, trying next...`);
+    if (result === null) throw new Error("Doubao S2S failed — check credentials and API access");
+
+    const allPcm = Buffer.concat(result.audioChunks);
+    console.log(`[DoubaoS2S] Done: ${allPcm.length}B PCM, transcript="${result.transcript}"`);
+
+    if (allPcm.length === 0) {
+      return { audioBase64: "", format: "mp3", transcript: result.transcript, aiText: "" };
     }
 
-    throw new Error("All Doubao model versions failed");
+    const mp3 = await convertPcmToMp3(allPcm, 24000);
+    return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: result.aiText };
   } finally {
     unlink(tmpM4a).catch(() => {});
     unlink(tmpPcm).catch(() => {});
@@ -274,9 +270,12 @@ async function attemptS2STurn(
     let transcript = "";
     let aiText = "";
     let sessionStarted = false;
-    let seqNum = 1;
-    let sendActive = false;
     let settled = false;
+    let sendActive = false;
+
+    // Global sequence counter for ALL outgoing messages
+    let seq = 0;
+    const nextSeq = () => ++seq;
 
     function settle(result: S2STurnResult | null) {
       if (settled) return;
@@ -290,27 +289,25 @@ async function attemptS2STurn(
     const CHUNK_MS = 20;
 
     const timer = setTimeout(() => {
-      console.warn(`[DoubaoS2S] Turn timeout`);
+      console.warn(`[DoubaoS2S] Timeout — collected ${audioChunks.length} chunks`);
       ws.terminate();
       settle(audioChunks.length > 0 ? { audioChunks, transcript, aiText } : null);
     }, 25000);
 
     ws.on("open", () => {
-      console.log("[DoubaoS2S] WS open → StartConnection");
-      ws.send(buildConnectEvent(EVT_START_CONN));
+      console.log("[DoubaoS2S] WS open → StartConnection (seq=1)");
+      ws.send(buildConnectEvent(EVT_START_CONN, nextSeq())); // seq=1
     });
 
     ws.on("message", (raw: Buffer) => {
       const msg = parseServerMsg(raw);
 
-      // Error frame → fail this model attempt
       if (msg.msgType === MT_ERROR) {
         ws.terminate();
         settle(null);
         return;
       }
 
-      // Audio data → collect regardless of eventId
       if (msg.msgType === MT_AUDIO_SERVER && Buffer.isBuffer(msg.payload) && (msg.payload as Buffer).length > 0) {
         audioChunks.push(msg.payload as Buffer);
         return;
@@ -319,16 +316,16 @@ async function attemptS2STurn(
       console.log(`[DoubaoS2S] evt=${msg.eventId} type=${msg.msgType}`);
 
       switch (msg.eventId) {
-        case EVT_CONN_STARTED:
-          console.log("[DoubaoS2S] Connected → StartSession");
-          ws.send(buildSessionEvent(EVT_START_SESSION, sessionId, sessionPayload));
+        case EVT_CONN_STARTED: // 50
+          console.log("[DoubaoS2S] Connected → StartSession (seq=2)");
+          ws.send(buildSessionEvent(EVT_START_SESSION, nextSeq(), sessionId, sessionPayload)); // seq=2
           break;
 
         case 150: // SessionStarted
           if (sessionStarted) break;
           sessionStarted = true;
           sendActive = true;
-          console.log("[DoubaoS2S] Session started → streaming PCM");
+          console.log("[DoubaoS2S] Session started → streaming PCM (seq starts at 3)");
           streamPcm();
           break;
 
@@ -342,27 +339,27 @@ async function attemptS2STurn(
 
         case 550: {
           const pl = msg.payload as Record<string, unknown>;
-          if (typeof pl?.content === "string") aiText += pl.content;
+          if (typeof pl?.content === "string") { aiText += pl.content; }
           break;
         }
 
-        case EVT_TTS_ENDED:
-          console.log(`[DoubaoS2S] TTSEnded – ${audioChunks.length} audio chunks`);
-          ws.send(buildSessionEvent(EVT_FINISH_SESSION, sessionId, {}));
-          ws.send(buildConnectEvent(EVT_FINISH_CONN));
+        case EVT_TTS_ENDED: // 359
+          console.log(`[DoubaoS2S] TTSEnded — ${audioChunks.length} chunks collected`);
+          sendActive = false;
+          ws.send(buildSessionEvent(EVT_FINISH_SESSION, nextSeq(), sessionId, {}));
+          ws.send(buildConnectEvent(EVT_FINISH_CONN, nextSeq()));
           ws.close();
           settle({ audioChunks, transcript, aiText });
           break;
 
-        case EVT_DIALOG_ERROR:
         case 153:
-          console.error(`[DoubaoS2S] Dialog error evt=${msg.eventId}:`, JSON.stringify(msg.payload));
+          console.error("[DoubaoS2S] SessionFailed:", JSON.stringify(msg.payload));
           ws.terminate();
           settle(null);
           break;
 
         case 51:
-          console.error("[DoubaoS2S] Connection failed:", JSON.stringify(msg.payload));
+          console.error("[DoubaoS2S] ConnectFailed:", JSON.stringify(msg.payload));
           ws.terminate();
           settle(null);
           break;
@@ -386,11 +383,12 @@ async function attemptS2STurn(
       function send() {
         if (!sendActive || settled) return;
         if (offset >= pcmData.length) {
-          ws.send(buildLastAudioChunk(sessionId));
+          console.log(`[DoubaoS2S] PCM done → last chunk seq=${seq + 1}`);
+          ws.send(buildLastAudioChunk(nextSeq(), sessionId));
           return;
         }
         const end = Math.min(offset + CHUNK_SIZE, pcmData.length);
-        ws.send(buildAudioChunk(pcmData.subarray(offset, end), seqNum++, sessionId));
+        ws.send(buildAudioChunk(pcmData.subarray(offset, end), nextSeq(), sessionId));
         offset = end;
         setTimeout(send, CHUNK_MS);
       }

@@ -322,7 +322,7 @@ export default function XiaoxiangAiScreen() {
 
         setCompanionStatus("processing");
 
-        // ── Doubao S2S: end-to-end ASR + LLM + TTS in one call ──
+        // ── Doubao O2.0 S2S: end-to-end ASR + LLM + TTS ──
         if (useDoubao) {
           try {
             const locName = locationStatus.state === "located" ? locationStatus.locationName : "新疆";
@@ -336,8 +336,12 @@ export default function XiaoxiangAiScreen() {
             const s2sData = await (s2sResp as any).json();
             if (s2sData.error) {
               console.warn("[S2S] 服务端错误:", s2sData.error);
-              // Fall through to Whisper chain
-            } else if (s2sData.audioBase64 && companionActiveRef.current) {
+              setCompanionResponse("小乡暂时连不上，稍等一下～");
+              await new Promise<void>((r) => setTimeout(r, 1500));
+              setCompanionResponse("");
+            } else if (!s2sData.audioBase64) {
+              console.log("[S2S] 静音，重新监听");
+            } else if (companionActiveRef.current) {
               if (s2sData.transcript) console.log("[S2S] 用户说:", s2sData.transcript);
               if (s2sData.aiText) {
                 setCompanionResponse(s2sData.aiText);
@@ -345,19 +349,18 @@ export default function XiaoxiangAiScreen() {
               }
               await playDoubaoAudio(s2sData.audioBase64);
               setCompanionResponse("");
-              continue;
-            } else if (!s2sData.audioBase64) {
-              // Empty response (silence detected) — restart listening immediately
-              console.log("[S2S] 静音，重新监听");
-              setCompanionStatus("listening");
-              continue;
             }
           } catch (s2sErr: any) {
-            console.warn("[Companion] S2S failed, falling back:", s2sErr?.message);
+            console.warn("[S2S] 请求失败:", s2sErr?.message);
+            setCompanionResponse("网络波动，小乡重新连接中～");
+            await new Promise<void>((r) => setTimeout(r, 1500));
+            setCompanionResponse("");
           }
+          setCompanionStatus("listening");
+          continue;
         }
 
-        // ── Fallback chain: Whisper ASR → DeepSeek LLM → expo-speech TTS ──
+        // ── Fallback chain (仅 doubaoReady=false 时): Whisper → DeepSeek → expo-speech ──
         let text = "";
         const tResp = await apiRequest("POST", "/api/ai/transcribe", {
           audio: base64, mime: "audio/m4a",
