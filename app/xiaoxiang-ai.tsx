@@ -304,7 +304,7 @@ export default function XiaoxiangAiScreen() {
     FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => {});
   }, []);
 
-  // Speak a reply using Doubao TTS → Expo Speech fallback
+  // Speak a reply using Doubao TTS only — no device speech fallback to avoid mechanical voice
   const speakReply = useCallback(async (text: string) => {
     if (!text.trim()) return;
     try {
@@ -313,21 +313,12 @@ export default function XiaoxiangAiScreen() {
       if (ttsData.audio) {
         console.log("[speakReply] 豆包TTS成功");
         await playDoubaoAudio(ttsData.audio);
-        return;
+      } else {
+        console.log("[speakReply] 豆包TTS无音频，仅显示文字");
       }
-    } catch {}
-    // Doubao TTS unavailable — use device speech engine
-    console.log("[speakReply] Expo Speech fallback");
-    await new Promise<void>((resolve) => {
-      Speech.speak(text, {
-        language: "zh-CN",
-        rate: 0.92,
-        pitch: 1.05,
-        onDone: resolve,
-        onError: () => resolve(),
-        onStopped: () => resolve(),
-      });
-    });
+    } catch (e: any) {
+      console.log("[speakReply] 豆包TTS失败，仅显示文字:", e?.message);
+    }
   }, [playDoubaoAudio]);
 
   const runCompanionLoop = useCallback(async (
@@ -381,7 +372,7 @@ export default function XiaoxiangAiScreen() {
         }
         if (!recording) throw new Error("Failed to create recording after retries");
         companionRecordingRef.current = recording;
-        await new Promise<void>((resolve) => setTimeout(resolve, 5000));
+        await new Promise<void>((resolve) => setTimeout(resolve, 3000));
         if (!companionActiveRef.current) break; // finally will stop recording
 
         uri = recording.getURI();

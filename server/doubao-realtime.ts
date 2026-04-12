@@ -387,6 +387,7 @@ async function attemptS2STurn(
     let ttsKnownFailed  = false;
     // Timer used after InvalidSpeaker: wait for LLM text (event 550) up to 5s
     let textWaitTimer: ReturnType<typeof setTimeout> | null = null;
+    let postAudioTimer: ReturnType<typeof setTimeout> | null = null;
 
     let seq = 0;
     const nextSeq = () => ++seq;
@@ -396,6 +397,7 @@ async function attemptS2STurn(
       settled  = true;
       sendActive = false;
       if (textWaitTimer) { clearTimeout(textWaitTimer); textWaitTimer = null; }
+      if (postAudioTimer) { clearTimeout(postAudioTimer); postAudioTimer = null; }
       clearTimeout(globalTimer);
       resolve(result);
     }
@@ -574,6 +576,16 @@ async function attemptS2STurn(
         if (offset >= pcmData.length) {
           console.log(`[DoubaoS2S] PCM done → last chunk`);
           ws.send(buildLastAudioChunk(nextSeq(), sessionId));
+          // Post-audio safety timeout: if S2S returns nothing 12s after we finish
+          // sending audio, give up rather than waiting the full global timeout.
+          postAudioTimer = setTimeout(() => {
+            postAudioTimer = null;
+            if (!settled && audioChunks.length === 0) {
+              console.warn(`[DoubaoS2S] Post-audio timeout (12s) — no TTS received, settling empty. transcript="${transcript}"`);
+              try { ws.terminate(); } catch {}
+              settle({ audioChunks: [], transcript, aiText });
+            }
+          }, 12000);
           return;
         }
         const end = Math.min(offset + CHUNK_SIZE, pcmData.length);

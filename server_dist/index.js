@@ -669,6 +669,7 @@ async function attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPay
     let sendActive = false;
     let ttsKnownFailed = false;
     let textWaitTimer = null;
+    let postAudioTimer = null;
     let seq = 0;
     const nextSeq = () => ++seq;
     function settle(result) {
@@ -678,6 +679,10 @@ async function attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPay
       if (textWaitTimer) {
         clearTimeout(textWaitTimer);
         textWaitTimer = null;
+      }
+      if (postAudioTimer) {
+        clearTimeout(postAudioTimer);
+        postAudioTimer = null;
       }
       clearTimeout(globalTimer);
       resolve2(result);
@@ -847,6 +852,17 @@ async function attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPay
         if (offset >= pcmData.length) {
           console.log(`[DoubaoS2S] PCM done \u2192 last chunk`);
           ws.send(buildLastAudioChunk(nextSeq(), sessionId));
+          postAudioTimer = setTimeout(() => {
+            postAudioTimer = null;
+            if (!settled && audioChunks.length === 0) {
+              console.warn(`[DoubaoS2S] Post-audio timeout (12s) \u2014 no TTS received, settling empty. transcript="${transcript}"`);
+              try {
+                ws.terminate();
+              } catch {
+              }
+              settle({ audioChunks: [], transcript, aiText });
+            }
+          }, 12e3);
           return;
         }
         const end = Math.min(offset + CHUNK_SIZE, pcmData.length);
