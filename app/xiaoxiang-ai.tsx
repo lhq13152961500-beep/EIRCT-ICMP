@@ -139,6 +139,7 @@ export default function XiaoxiangAiScreen() {
   const [companionResponse, setCompanionResponse] = useState("");
   const companionActiveRef = useRef(false);
   const enrollRecordingRef = useRef<Audio.Recording | null>(null);
+  const companionRecordingRef = useRef<Audio.Recording | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "0",
@@ -182,6 +183,27 @@ export default function XiaoxiangAiScreen() {
     }
     const { granted } = await Audio.requestPermissionsAsync();
     if (!granted) { Alert.alert("需要麦克风权限"); return; }
+    // Stop companion mode and its active recording immediately
+    if (companionActiveRef.current) {
+      companionActiveRef.current = false;
+      setIsCompanionActive(false);
+      setCompanionStatus("idle");
+    }
+    if (companionRecordingRef.current) {
+      try { await companionRecordingRef.current.stopAndUnloadAsync(); } catch {}
+      companionRecordingRef.current = null;
+    }
+    // Stop any enrollment recording already in progress
+    if (enrollRecordingRef.current) {
+      try { await enrollRecordingRef.current.stopAndUnloadAsync(); } catch {}
+      enrollRecordingRef.current = null;
+    }
+    // Stop chat voice recording if active
+    if (recordingRef.current) {
+      try { await recordingRef.current.stopAndUnloadAsync(); } catch {}
+      recordingRef.current = null;
+      setIsListening(false);
+    }
     await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
     const { recording } = await Audio.Recording.createAsync({
       android: { extension: ".m4a", outputFormat: 2, audioEncoder: 3, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000 },
@@ -236,8 +258,10 @@ export default function XiaoxiangAiScreen() {
           ios: { extension: ".m4a", audioQuality: 127, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000, linearPCMBitDepth: 16, linearPCMIsBigEndian: false, linearPCMIsFloat: false },
           web: {},
         });
+        companionRecordingRef.current = recording;
         await new Promise<void>((resolve) => setTimeout(resolve, 4000));
-        if (!companionActiveRef.current) { await recording.stopAndUnloadAsync(); break; }
+        companionRecordingRef.current = null;
+        if (!companionActiveRef.current) { try { await recording.stopAndUnloadAsync(); } catch {} break; }
         await recording.stopAndUnloadAsync();
         const uri = recording.getURI();
         if (!uri) continue;
@@ -502,6 +526,16 @@ export default function XiaoxiangAiScreen() {
       }
       const { granted } = await Audio.requestPermissionsAsync();
       if (!granted) { Alert.alert("需要麦克风权限", "请在设置中开启麦克风权限"); return; }
+      if (recordingRef.current) {
+        try { await recordingRef.current.stopAndUnloadAsync(); } catch {}
+        recordingRef.current = null;
+        setIsListening(false);
+      }
+      if (isEnrolling) { setIsEnrolling(false); setEnrollCountdown(0); }
+      if (enrollRecordingRef.current) {
+        try { await enrollRecordingRef.current.stopAndUnloadAsync(); } catch {}
+        enrollRecordingRef.current = null;
+      }
       companionActiveRef.current = true;
       setIsCompanionActive(true);
       runCompanionLoop(emotion, activityHint, enrolledPrompt);
