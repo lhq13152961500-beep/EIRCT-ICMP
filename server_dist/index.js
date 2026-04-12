@@ -381,7 +381,7 @@ var EVT_FINISH_SESSION = 102;
 var EVT_TASK_REQUEST = 200;
 var EVT_CONN_STARTED = 50;
 var EVT_TTS_ENDED = 359;
-var DEFAULT_SPEAKER = "zh_female_vv_jupiter_bigtts";
+var DEFAULT_SPEAKER = "BV700_streaming";
 function int32BE(n) {
   const b = Buffer.alloc(4);
   b.writeInt32BE(n, 0);
@@ -411,7 +411,7 @@ function buildAudioChunk(pcm, seq, sid) {
 function buildLastAudioChunk(seq, sid) {
   const flags = FL_HAS_EVENT | FL_LAST_WITH_SEQ;
   const hdr = Buffer.from([BYTE0, MT_AUDIO_CLIENT << 4 | flags, 0, 0]);
-  return Buffer.concat([hdr, int32BE(seq), int32BE(EVT_TASK_REQUEST), lenStr(sid), int32BE(0)]);
+  return Buffer.concat([hdr, int32BE(-seq), int32BE(EVT_TASK_REQUEST), lenStr(sid), int32BE(0)]);
 }
 function parseServerMsg(raw) {
   if (raw.length < 4) return { msgType: 0, eventId: 0, payload: Buffer.alloc(0) };

@@ -27,8 +27,9 @@ const EVT_TASK_REQUEST = 200;
 const EVT_CONN_STARTED = 50;
 const EVT_TTS_ENDED = 359;
 
-// O2.0 default voice — can be overridden per-request
-export const DEFAULT_SPEAKER = "zh_female_vv_jupiter_bigtts";
+// O2.0 default voice — BV700_streaming is a standard female voice available to all accounts
+// BigTTS voices (zh_female_vv_jupiter_bigtts etc.) require separate activation
+export const DEFAULT_SPEAKER = "BV700_streaming";
 
 function int32BE(n: number): Buffer {
   const b = Buffer.alloc(4);
@@ -68,9 +69,10 @@ function buildAudioChunk(pcm: Buffer, seq: number, sid: string): Buffer {
 }
 
 function buildLastAudioChunk(seq: number, sid: string): Buffer {
+  // Last chunk MUST use negative seq number (protocol requirement)
   const flags = FL_HAS_EVENT | FL_LAST_WITH_SEQ;
   const hdr = Buffer.from([BYTE0, (MT_AUDIO_CLIENT << 4) | flags, 0x00, 0x00]);
-  return Buffer.concat([hdr, int32BE(seq), int32BE(EVT_TASK_REQUEST), lenStr(sid), int32BE(0)]);
+  return Buffer.concat([hdr, int32BE(-seq), int32BE(EVT_TASK_REQUEST), lenStr(sid), int32BE(0)]);
 }
 
 interface ParsedMsg {

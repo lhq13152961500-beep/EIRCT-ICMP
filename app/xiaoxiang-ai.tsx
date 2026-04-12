@@ -295,7 +295,14 @@ export default function XiaoxiangAiScreen() {
     currentPrompt: string,
     useDoubao: boolean,
   ) => {
+    // Ensure any lingering recording is cleaned up before the loop
+    if (companionRecordingRef.current) {
+      try { await companionRecordingRef.current.stopAndUnloadAsync(); } catch {}
+      companionRecordingRef.current = null;
+    }
+
     while (companionActiveRef.current) {
+      let recording: Audio.Recording | null = null;
       try {
         // Stop any playback before recording to prevent feedback
         if (await Speech.isSpeakingAsync()) {
@@ -305,18 +312,19 @@ export default function XiaoxiangAiScreen() {
 
         setCompanionStatus("listening");
         await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-        const { recording } = await Audio.Recording.createAsync({
+        const result = await Audio.Recording.createAsync({
           android: { extension: ".m4a", outputFormat: 2, audioEncoder: 3, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000 },
           ios: { extension: ".m4a", audioQuality: 127, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000, linearPCMBitDepth: 16, linearPCMIsBigEndian: false, linearPCMIsFloat: false },
           web: {},
         });
+        recording = result.recording;
         companionRecordingRef.current = recording;
         await new Promise<void>((resolve) => setTimeout(resolve, 5000));
         companionRecordingRef.current = null;
-        if (!companionActiveRef.current) { try { await recording.stopAndUnloadAsync(); } catch {} break; }
-        await recording.stopAndUnloadAsync();
-
+        if (!companionActiveRef.current) { try { await recording.stopAndUnloadAsync(); } catch {} recording = null; break; }
         const uri = recording.getURI();
+        await recording.stopAndUnloadAsync();
+        recording = null;
         if (!uri) continue;
         const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
 
@@ -396,7 +404,13 @@ export default function XiaoxiangAiScreen() {
         setCompanionResponse("");
       } catch (e) {
         console.error("[Companion] loop error:", e);
-        await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+        // Always clean up recording on error to prevent "Only one Recording" crash
+        if (recording) {
+          try { await recording.stopAndUnloadAsync(); } catch {}
+          recording = null;
+        }
+        companionRecordingRef.current = null;
+        await new Promise<void>((resolve) => setTimeout(resolve, 1500));
       }
     }
     Speech.stop();
