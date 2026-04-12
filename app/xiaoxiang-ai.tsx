@@ -142,6 +142,7 @@ export default function XiaoxiangAiScreen() {
   const enrollRecordingRef = useRef<Audio.Recording | null>(null);
   const companionRecordingRef = useRef<Audio.Recording | null>(null);
   const [doubaoReady, setDoubaoReady] = useState(false);
+  const doubaoReadyRef = useRef(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "0",
@@ -178,8 +179,13 @@ export default function XiaoxiangAiScreen() {
     });
     apiRequest("GET", "/api/doubao/status", undefined)
       .then((r: any) => r.json())
-      .then((d: any) => setDoubaoReady(!!d?.configured))
-      .catch(() => setDoubaoReady(false));
+      .then((d: any) => {
+        const ready = !!d?.configured;
+        doubaoReadyRef.current = ready;
+        setDoubaoReady(ready);
+        console.log("[Doubao] status:", ready ? "ready" : "not configured");
+      })
+      .catch(() => { doubaoReadyRef.current = false; setDoubaoReady(false); });
   }, []);
 
   const startEnrollment = useCallback(async () => {
@@ -293,7 +299,6 @@ export default function XiaoxiangAiScreen() {
     currentEmotion: Emotion,
     currentActivityHint: string,
     currentPrompt: string,
-    useDoubao: boolean,
   ) => {
     // Ensure any lingering recording is cleaned up before the loop
     if (companionRecordingRef.current) {
@@ -331,6 +336,9 @@ export default function XiaoxiangAiScreen() {
         setCompanionStatus("processing");
 
         // ── Doubao O2.0 S2S: end-to-end ASR + LLM + TTS ──
+        // Always read from ref so the latest value is used regardless of when the loop started
+        const useDoubao = doubaoReadyRef.current;
+        console.log("[Companion] useDoubao=", useDoubao);
         if (useDoubao) {
           try {
             const locName = locationStatus.state === "located" ? locationStatus.locationName : "新疆";
@@ -656,7 +664,7 @@ export default function XiaoxiangAiScreen() {
       }
       companionActiveRef.current = true;
       setIsCompanionActive(true);
-      runCompanionLoop(emotion, activityHint, enrolledPrompt, doubaoReady);
+      runCompanionLoop(emotion, activityHint, enrolledPrompt);
     }
   }, [isCompanionActive, voiceAvailable, emotion, activityHint, enrolledPrompt, doubaoReady, runCompanionLoop]);
 
