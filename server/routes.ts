@@ -453,6 +453,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const apiKey = process.env.DEEPSEEK_API_KEY;
 
       if (apiKey) {
+        // Fetch real-time weather for Turpan from Amap
+        let weatherInfo = "暂无实时天气数据";
+        const amapKey = process.env.AMAP_SERVER_KEY;
+        if (amapKey) {
+          try {
+            const weatherData = await new Promise<string>((resolve) => {
+              https.get(`https://restapi.amap.com/v3/weather/weatherInfo?city=650400&extensions=base&key=${amapKey}`, (res) => {
+                let d = "";
+                res.on("data", (c) => d += c);
+                res.on("end", () => {
+                  try {
+                    const w = JSON.parse(d);
+                    const live = w.lives?.[0];
+                    if (live) {
+                      resolve(`${live.weather}，气温${live.temperature}°C，${live.winddirection}风${live.windpower}级，湿度${live.humidity}%（数据时间：${live.reporttime}）`);
+                    } else {
+                      resolve("暂无实时天气数据");
+                    }
+                  } catch { resolve("暂无实时天气数据"); }
+                });
+              }).on("error", () => resolve("暂无实时天气数据"));
+            });
+            weatherInfo = weatherData;
+          } catch { /* ignore */ }
+        }
+
         // Compute distance from user to Tuyugou (42.849°N, 89.565°E)
         let distanceInfo = "位置未知，无法计算距离";
         if (userLocation) {
@@ -482,6 +508,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 10. 烤馕馆：现烤坑炉馕饼，外脆内软，当地特色主食
 11. 瓜果长廊：哈密瓜、白杏等特色瓜果，可现场品尝
 12. 游客服务中心：景区导览、租赁、急救综合服务
+
+【吐鲁番实时天气】${weatherInfo}
 
 【游客当前信息】
 - 情绪状态：${emotion || "平静"}（疲惫时建议休息景点，好奇时深入讲解，愉快时分享趣味细节）

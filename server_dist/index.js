@@ -760,6 +760,33 @@ async function registerRoutes(app2) {
       }
       const apiKey = process.env.DEEPSEEK_API_KEY;
       if (apiKey) {
+        let weatherInfo = "\u6682\u65E0\u5B9E\u65F6\u5929\u6C14\u6570\u636E";
+        const amapKey = process.env.AMAP_SERVER_KEY;
+        if (amapKey) {
+          try {
+            const weatherData = await new Promise((resolve2) => {
+              https.get(`https://restapi.amap.com/v3/weather/weatherInfo?city=650400&extensions=base&key=${amapKey}`, (res2) => {
+                let d = "";
+                res2.on("data", (c) => d += c);
+                res2.on("end", () => {
+                  try {
+                    const w = JSON.parse(d);
+                    const live = w.lives?.[0];
+                    if (live) {
+                      resolve2(`${live.weather}\uFF0C\u6C14\u6E29${live.temperature}\xB0C\uFF0C${live.winddirection}\u98CE${live.windpower}\u7EA7\uFF0C\u6E7F\u5EA6${live.humidity}%\uFF08\u6570\u636E\u65F6\u95F4\uFF1A${live.reporttime}\uFF09`);
+                    } else {
+                      resolve2("\u6682\u65E0\u5B9E\u65F6\u5929\u6C14\u6570\u636E");
+                    }
+                  } catch {
+                    resolve2("\u6682\u65E0\u5B9E\u65F6\u5929\u6C14\u6570\u636E");
+                  }
+                });
+              }).on("error", () => resolve2("\u6682\u65E0\u5B9E\u65F6\u5929\u6C14\u6570\u636E"));
+            });
+            weatherInfo = weatherData;
+          } catch {
+          }
+        }
         let distanceInfo = "\u4F4D\u7F6E\u672A\u77E5\uFF0C\u65E0\u6CD5\u8BA1\u7B97\u8DDD\u79BB";
         if (userLocation) {
           const R = 6371;
@@ -787,6 +814,8 @@ async function registerRoutes(app2) {
 10. \u70E4\u9995\u9986\uFF1A\u73B0\u70E4\u5751\u7089\u9995\u997C\uFF0C\u5916\u8106\u5185\u8F6F\uFF0C\u5F53\u5730\u7279\u8272\u4E3B\u98DF
 11. \u74DC\u679C\u957F\u5ECA\uFF1A\u54C8\u5BC6\u74DC\u3001\u767D\u674F\u7B49\u7279\u8272\u74DC\u679C\uFF0C\u53EF\u73B0\u573A\u54C1\u5C1D
 12. \u6E38\u5BA2\u670D\u52A1\u4E2D\u5FC3\uFF1A\u666F\u533A\u5BFC\u89C8\u3001\u79DF\u8D41\u3001\u6025\u6551\u7EFC\u5408\u670D\u52A1
+
+\u3010\u5410\u9C81\u756A\u5B9E\u65F6\u5929\u6C14\u3011${weatherInfo}
 
 \u3010\u6E38\u5BA2\u5F53\u524D\u4FE1\u606F\u3011
 - \u60C5\u7EEA\u72B6\u6001\uFF1A${emotion || "\u5E73\u9759"}\uFF08\u75B2\u60EB\u65F6\u5EFA\u8BAE\u4F11\u606F\u666F\u70B9\uFF0C\u597D\u5947\u65F6\u6DF1\u5165\u8BB2\u89E3\uFF0C\u6109\u5FEB\u65F6\u5206\u4EAB\u8DA3\u5473\u7EC6\u8282\uFF09
