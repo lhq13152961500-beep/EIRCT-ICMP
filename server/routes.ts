@@ -440,9 +440,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/ai/chat", async (req, res) => {
     try {
-      const { messages, emotion } = req.body as {
+      const { messages, emotion, userLocation } = req.body as {
         messages: { role: string; content: string }[];
         emotion?: string;
+        userLocation?: { name: string; lat: number; lng: number } | null;
       };
       if (!Array.isArray(messages) || messages.length === 0) {
         return res.status(400).json({ error: "messages required" });
@@ -451,6 +452,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const apiKey = process.env.DEEPSEEK_API_KEY;
 
       if (apiKey) {
+        // Compute distance from user to Tuyugou (42.849°N, 89.565°E)
+        let distanceInfo = "位置未知，无法计算距离";
+        if (userLocation) {
+          const R = 6371;
+          const dLat = (42.849 - userLocation.lat) * Math.PI / 180;
+          const dLng = (89.565 - userLocation.lng) * Math.PI / 180;
+          const a = Math.sin(dLat / 2) ** 2 + Math.cos(userLocation.lat * Math.PI / 180) * Math.cos(42.849 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+          const km = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+          const hours = km < 80 ? "约1小时" : km < 150 ? "约1.5-2小时" : "约2.5-3小时";
+          distanceInfo = `约${km}公里（${hours}车程）`;
+        }
+
         const systemPrompt = `你是「小乡」，乡音伴旅APP的AI伴游助手，专门服务于新疆吐鲁番吐峪沟景区。
 
 【你的性格】友善活泼、说话亲切自然，像熟悉当地的朋友，偶尔穿插维吾尔语词汇（如"亚克西"=很好，"热合买提"=谢谢）。
@@ -469,10 +482,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 11. 瓜果长廊：哈密瓜、白杏等特色瓜果，可现场品尝
 12. 游客服务中心：景区导览、租赁、急救综合服务
 
-【当前游客情绪】${emotion || "平静"}（疲惫时主动建议休息景点，好奇时深入讲解，愉快时分享趣味细节）
+【游客当前信息】
+- 情绪状态：${emotion || "平静"}（疲惫时建议休息景点，好奇时深入讲解，愉快时分享趣味细节）
+- 当前位置：${userLocation ? userLocation.name : "位置未知"}
+- 距吐峪沟景区的距离：${distanceInfo}
 
 【回答原则】
 - 直接回答用户的具体问题，不要答非所问
+- 涉及交通/距离时，必须根据用户当前位置给出准确信息
 - 结合以上具体景点信息给出实用建议
 - 回答简洁生动，控制在200字以内
 - 如果问题与吐峪沟/吐鲁番无关，引导话题回到旅游相关内容`;

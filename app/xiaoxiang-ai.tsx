@@ -21,6 +21,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 import { router, Stack } from "expo-router";
 import { apiRequest } from "@/lib/query-client";
+import { useLocation } from "@/contexts/LocationContext";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -158,6 +159,7 @@ function XiaoxiangFace({
 
 export default function XiaoxiangAiScreen() {
   const insets = useSafeAreaInsets();
+  const { locationStatus } = useLocation();
   const [screen, setScreen] = useState<Screen>("welcome");
   const [emotion, setEmotion] = useState<Emotion>("平静");
   const [messages, setMessages] = useState<Message[]>([
@@ -211,7 +213,10 @@ export default function XiaoxiangAiScreen() {
           role: m.role,
           content: m.content,
         }));
-        const resp = await apiRequest("POST", "/api/ai/chat", { messages: history, emotion });
+        const userLocation = locationStatus.state === "located"
+          ? { name: locationStatus.locationName, lat: locationStatus.lat, lng: locationStatus.lng }
+          : null;
+        const resp = await apiRequest("POST", "/api/ai/chat", { messages: history, emotion, userLocation });
         const data = await resp.json();
         if (data.reply) {
           if (data.emotion && EMOTIONS[data.emotion as Emotion]) {
