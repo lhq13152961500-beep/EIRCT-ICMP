@@ -810,7 +810,7 @@ async function registerRoutes(app2) {
             ...messages
           ],
           max_tokens: 300,
-          temperature: 1.3
+          temperature: 0.85
         });
         console.log("[DeepSeek] usage:", completion.usage);
         const reply2 = completion.choices[0]?.message?.content || "\u62B1\u6B49\uFF0C\u6211\u6682\u65F6\u65E0\u6CD5\u56DE\u7B54\u8FD9\u4E2A\u95EE\u9898\uFF5E";
