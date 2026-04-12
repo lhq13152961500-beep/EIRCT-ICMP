@@ -143,6 +143,9 @@ export default function XiaoxiangAiScreen() {
   const companionRecordingRef = useRef<Audio.Recording | null>(null);
   const [doubaoReady, setDoubaoReady] = useState(false);
   const doubaoReadyRef = useRef(false);
+  const emotionRef = useRef<Emotion>(activityEmotion);
+  const activityHintRef = useRef<string>(activityHint);
+  const stepRateRef = useRef<number>(stepRate);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "0",
@@ -171,7 +174,13 @@ export default function XiaoxiangAiScreen() {
 
   useEffect(() => {
     setEmotion(activityEmotion);
+    emotionRef.current = activityEmotion;
   }, [activityEmotion]);
+
+  useEffect(() => {
+    activityHintRef.current = activityHint;
+    stepRateRef.current = stepRate;
+  }, [activityHint, stepRate]);
 
   useEffect(() => {
     AsyncStorage.getItem("voiceEnrollPrompt").then((val) => {
@@ -306,6 +315,8 @@ export default function XiaoxiangAiScreen() {
       companionRecordingRef.current = null;
     }
 
+    let silenceCount = 0;
+
     while (companionActiveRef.current) {
       let recording: Audio.Recording | null = null;
       let uri: string | null = null;
@@ -357,9 +368,12 @@ export default function XiaoxiangAiScreen() {
         setCompanionStatus("processing");
 
         // ── Doubao O2.0 S2S: end-to-end ASR + LLM + TTS ──
-        // Always read from ref so the latest value is used regardless of when the loop started
+        // Always read from refs so latest emotion/activity is used
         const useDoubao = doubaoReadyRef.current;
-        console.log("[Companion] useDoubao=", useDoubao);
+        const liveEmotion = emotionRef.current;
+        const liveActivityHint = activityHintRef.current;
+        const liveStepRate = stepRateRef.current;
+        console.log("[Companion] useDoubao=", useDoubao, "emotion=", liveEmotion);
         if (useDoubao) {
           try {
             const locName = locationStatus.state === "located" ? locationStatus.locationName : "新疆";
@@ -367,8 +381,10 @@ export default function XiaoxiangAiScreen() {
             const s2sResp = await apiRequest("POST", "/api/doubao/s2s", {
               audioBase64: base64,
               mimeType: "audio/m4a",
-              emotion: currentEmotion,
+              emotion: liveEmotion,
               location: locName,
+              activityHint: liveActivityHint,
+              stepRate: liveStepRate,
             });
             const s2sData = await (s2sResp as any).json();
             if (s2sData.error) {
@@ -377,8 +393,46 @@ export default function XiaoxiangAiScreen() {
               await new Promise<void>((r) => setTimeout(r, 1500));
               setCompanionResponse("");
             } else if (!s2sData.audioBase64) {
-              console.log("[S2S] 静音，重新监听");
+              // Silence detected — track count and trigger proactive after 2 rounds
+              silenceCount++;
+              console.log("[S2S] 静音，计数:", silenceCount);
+              if (silenceCount >= 2 && companionActiveRef.current) {
+                silenceCount = 0;
+                const proactivePrompts: Record<string, string> = {
+                  疲惫: "游客没有说话，用轻柔温暖的语气主动关心他们，询问是否需要休息，推荐一个附近的舒适休息点",
+                  无聊: "游客没有说话，主动出一道吐峪沟趣味小问题，激发对话兴趣",
+                  好奇: "游客没有说话，主动分享一个吐峪沟鲜为人知的历史小故事",
+                  开心: "游客没有说话，主动推荐一个附近拍照打卡的好地方",
+                  愉快: "游客没有说话，主动建议一个深度体验项目，激发探索欲",
+                  平静: "游客没有说话，用轻松的语气分享一个关于吐峪沟风俗文化的有趣知识点",
+                };
+                const proactiveContext = proactivePrompts[liveEmotion] || proactivePrompts["平静"];
+                try {
+                  const userLoc = locationStatus.state === "located"
+                    ? { name: locationStatus.locationName, lat: locationStatus.lat, lng: locationStatus.lng }
+                    : null;
+                  const chatResp = await apiRequest("POST", "/api/ai/chat", {
+                    messages: [{ role: "user", content: proactiveContext }],
+                    emotion: liveEmotion,
+                    userLocation: userLoc,
+                    activityData: { hint: liveActivityHint, stepRate: liveStepRate },
+                  });
+                  const chatData = await (chatResp as any).json();
+                  if (chatData.reply && companionActiveRef.current) {
+                    setCompanionResponse(chatData.reply);
+                    const ttsResp = await apiRequest("POST", "/api/doubao/tts", { text: chatData.reply });
+                    const ttsData = await (ttsResp as any).json();
+                    if (ttsData.audio && companionActiveRef.current) {
+                      await playDoubaoAudio(ttsData.audio);
+                    }
+                    setCompanionResponse("");
+                  }
+                } catch (proErr: any) {
+                  console.warn("[Proactive] 失败:", proErr?.message);
+                }
+              }
             } else if (companionActiveRef.current) {
+              silenceCount = 0;
               if (s2sData.transcript) console.log("[S2S] 用户说:", s2sData.transcript);
               if (s2sData.aiText) {
                 setCompanionResponse(s2sData.aiText);
@@ -793,12 +847,15 @@ export default function XiaoxiangAiScreen() {
 
   if (screen === "companion") {
     const ew = EMOTION_WELCOME[emotion] ?? EMOTION_WELCOME["平静"];
-    const COMPANION_CHIPS = [
-      "时间有限，帮我规划新路线",
-      "我有点累，推荐附近休息点",
-      "讲个吐峪沟的历史故事",
-      "吐峪沟有什么特色美食",
-    ];
+    const COMPANION_CHIPS_BY_EMOTION: Record<string, string[]> = {
+      疲惫: ["附近哪里可以休息？", "推荐轻松好玩的景点", "有什么吃的可以补充体力？", "帮我规划轻松路线"],
+      无聊: ["给我出个吐峪沟趣味问题", "推荐最特别的体验项目", "讲个有趣的新疆故事", "这里还有什么好玩的？"],
+      好奇: ["讲千年洞窟的历史", "麻扎村有什么特别之处？", "丝绸之路上的吐峪沟", "维吾尔族文化深度解说"],
+      开心: ["推荐最佳拍照打卡点", "有什么特色手工纪念品？", "今天适合游览哪几个景点？", "帮我找最有氛围的地方"],
+      愉快: ["帮我规划完整游览路线", "推荐最值得深度体验的景点", "有什么隐藏景点？", "讲讲吐峪沟全部12个景点"],
+      平静: ["讲个吐峪沟的历史故事", "吐峪沟有什么特色美食？", "推荐今天游览路线", "时间有限帮我规划"],
+    };
+    const COMPANION_CHIPS = COMPANION_CHIPS_BY_EMOTION[emotion] ?? COMPANION_CHIPS_BY_EMOTION["平静"];
 
     const statusText =
       companionStatus === "listening" ? "小乡正在聆听..." :

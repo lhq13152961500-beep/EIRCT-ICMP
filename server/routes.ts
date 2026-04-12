@@ -553,19 +553,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Doubao S2S RealtimeAPI – audio → AI response audio (end-to-end)
   app.post("/api/doubao/s2s", async (req, res) => {
-    const { audioBase64, mimeType, systemRole, emotion, location } = req.body as {
+    const { audioBase64, mimeType, systemRole, emotion, location, activityHint, stepRate } = req.body as {
       audioBase64?: string;
       mimeType?: string;
       systemRole?: string;
       emotion?: string;
       location?: string;
+      activityHint?: string;
+      stepRate?: number;
     };
     if (!audioBase64) return res.status(400).json({ error: "audioBase64 required" });
     if (!process.env.VOLCENGINE_APP_ID || !process.env.VOLCENGINE_ACCESS_TOKEN) {
       return res.status(503).json({ error: "doubao_not_configured" });
     }
     try {
-      const result = await doublaoRealtimeTurn({ audioBase64, mimeType, systemRole, emotion, location });
+      const result = await doublaoRealtimeTurn({ audioBase64, mimeType, systemRole, emotion, location, activityHint, stepRate });
       return res.json(result);
     } catch (err: any) {
       console.error("[DoubaoS2S] error:", err?.message);
