@@ -86,12 +86,46 @@ assets/images/
 - Display name priority: `profile?.displayName || user?.username || "我"`
 - Phone-SMS login stores phone as `username` — always use display name from profile
 
+## AI Companion (小乡伴游) Architecture
+
+### Voice Interaction Pipeline
+```
+Record audio (m4a, 5s)
+  ↓
+[Path A] Doubao S2S WebSocket (wss://openspeech.bytedance.com/api/v3/realtime/dialogue)
+  → ASR (event 451) + LLM (event 550) + TTS (event audio)
+  → If S2S returns audio: play via playDoubaoAudio()
+  → If S2S returns empty: fall through to Path B
+
+[Path B] Whisper ASR (/api/ai/transcribe via Groq or OpenAI)
+  → ARK LLM (/api/ai/chat, doubao-seed-2-0-lite-260215)
+  → speakReply(): tries Doubao HTTP TTS → falls back to Expo Speech
+```
+
+### API Keys & Services
+- `ARK_API_KEY`: Doubao LLM (doubao-seed-2-0-lite-260215) — **working**
+- `VOLCENGINE_APP_ID` + `VOLCENGINE_ACCESS_TOKEN`: Doubao S2S + HTTP TTS
+  - S2S: connects OK but returns empty responses (WS code 1006)
+  - HTTP TTS: `code=3001 resource not granted` — NOT activated
+- `GROQ_API_KEY`: Whisper ASR — **working**
+
+### Emotion/Activity Context
+- `emotionRef`, `activityHintRef`, `stepRateRef` — live refs updated from ActivityContext
+- Every S2S call includes: `emotion`, `location`, `activityHint`, `stepRate`
+- `buildSystemPrompt()` in `server/doubao-realtime.ts` generates context-aware prompts
+- Proactive silence detection: 2 silent rounds → emotion-based proactive message
+
+### TTS Status
+Doubao HTTP TTS (`volcano_mega`/`volcano_tts`) is unavailable (code 3001).
+`speakReply()` auto-falls back to `expo-speech` device TTS.
+
 ## Technical Notes
 
 - `expo-file-system` import MUST use `from "expo-file-system/legacy"` (non-legacy API deprecated)
 - `readAudioBase64(uri)`: tries `FileSystem.readAsStringAsync` first, falls back to `fetch+FileReader`
 - Audio URLs: recordings in `recordings/*.m4a`, comments in `comments/*.m4a` on Supabase Storage
 - `apiRequest` returns `Response` — always call `.json()` to parse
+- Chinese quotes inside JS strings: use `「...」` NOT `"..."` or `"..."`
 
 ## Workflows
 

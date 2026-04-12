@@ -304,6 +304,32 @@ export default function XiaoxiangAiScreen() {
     FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => {});
   }, []);
 
+  // Speak a reply using Doubao TTS → Expo Speech fallback
+  const speakReply = useCallback(async (text: string) => {
+    if (!text.trim()) return;
+    try {
+      const ttsResp = await apiRequest("POST", "/api/doubao/tts", { text });
+      const ttsData = await (ttsResp as any).json();
+      if (ttsData.audio) {
+        console.log("[speakReply] 豆包TTS成功");
+        await playDoubaoAudio(ttsData.audio);
+        return;
+      }
+    } catch {}
+    // Doubao TTS unavailable — use device speech engine
+    console.log("[speakReply] Expo Speech fallback");
+    await new Promise<void>((resolve) => {
+      Speech.speak(text, {
+        language: "zh-CN",
+        rate: 0.92,
+        pitch: 1.05,
+        onDone: resolve,
+        onError: () => resolve(),
+        onStopped: () => resolve(),
+      });
+    });
+  }, [playDoubaoAudio]);
+
   const runCompanionLoop = useCallback(async (
     currentEmotion: Emotion,
     currentActivityHint: string,
@@ -316,6 +342,7 @@ export default function XiaoxiangAiScreen() {
     }
 
     let silenceCount = 0;
+    let s2sFailCount = 0;  // consecutive empty S2S responses → skip S2S after threshold
 
     while (companionActiveRef.current) {
       let recording: Audio.Recording | null = null;
@@ -373,8 +400,10 @@ export default function XiaoxiangAiScreen() {
         const liveEmotion = emotionRef.current;
         const liveActivityHint = activityHintRef.current;
         const liveStepRate = stepRateRef.current;
-        console.log("[Companion] useDoubao=", useDoubao, "emotion=", liveEmotion);
-        if (useDoubao) {
+        // Skip S2S after 2 consecutive empty responses to avoid 14s timeout per turn
+        const tryS2S = useDoubao && s2sFailCount < 2;
+        console.log("[Companion] tryS2S=", tryS2S, "s2sFailCount=", s2sFailCount, "emotion=", liveEmotion);
+        if (tryS2S) {
           try {
             const locName = locationStatus.state === "located" ? locationStatus.locationName : "新疆";
             console.log("[S2S] 发送请求…");
@@ -387,52 +416,18 @@ export default function XiaoxiangAiScreen() {
               stepRate: liveStepRate,
             });
             const s2sData = await (s2sResp as any).json();
+
             if (s2sData.error) {
+              // Hard server error — brief pause and retry
               console.warn("[S2S] 服务端错误:", s2sData.error);
-              setCompanionResponse("小乡暂时连不上，稍等一下～");
-              await new Promise<void>((r) => setTimeout(r, 1500));
-              setCompanionResponse("");
-            } else if (!s2sData.audioBase64) {
-              // Silence detected — track count and trigger proactive after 2 rounds
-              silenceCount++;
-              console.log("[S2S] 静音，计数:", silenceCount);
-              if (silenceCount >= 2 && companionActiveRef.current) {
-                silenceCount = 0;
-                const proactivePrompts: Record<string, string> = {
-                  疲惫: "游客没有说话，用轻柔温暖的语气主动关心他们，询问是否需要休息，推荐一个附近的舒适休息点",
-                  无聊: "游客没有说话，主动出一道吐峪沟趣味小问题，激发对话兴趣",
-                  好奇: "游客没有说话，主动分享一个吐峪沟鲜为人知的历史小故事",
-                  开心: "游客没有说话，主动推荐一个附近拍照打卡的好地方",
-                  愉快: "游客没有说话，主动建议一个深度体验项目，激发探索欲",
-                  平静: "游客没有说话，用轻松的语气分享一个关于吐峪沟风俗文化的有趣知识点",
-                };
-                const proactiveContext = proactivePrompts[liveEmotion] || proactivePrompts["平静"];
-                try {
-                  const userLoc = locationStatus.state === "located"
-                    ? { name: locationStatus.locationName, lat: locationStatus.lat, lng: locationStatus.lng }
-                    : null;
-                  const chatResp = await apiRequest("POST", "/api/ai/chat", {
-                    messages: [{ role: "user", content: proactiveContext }],
-                    emotion: liveEmotion,
-                    userLocation: userLoc,
-                    activityData: { hint: liveActivityHint, stepRate: liveStepRate },
-                  });
-                  const chatData = await (chatResp as any).json();
-                  if (chatData.reply && companionActiveRef.current) {
-                    setCompanionResponse(chatData.reply);
-                    const ttsResp = await apiRequest("POST", "/api/doubao/tts", { text: chatData.reply });
-                    const ttsData = await (ttsResp as any).json();
-                    if (ttsData.audio && companionActiveRef.current) {
-                      await playDoubaoAudio(ttsData.audio);
-                    }
-                    setCompanionResponse("");
-                  }
-                } catch (proErr: any) {
-                  console.warn("[Proactive] 失败:", proErr?.message);
-                }
-              }
-            } else if (companionActiveRef.current) {
+              setCompanionStatus("listening");
+              continue;
+            }
+
+            if (s2sData.audioBase64 && companionActiveRef.current) {
+              // ── S2S success path ──
               silenceCount = 0;
+              s2sFailCount = 0;
               if (s2sData.transcript) console.log("[S2S] 用户说:", s2sData.transcript);
               if (s2sData.aiText) {
                 setCompanionResponse(s2sData.aiText);
@@ -440,59 +435,109 @@ export default function XiaoxiangAiScreen() {
               }
               await playDoubaoAudio(s2sData.audioBase64);
               setCompanionResponse("");
+              setCompanionStatus("listening");
+              continue;
             }
+
+            // ── S2S returned nothing useful ──
+            // If the server gave back transcript/aiText (but no audio), treat as silence
+            // and trigger proactive message. If completely empty, fall through to Whisper.
+            if (s2sData.transcript || s2sData.aiText) {
+              silenceCount++;
+              console.log("[S2S] 有文本但无音频，沉默计数:", silenceCount);
+            } else {
+              s2sFailCount++;
+              console.log("[S2S] 完全空响应，切换到Whisper ASR，失败计数:", s2sFailCount);
+              // Fall through to Whisper ASR path below — do NOT continue
+            }
+
+            // Proactive message when silence accumulates (uses Whisper path below for audio)
+            if (silenceCount >= 2 && companionActiveRef.current) {
+              silenceCount = 0;
+              const proactivePrompts: Record<string, string> = {
+                疲惫: "游客没有说话，用轻柔温暖的语气主动关心他们，询问是否需要休息，推荐一个附近的舒适休息点",
+                无聊: "游客没有说话，主动出一道吐峪沟趣味小问题，激发对话兴趣",
+                好奇: "游客没有说话，主动分享一个吐峪沟鲜为人知的历史小故事",
+                开心: "游客没有说话，主动推荐一个附近拍照打卡的好地方",
+                愉快: "游客没有说话，主动建议一个深度体验项目，激发探索欲",
+                平静: "游客没有说话，用轻松的语气分享一个关于吐峪沟风俗文化的有趣知识点",
+              };
+              try {
+                const proactiveContext = proactivePrompts[liveEmotion] || proactivePrompts["平静"];
+                const userLoc = locationStatus.state === "located"
+                  ? { name: locationStatus.locationName, lat: locationStatus.lat, lng: locationStatus.lng }
+                  : null;
+                const chatResp = await apiRequest("POST", "/api/ai/chat", {
+                  messages: [{ role: "user", content: proactiveContext }],
+                  emotion: liveEmotion,
+                  userLocation: userLoc,
+                  activityData: { hint: liveActivityHint, stepRate: liveStepRate },
+                });
+                const chatData = await (chatResp as any).json();
+                if (chatData.reply && companionActiveRef.current) {
+                  setCompanionResponse(chatData.reply);
+                  await speakReply(chatData.reply);
+                  setCompanionResponse("");
+                }
+              } catch (proErr: any) {
+                console.warn("[Proactive] 失败:", proErr?.message);
+              }
+              setCompanionStatus("listening");
+              continue;
+            }
+
+            if (s2sData.transcript || s2sData.aiText) {
+              // Had text but no audio — done for this turn
+              setCompanionStatus("listening");
+              continue;
+            }
+            // Completely empty S2S → fall through to Whisper ASR below
           } catch (s2sErr: any) {
-            console.warn("[S2S] 请求失败:", s2sErr?.message);
-            setCompanionResponse("网络波动，小乡重新连接中～");
-            await new Promise<void>((r) => setTimeout(r, 1500));
-            setCompanionResponse("");
+            s2sFailCount++;
+            console.warn("[S2S] 请求失败 (失败计数:", s2sFailCount, "):", s2sErr?.message);
+            // Fall through to Whisper ASR
           }
-          setCompanionStatus("listening");
-          continue;
         }
 
-        // ── Fallback chain: Whisper ASR → Doubao LLM → Doubao TTS ──
+        // ── Whisper ASR → ARK LLM → 语音合成（优先豆包TTS，备用设备语音）──
         let text = "";
-        const tResp = await apiRequest("POST", "/api/ai/transcribe", {
-          audio: base64, mime: "audio/m4a",
-          prompt: currentPrompt || "吐峪沟 吐鲁番 游览 景点 旅行",
-        });
-        const tData = await (tResp as any).json();
-        text = tData.text?.trim() ?? "";
-        console.log("[Companion/WhisperASR]", text);
+        try {
+          const tResp = await apiRequest("POST", "/api/ai/transcribe", {
+            audio: base64, mime: "audio/m4a",
+            prompt: currentPrompt || "吐峪沟 吐鲁番 游览 景点 旅行",
+          });
+          const tData = await (tResp as any).json();
+          text = tData.text?.trim() ?? "";
+          console.log("[Companion/WhisperASR]", text);
+        } catch (asrErr: any) {
+          console.warn("[Companion/ASR] 失败:", asrErr?.message);
+        }
 
         if (isNoise(text) || !companionActiveRef.current) {
+          silenceCount++;
           setCompanionStatus("listening");
           continue;
         }
 
-        const loc = locationStatus.state === "located" ? { name: locationStatus.locationName, lat: 0, lng: 0 } : null;
+        silenceCount = 0;
+        const loc = locationStatus.state === "located"
+          ? { name: locationStatus.locationName, lat: locationStatus.lat, lng: locationStatus.lng }
+          : null;
         const aiResp = await apiRequest("POST", "/api/ai/chat", {
           messages: [{ role: "user", content: text }],
-          emotion: currentEmotion,
-          activityData: { hint: currentActivityHint, stepRate: 0 },
+          emotion: emotionRef.current,
+          activityData: { hint: activityHintRef.current, stepRate: stepRateRef.current },
           userLocation: loc,
         });
         const aiData = await (aiResp as any).json();
         const reply: string = aiData.reply || "";
-        if (!reply || !companionActiveRef.current) continue;
+        if (!reply || !companionActiveRef.current) { setCompanionStatus("listening"); continue; }
 
         setCompanionResponse(reply);
-        if (aiData.emotion) setEmotion(aiData.emotion as Emotion);
+        if (aiData.emotion) { setEmotion(aiData.emotion as Emotion); emotionRef.current = aiData.emotion as Emotion; }
 
-        // Doubao TTS — natural female voice (no mechanical voice fallback)
-        if (!companionActiveRef.current) { setCompanionResponse(""); continue; }
-        try {
-          const ttsResp = await apiRequest("POST", "/api/doubao/tts", { text: reply });
-          const ttsData = await (ttsResp as any).json();
-          if (ttsData.audio && companionActiveRef.current) {
-            console.log("[Companion/DoubaoTTS] 播放豆包音色");
-            await playDoubaoAudio(ttsData.audio);
-          } else if (ttsData.error) {
-            console.warn("[Companion/DoubaoTTS] 错误:", ttsData.error);
-          }
-        } catch (ttsErr) {
-          console.warn("[Companion/DoubaoTTS] 请求失败:", ttsErr);
+        if (companionActiveRef.current) {
+          await speakReply(reply);
         }
         setCompanionResponse("");
       } catch (e) {
@@ -509,7 +554,7 @@ export default function XiaoxiangAiScreen() {
     }
     Speech.stop();
     setCompanionStatus("idle");
-  }, [locationStatus, playDoubaoAudio]);
+  }, [locationStatus, playDoubaoAudio, speakReply]);
 
   useEffect(() => {
     if (!isListening) { micAnim.setValue(1); return; }
