@@ -790,7 +790,8 @@ async function registerRoutes(app2) {
       const transcription = await client.audio.transcriptions.create({
         file,
         model,
-        language: "zh"
+        language: "zh",
+        prompt: "\u5410\u5CEA\u6C9F\uFF0C\u5410\u9C81\u756A\uFF0C\u65B0\u7586\uFF0C\u9EBB\u624E\u6751\uFF0C\u7EF4\u543E\u5C14\u65CF\uFF0C\u574E\u513F\u4E95\uFF0C\u8461\u8404\u6C9F\uFF0C\u706B\u7130\u5C71\uFF0C\u67CF\u5B5C\u514B\u91CC\u514B\uFF0C\u4EA4\u6CB3\u53E4\u57CE\uFF0C\u912F\u5584\u53BF\uFF0C\u514B\u62C9\u739B\u4F9D\uFF0C\u4E4C\u9C81\u6728\u9F50\uFF0C\u5929\u5C71\uFF0C\u4F0A\u7281\uFF0C\u5580\u4EC0\uFF0C\u548C\u7530"
       });
       console.log(`[Transcribe] text="${transcription.text}"`);
       return res.json({ text: transcription.text });

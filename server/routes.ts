@@ -485,6 +485,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         file,
         model,
         language: "zh",
+        prompt: "吐峪沟，吐鲁番，新疆，麻扎村，维吾尔族，坎儿井，葡萄沟，火焰山，柏孜克里克，交河古城，鄯善县，克拉玛依，乌鲁木齐，天山，伊犁，喀什，和田",
       });
       console.log(`[Transcribe] text="${transcription.text}"`);
       return res.json({ text: transcription.text });

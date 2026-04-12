@@ -36,6 +36,7 @@ type Message = {
   role: "user" | "assistant";
   content: string;
   time: string;
+  isVoice?: boolean;
 };
 
 const EMOTIONS: Record<Emotion, { label: string; color: string; bg: string }> = {
@@ -232,7 +233,7 @@ export default function XiaoxiangAiScreen() {
       const text: string = data.text?.trim() ?? "";
       setIsTranscribing(false);
       if (text) {
-        sendMessage(text);
+        sendMessage(text, true);
       } else if (data.error === "no_key") {
         setInput("（需要GROQ_API_KEY才能使用语音，请联系管理员配置）");
       } else {
@@ -320,7 +321,7 @@ export default function XiaoxiangAiScreen() {
   }, [screen]);
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, isVoice = false) => {
       const trimmed = text.trim();
       if (!trimmed || loading) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -331,6 +332,7 @@ export default function XiaoxiangAiScreen() {
         role: "user",
         content: trimmed,
         time: nowTime(),
+        isVoice,
       };
       setMessages((prev) => {
         const next = [...prev, userMsg];
@@ -556,7 +558,19 @@ export default function XiaoxiangAiScreen() {
               ]}
             >
               {item.role === "user" ? (
-                <Text style={styles.msgTextUser}>{item.content}</Text>
+                item.isVoice ? (
+                  <View style={styles.voiceMsgInner}>
+                    <Ionicons name="mic" size={16} color="white" />
+                    <View style={styles.voiceWaves}>
+                      {[3, 7, 11, 7, 3].map((h, i) => (
+                        <View key={i} style={[styles.voiceBar, { height: h }]} />
+                      ))}
+                    </View>
+                    <Text style={styles.voiceMsgLabel}>语音消息</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.msgTextUser}>{item.content}</Text>
+                )
               ) : (
                 <Markdown style={mdStyles}>{item.content}</Markdown>
               )}
@@ -1055,6 +1069,27 @@ const styles = StyleSheet.create({
   mediaPanelLabel: {
     fontSize: 12,
     color: "#5A3020",
+    fontWeight: "500",
+  },
+  voiceMsgInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 2,
+  },
+  voiceWaves: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  voiceBar: {
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.85)",
+  },
+  voiceMsgLabel: {
+    color: "white",
+    fontSize: 14,
     fontWeight: "500",
   },
 });
