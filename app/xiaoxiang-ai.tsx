@@ -23,6 +23,10 @@ import * as Haptics from "expo-haptics";
 import { router, Stack } from "expo-router";
 import { apiRequest } from "@/lib/query-client";
 import { useLocation } from "@/contexts/LocationContext";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -174,8 +178,64 @@ export default function XiaoxiangAiScreen() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [showMediaPanel, setShowMediaPanel] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const voiceTranscriptRef = useRef("");
   const flatListRef = useRef<FlatList>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const micAnim = useRef(new Animated.Value(1)).current;
+
+  useSpeechRecognitionEvent("start", () => setIsListening(true));
+  useSpeechRecognitionEvent("end", () => {
+    setIsListening(false);
+    const final = voiceTranscriptRef.current.trim();
+    if (final) {
+      sendMessage(final);
+      voiceTranscriptRef.current = "";
+      setVoiceTranscript("");
+      setInput("");
+    }
+  });
+  useSpeechRecognitionEvent("result", (event) => {
+    const text = event.results?.[0]?.transcript ?? "";
+    voiceTranscriptRef.current = text;
+    setVoiceTranscript(text);
+    setInput(text);
+  });
+  useSpeechRecognitionEvent("error", () => {
+    setIsListening(false);
+    voiceTranscriptRef.current = "";
+    setVoiceTranscript("");
+  });
+
+  useEffect(() => {
+    if (!isListening) { micAnim.setValue(1); return; }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(micAnim, { toValue: 1.22, duration: 500, useNativeDriver: true }),
+        Animated.timing(micAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isListening]);
+
+  const handleVoice = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (isListening) {
+      ExpoSpeechRecognitionModule.stop();
+      return;
+    }
+    const { status } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    if (status !== "granted") return;
+    setVoiceTranscript("");
+    setInput("");
+    ExpoSpeechRecognitionModule.start({
+      lang: "zh-CN",
+      interimResults: true,
+      continuous: false,
+    });
+  }, [isListening]);
 
   useEffect(() => {
     if (screen !== "chat") return;
@@ -478,6 +538,16 @@ export default function XiaoxiangAiScreen() {
         </View>
       )}
 
+      {isListening && (
+        <View style={styles.listeningBar}>
+          <Animated.View style={{ transform: [{ scale: micAnim }] }}>
+            <Ionicons name="mic" size={18} color="#E03A20" />
+          </Animated.View>
+          <Text style={styles.listeningText}>
+            {voiceTranscript ? voiceTranscript : "正在听，请说话..."}
+          </Text>
+        </View>
+      )}
       <View style={[styles.inputBar, { paddingBottom: insets.bottom + 8 }]}>
         <Pressable
           style={styles.uploadBtn}
@@ -493,26 +563,43 @@ export default function XiaoxiangAiScreen() {
           style={styles.inputField}
           value={input}
           onChangeText={setInput}
-          placeholder="问问小乡任何问题..."
-          placeholderTextColor="#BBA"
+          placeholder={isListening ? "语音识别中..." : "问问小乡任何问题..."}
+          placeholderTextColor={isListening ? "#E03A20" : "#BBA"}
           multiline
           maxLength={300}
           onSubmitEditing={() => sendMessage(input)}
           returnKeyType="send"
           onFocus={() => setShowMediaPanel(false)}
+          editable={!isListening}
         />
-        <Pressable
-          style={[styles.sendBtn, (!input.trim() || loading) && styles.sendBtnDisabled]}
-          onPress={() => sendMessage(input)}
-          disabled={!input.trim() || loading}
-        >
-          <LinearGradient
-            colors={input.trim() && !loading ? ["#FF8C5A", "#F97340"] : ["#DDD", "#CCC"]}
-            style={styles.sendGrad}
+        {input.trim() && !isListening ? (
+          <Pressable
+            style={[styles.sendBtn, loading && styles.sendBtnDisabled]}
+            onPress={() => sendMessage(input)}
+            disabled={loading}
           >
-            <Ionicons name="send" size={16} color="white" />
-          </LinearGradient>
-        </Pressable>
+            <LinearGradient
+              colors={!loading ? ["#FF8C5A", "#F97340"] : ["#DDD", "#CCC"]}
+              style={styles.sendGrad}
+            >
+              <Ionicons name="send" size={16} color="white" />
+            </LinearGradient>
+          </Pressable>
+        ) : (
+          <Pressable style={styles.micBtn} onPress={handleVoice} disabled={loading}>
+            <Animated.View style={[
+              styles.micGrad,
+              isListening && styles.micGradActive,
+              { transform: [{ scale: isListening ? micAnim : 1 }] },
+            ]}>
+              <Ionicons
+                name={isListening ? "stop" : "mic"}
+                size={18}
+                color="white"
+              />
+            </Animated.View>
+          </Pressable>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -839,6 +926,41 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+  },
+  micBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: "hidden",
+    flexShrink: 0,
+    marginBottom: 2,
+  },
+  micGrad: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#9B59B6",
+  },
+  micGradActive: {
+    backgroundColor: "#E03A20",
+  },
+  listeningBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#FFF0EE",
+    borderTopWidth: 1,
+    borderTopColor: "#FFD5CC",
+  },
+  listeningText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#C03020",
+    fontStyle: "italic",
   },
   mediaPanel: {
     flexDirection: "row",
