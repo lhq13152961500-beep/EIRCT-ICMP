@@ -381,7 +381,7 @@ var EVT_FINISH_SESSION = 102;
 var EVT_TASK_REQUEST = 200;
 var EVT_CONN_STARTED = 50;
 var EVT_TTS_ENDED = 359;
-var DEFAULT_SPEAKER = "zh_female_vv_jupiter_bigtts";
+var DEFAULT_SPEAKER = "S_HqJPcQyZ";
 function int32BE(n) {
   const b = Buffer.alloc(4);
   b.writeInt32BE(n, 0);
@@ -709,7 +709,7 @@ async function attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPay
       } else {
         settle({ audioChunks: [], transcript, aiText });
       }
-    }, 14e3);
+    }, 28e3);
     ws.on("open", () => {
       console.log("[DoubaoS2S] WS open \u2192 StartConnection");
       ws.send(buildConnectEvent(EVT_START_CONN, nextSeq()));
@@ -773,8 +773,16 @@ async function attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPay
         // ── LLM streaming text ──
         case 550: {
           const pl = msg.payload;
-          if (typeof pl?.content === "string") {
-            aiText += pl.content;
+          console.log(`[DoubaoS2S] evt550 payload=${JSON.stringify(pl).slice(0, 200)}`);
+          let chunk = "";
+          if (typeof pl?.content === "string") chunk = pl.content;
+          else if (typeof pl?.delta?.content === "string")
+            chunk = pl.delta.content;
+          else if (typeof pl?.text === "string") chunk = pl.text;
+          else if (typeof pl?.reply === "string") chunk = pl.reply;
+          if (chunk) {
+            aiText += chunk;
+            console.log(`[DoubaoS2S] LLM chunk="${chunk.slice(0, 60)}" total="${aiText.slice(0, 80)}"`);
             if (ttsKnownFailed && aiText) {
               console.log(`[DoubaoS2S] Got LLM text after InvalidSpeaker \u2192 settling: "${aiText.slice(0, 60)}"`);
               if (textWaitTimer) {

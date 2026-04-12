@@ -26,8 +26,8 @@ const EVT_TASK_REQUEST  = 200;
 const EVT_CONN_STARTED  = 50;
 const EVT_TTS_ENDED     = 359;
 
-// O2.0 精品音色 — if not activated, falls back to HTTP TTS automatically
-export const DEFAULT_SPEAKER = "zh_female_vv_jupiter_bigtts";
+// 克隆声音 ID (S_HqJPcQyZ) for the realtime dialog model
+export const DEFAULT_SPEAKER = "S_HqJPcQyZ";
 
 function int32BE(n: number): Buffer {
   const b = Buffer.alloc(4);
@@ -417,6 +417,7 @@ async function attemptS2STurn(
     const CHUNK_MS   = 20;
 
     // Global safety timeout — covers connection failures, stuck sessions etc.
+    // 28s: ~5s PCM stream + ~3s ASR + ~5s LLM + ~10s TTS + 5s buffer
     const globalTimer = setTimeout(() => {
       console.warn(`[DoubaoS2S] Global timeout — chunks=${audioChunks.length} transcript="${transcript}" aiText="${aiText.slice(0,40)}"`);
       try { ws.terminate(); } catch {}
@@ -425,7 +426,7 @@ async function attemptS2STurn(
       } else {
         settle({ audioChunks: [], transcript, aiText });
       }
-    }, 14000);
+    }, 28000);
 
     ws.on("open", () => {
       console.log("[DoubaoS2S] WS open → StartConnection");
@@ -498,8 +499,19 @@ async function attemptS2STurn(
         // ── LLM streaming text ──
         case 550: {
           const pl = msg.payload as Record<string, unknown>;
-          if (typeof pl?.content === "string") {
-            aiText += pl.content;
+          // Log raw payload to understand the actual structure
+          console.log(`[DoubaoS2S] evt550 payload=${JSON.stringify(pl).slice(0, 200)}`);
+          // Try multiple field paths: content / delta.content / text / reply
+          let chunk = "";
+          if (typeof pl?.content === "string") chunk = pl.content;
+          else if (typeof (pl?.delta as Record<string, unknown>)?.content === "string")
+            chunk = (pl.delta as Record<string, unknown>).content as string;
+          else if (typeof pl?.text === "string") chunk = pl.text;
+          else if (typeof pl?.reply === "string") chunk = pl.reply;
+
+          if (chunk) {
+            aiText += chunk;
+            console.log(`[DoubaoS2S] LLM chunk="${chunk.slice(0, 60)}" total="${aiText.slice(0, 80)}"`);
             // If TTS already failed and we now have text → settle immediately
             if (ttsKnownFailed && aiText) {
               console.log(`[DoubaoS2S] Got LLM text after InvalidSpeaker → settling: "${aiText.slice(0, 60)}"`);
