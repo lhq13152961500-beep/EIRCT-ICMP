@@ -631,7 +631,7 @@ async function attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPay
           break;
         }
         case EVT_TTS_ENDED:
-          console.log(`[DoubaoS2S] TTSEnded \u2014 ${audioChunks.length} chunks collected`);
+          console.log(`[DoubaoS2S] TTSEnded \u2014 ${audioChunks.length} audio chunks, transcript="${transcript}" aiText="${aiText}"`);
           sendActive = false;
           ws.send(buildSessionEvent(EVT_FINISH_SESSION, nextSeq(), sessionId, {}));
           ws.send(buildConnectEvent(EVT_FINISH_CONN, nextSeq()));
@@ -647,6 +647,11 @@ async function attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPay
           console.error("[DoubaoS2S] ConnectFailed:", JSON.stringify(msg.payload));
           ws.terminate();
           settle(null);
+          break;
+        default:
+          if (msg.eventId !== 0) {
+            console.log(`[DoubaoS2S] unhandled evt=${msg.eventId} type=${msg.msgType}`);
+          }
           break;
       }
     });

@@ -412,26 +412,19 @@ export default function XiaoxiangAiScreen() {
         setCompanionResponse(reply);
         if (aiData.emotion) setEmotion(aiData.emotion as Emotion);
 
-        // Try Doubao TTS first for natural female voice
-        let ttsPlayed = false;
-        if (doubaoReadyRef.current) {
-          try {
-            const ttsResp = await apiRequest("POST", "/api/doubao/tts", { text: reply });
-            const ttsData = await (ttsResp as any).json();
-            if (ttsData.audio && companionActiveRef.current) {
-              console.log("[Companion/DoubaoTTS] 播放豆包音色");
-              await playDoubaoAudio(ttsData.audio);
-              ttsPlayed = true;
-            }
-          } catch (ttsErr) {
-            console.warn("[Companion/DoubaoTTS] 失败，转expo-speech:", ttsErr);
+        // Doubao TTS — natural female voice (no mechanical voice fallback)
+        if (!companionActiveRef.current) { setCompanionResponse(""); continue; }
+        try {
+          const ttsResp = await apiRequest("POST", "/api/doubao/tts", { text: reply });
+          const ttsData = await (ttsResp as any).json();
+          if (ttsData.audio && companionActiveRef.current) {
+            console.log("[Companion/DoubaoTTS] 播放豆包音色");
+            await playDoubaoAudio(ttsData.audio);
+          } else if (ttsData.error) {
+            console.warn("[Companion/DoubaoTTS] 错误:", ttsData.error);
           }
-        }
-        if (!ttsPlayed && companionActiveRef.current) {
-          await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
-          await new Promise<void>((resolve) => {
-            Speech.speak(reply, { language: "zh-CN", rate: 0.95, pitch: 1.05, onDone: resolve, onError: resolve, onStopped: resolve });
-          });
+        } catch (ttsErr) {
+          console.warn("[Companion/DoubaoTTS] 请求失败:", ttsErr);
         }
         setCompanionResponse("");
       } catch (e) {
