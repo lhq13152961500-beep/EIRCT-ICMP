@@ -322,34 +322,47 @@ export default function XiaoxiangAiScreen() {
 
         setCompanionStatus("processing");
 
-        // ── ASR: Doubao first, fall back to Groq Whisper ──
-        let text = "";
+        // ── Doubao S2S: end-to-end ASR + LLM + TTS in one call ──
         if (useDoubao) {
           try {
-            const tResp = await apiRequest("POST", "/api/doubao/asr", { audio: base64, mime: "audio/m4a" });
-            const tData = await (tResp as any).json();
-            text = tData.text?.trim() ?? "";
-            console.log("[Companion/DoubaoASR]", text);
-          } catch {
-            console.warn("[Companion] DoubaoASR failed, falling back to Whisper");
+            const locName = locationStatus.state === "located" ? locationStatus.locationName : "新疆";
+            const s2sResp = await apiRequest("POST", "/api/doubao/s2s", {
+              audioBase64: base64,
+              mimeType: "audio/m4a",
+              emotion: currentEmotion,
+              location: locName,
+            });
+            const s2sData = await (s2sResp as any).json();
+            if (s2sData.audioBase64 && companionActiveRef.current) {
+              if (s2sData.transcript) console.log("[S2S] 用户说:", s2sData.transcript);
+              if (s2sData.aiText) {
+                setCompanionResponse(s2sData.aiText);
+                console.log("[S2S] 小乡说:", s2sData.aiText);
+              }
+              await playDoubaoAudio(s2sData.audioBase64);
+              setCompanionResponse("");
+              continue;
+            }
+          } catch (s2sErr) {
+            console.warn("[Companion] S2S failed, falling back to chain:", s2sErr);
           }
         }
-        if (!text) {
-          const tResp = await apiRequest("POST", "/api/ai/transcribe", {
-            audio: base64, mime: "audio/m4a",
-            prompt: currentPrompt || "吐峪沟 吐鲁番 游览 景点 旅行",
-          });
-          const tData = await (tResp as any).json();
-          text = tData.text?.trim() ?? "";
-          console.log("[Companion/WhisperASR]", text);
-        }
+
+        // ── Fallback chain: Whisper ASR → DeepSeek LLM → expo-speech TTS ──
+        let text = "";
+        const tResp = await apiRequest("POST", "/api/ai/transcribe", {
+          audio: base64, mime: "audio/m4a",
+          prompt: currentPrompt || "吐峪沟 吐鲁番 游览 景点 旅行",
+        });
+        const tData = await (tResp as any).json();
+        text = tData.text?.trim() ?? "";
+        console.log("[Companion/WhisperASR]", text);
 
         if (isNoise(text) || !companionActiveRef.current) {
           setCompanionStatus("listening");
           continue;
         }
 
-        // ── LLM: DeepSeek ──
         const loc = locationStatus.state === "located" ? { name: locationStatus.locationName, lat: 0, lng: 0 } : null;
         const aiResp = await apiRequest("POST", "/api/ai/chat", {
           messages: [{ role: "user", content: text }],
@@ -364,21 +377,6 @@ export default function XiaoxiangAiScreen() {
         setCompanionResponse(reply);
         if (aiData.emotion) setEmotion(aiData.emotion as Emotion);
 
-        // ── TTS: Doubao first, fall back to expo-speech ──
-        if (useDoubao) {
-          try {
-            const ttsResp = await apiRequest("POST", "/api/doubao/tts", { text: reply });
-            const ttsData = await (ttsResp as any).json();
-            if (ttsData.audio && companionActiveRef.current) {
-              await playDoubaoAudio(ttsData.audio);
-              setCompanionResponse("");
-              continue;
-            }
-          } catch {
-            console.warn("[Companion] DoubaoTTS failed, falling back to expo-speech");
-          }
-        }
-        // Fallback: expo-speech
         await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
         await new Promise<void>((resolve) => {
           Speech.speak(reply, { language: "zh-CN", rate: 0.95, pitch: 1.05, onDone: resolve, onError: resolve, onStopped: resolve });

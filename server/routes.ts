@@ -6,6 +6,7 @@ import { join } from "node:path";
 import https from "node:https";
 import OpenAI, { toFile } from "openai";
 import { storage, type InsertRecording } from "./storage";
+import { doublaoRealtimeTurn } from "./doubao-realtime";
 const uuidv4 = () => randomUUID();
 
 const PW_SALT = "xiangyin_banlu_2026";
@@ -555,6 +556,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err: any) {
       console.error("[DoubaoASR] error:", err?.message);
       return res.status(500).json({ error: "asr_request_failed", text: "" });
+    }
+  });
+
+  // Doubao S2S RealtimeAPI – audio → AI response audio (end-to-end)
+  app.post("/api/doubao/s2s", async (req, res) => {
+    const { audioBase64, mimeType, systemRole, emotion, location } = req.body as {
+      audioBase64?: string;
+      mimeType?: string;
+      systemRole?: string;
+      emotion?: string;
+      location?: string;
+    };
+    if (!audioBase64) return res.status(400).json({ error: "audioBase64 required" });
+    if (!process.env.VOLCENGINE_APP_ID || !process.env.VOLCENGINE_ACCESS_TOKEN) {
+      return res.status(503).json({ error: "doubao_not_configured" });
+    }
+    try {
+      const result = await doublaoRealtimeTurn({ audioBase64, mimeType, systemRole, emotion, location });
+      return res.json(result);
+    } catch (err: any) {
+      console.error("[DoubaoS2S] error:", err?.message);
+      return res.status(500).json({ error: err?.message || "s2s_failed" });
     }
   });
 
