@@ -456,6 +456,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/ai/voice-status", (_req, res) => {
+    const hasKey = !!(process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY);
+    res.json({ available: hasKey });
+  });
+
   app.post("/api/ai/transcribe", async (req, res) => {
     const { audio, mime } = req.body as { audio?: string; mime?: string };
     if (!audio) return res.status(400).json({ error: "audio required" });

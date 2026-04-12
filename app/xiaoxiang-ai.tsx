@@ -13,6 +13,7 @@ import {
   Animated,
   ActivityIndicator,
   Dimensions,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -178,10 +179,18 @@ export default function XiaoxiangAiScreen() {
   const [showMediaPanel, setShowMediaPanel] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [voiceAvailable, setVoiceAvailable] = useState<boolean | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const micAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    apiRequest("GET", "/api/ai/voice-status", undefined)
+      .then((res: any) => res.json())
+      .then((d: any) => setVoiceAvailable(!!d?.available))
+      .catch(() => setVoiceAvailable(false));
+  }, []);
 
   useEffect(() => {
     if (!isListening) { micAnim.setValue(1); return; }
@@ -197,50 +206,108 @@ export default function XiaoxiangAiScreen() {
 
   const stopAndTranscribe = useCallback(async () => {
     const recording = recordingRef.current;
-    if (!recording) return;
+    if (!recording) {
+      console.log("[Voice] stopAndTranscribe: no recording ref");
+      setIsListening(false);
+      return;
+    }
     try {
       setIsListening(false);
       setIsTranscribing(true);
+      console.log("[Voice] stopping recording...");
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       recordingRef.current = null;
-      if (!uri) { setIsTranscribing(false); return; }
+      console.log("[Voice] recording uri:", uri);
+      if (!uri) {
+        setIsTranscribing(false);
+        setInput("（录音失败，请重试）");
+        return;
+      }
+      const info = await FileSystem.getInfoAsync(uri);
+      console.log("[Voice] file size:", (info as any).size, "bytes");
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-      const data = await apiRequest("POST", "/api/ai/transcribe", { audio: base64, mime: "audio/m4a" });
+      console.log("[Voice] base64 length:", base64.length);
+      const resp = await apiRequest("POST", "/api/ai/transcribe", { audio: base64, mime: "audio/m4a" });
+      const data = await (resp as any).json();
+      console.log("[Voice] transcribe result:", JSON.stringify(data));
       const text: string = data.text?.trim() ?? "";
       setIsTranscribing(false);
       if (text) {
         sendMessage(text);
       } else if (data.error === "no_key") {
-        setInput("（语音功能需配置 GROQ_API_KEY，请联系管理员）");
+        setInput("（需要GROQ_API_KEY才能使用语音，请联系管理员配置）");
       } else {
-        setInput("（未能识别语音，请重试或手动输入）");
+        setInput("（未能识别语音，请重试）");
       }
-    } catch (e) {
+    } catch (e: any) {
+      console.error("[Voice] stopAndTranscribe error:", e?.message, e?.stack);
       setIsTranscribing(false);
+      setIsListening(false);
       recordingRef.current = null;
+      setInput("（语音处理出错，请重试）");
     }
   }, [sendMessage]);
 
   const handleVoice = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (isListening) {
+      console.log("[Voice] stopping (isListening=true)");
       await stopAndTranscribe();
       return;
     }
-    try {
-      const { granted } = await Audio.requestPermissionsAsync();
-      if (!granted) { setInput("（需要麦克风权限）"); return; }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
+    if (voiceAvailable === false) {
+      Alert.alert(
+        "语音功能未配置",
+        "语音识别需要配置 GROQ API 密钥（免费）。\n\n获取步骤：\n1. 访问 console.groq.com\n2. 注册免费账号\n3. 创建 API Key\n4. 在 Replit Secrets 添加 GROQ_API_KEY",
+        [{ text: "知道了", style: "default" }]
       );
-      recordingRef.current = recording;
-      setIsListening(true);
-    } catch (e) {
-      setIsListening(false);
+      return;
     }
-  }, [isListening, stopAndTranscribe]);
+    try {
+      console.log("[Voice] requesting permission...");
+      const { granted } = await Audio.requestPermissionsAsync();
+      console.log("[Voice] permission granted:", granted);
+      if (!granted) {
+        setInput("（需要麦克风权限，请在设置中开启）");
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      console.log("[Voice] creating recording...");
+      const { recording } = await Audio.Recording.createAsync({
+        android: {
+          extension: ".m4a",
+          outputFormat: 2,
+          audioEncoder: 3,
+          sampleRate: 16000,
+          numberOfChannels: 1,
+          bitRate: 64000,
+        },
+        ios: {
+          extension: ".m4a",
+          audioQuality: 0x7f,
+          sampleRate: 16000,
+          numberOfChannels: 1,
+          bitRate: 64000,
+          linearPCMBitDepth: 16,
+          linearPCMIsBigEndian: false,
+          linearPCMIsFloat: false,
+        },
+        web: {},
+        isMeteringEnabled: false,
+      });
+      recordingRef.current = recording;
+      console.log("[Voice] recording started");
+      setIsListening(true);
+    } catch (e: any) {
+      console.error("[Voice] start error:", e?.message);
+      setIsListening(false);
+      setInput("（启动录音失败：" + (e?.message ?? "未知错误") + "）");
+    }
+  }, [isListening, stopAndTranscribe, voiceAvailable]);
 
   useEffect(() => {
     if (screen !== "chat") return;
