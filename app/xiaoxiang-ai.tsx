@@ -62,6 +62,60 @@ const WELCOME_FEATURES = [
   { icon: "sparkles-outline" as const, text: "随时解答，趣味互动" },
 ];
 
+const EMOTION_WELCOME: Record<string, {
+  title: string;
+  sub: string;
+  bg: [string, string, string];
+  features: { icon: "heart-outline" | "bed-outline" | "cafe-outline" | "location-outline" | "sparkles-outline" | "telescope-outline" | "map-outline" | "flag-outline"; text: string }[];
+}> = {
+  疲惫: {
+    title: "辛苦了，我是小乡",
+    sub: "累了就歇歇，我来帮你找舒适的休息点",
+    bg: ["#EEF3FF", "#DDEAFF", "#EEF3FF"],
+    features: [
+      { icon: "bed-outline", text: "为你推荐附近休息区" },
+      { icon: "cafe-outline", text: "放松一下，品尝当地特色小食" },
+      { icon: "heart-outline", text: "轻松游览，不疾不徐" },
+    ],
+  },
+  平静: {
+    title: "你好，我是小乡",
+    sub: "您的贴心旅行伴游",
+    bg: ["#FFF4EE", "#FFE8DC", "#FFF0EA"],
+    features: WELCOME_FEATURES,
+  },
+  好奇: {
+    title: "发现你想探索！",
+    sub: "让我带你揭开吐峪沟的历史秘密",
+    bg: ["#F5F0FF", "#EAE0FF", "#F5F0FF"],
+    features: [
+      { icon: "telescope-outline", text: "深度解说12处核心景点" },
+      { icon: "map-outline", text: "探索千年洞窟与丝路遗珍" },
+      { icon: "sparkles-outline", text: "趣味典故，知识随问随答" },
+    ],
+  },
+  开心: {
+    title: "你看起来很开心！",
+    sub: "今天一定是个美好旅程",
+    bg: ["#FFFCE8", "#FFF6D0", "#FFFCE8"],
+    features: [
+      { icon: "heart-outline", text: "情感共鸣，分享旅途快乐" },
+      { icon: "location-outline", text: "推荐绝佳拍照打卡地点" },
+      { icon: "sparkles-outline", text: "趣味互动，让旅途更精彩" },
+    ],
+  },
+  愉快: {
+    title: "精力满满，出发吧！",
+    sub: "今天适合深度游览，全程探索",
+    bg: ["#FFF4EE", "#FFE4CC", "#FFF0EA"],
+    features: [
+      { icon: "flag-outline", text: "推荐全程深度游览路线" },
+      { icon: "location-outline", text: "发现隐藏美景与体验活动" },
+      { icon: "sparkles-outline", text: "激发探索欲，玩转吐峪沟" },
+    ],
+  },
+};
+
 function nowTime() {
   const d = new Date();
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
@@ -318,9 +372,22 @@ export default function XiaoxiangAiScreen() {
   const emotionInfo = EMOTIONS[emotion];
 
   if (screen === "welcome") {
+    const ew = EMOTION_WELCOME[emotion] ?? EMOTION_WELCOME["平静"];
+    const accentColor = emotion === "疲惫" ? "#4A7AE0"
+      : emotion === "好奇" ? "#7A4AE0"
+      : emotion === "开心" ? "#D0A020"
+      : "#E05A3A";
+    const btnColors: [string, string, string] = emotion === "疲惫"
+      ? ["#6A9AFF", "#4A7AE0", "#3060C0"]
+      : emotion === "好奇"
+      ? ["#A07AFF", "#7A5AE0", "#5A3AC0"]
+      : emotion === "开心"
+      ? ["#F0C040", "#D0A020", "#B08000"]
+      : ["#FF8C5A", "#F97340", "#E86030"];
+
     return (
       <LinearGradient
-        colors={["#FFF4EE", "#FFE8DC", "#FFF0EA"]}
+        colors={ew.bg}
         style={[styles.welcomeRoot, { paddingTop: insets.top + 20 }]}
       >
         <Stack.Screen options={{ headerShown: false }} />
@@ -328,23 +395,25 @@ export default function XiaoxiangAiScreen() {
           style={styles.backBtn}
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
         >
-          <Ionicons name="chevron-back" size={24} color="#E05A3A" />
+          <Ionicons name="chevron-back" size={24} color={accentColor} />
         </Pressable>
 
         <View style={styles.welcomeFaceWrap}>
-          <XiaoxiangFace size={120} emotion="愉快" animate />
+          <XiaoxiangFace size={120} emotion={emotion} animate />
           <View style={styles.starDeco1}><Text style={{ fontSize: 18 }}>✦</Text></View>
-          <View style={styles.heartDeco}><Ionicons name="heart" size={14} color="#F97340" /></View>
+          <View style={styles.heartDeco}><Ionicons name="heart" size={14} color={accentColor} /></View>
         </View>
 
-        <Text style={styles.welcomeTitle}>你好，我是小乡</Text>
-        <Text style={styles.welcomeSub}>您的贴心旅行伴游</Text>
+        <Text style={[styles.welcomeTitle, { color: emotion === "疲惫" ? "#2A4A8A" : emotion === "好奇" ? "#4A2A8A" : emotion === "开心" ? "#7A6010" : "#C04020" }]}>
+          {ew.title}
+        </Text>
+        <Text style={styles.welcomeSub}>{ew.sub}</Text>
 
         <View style={styles.featureList}>
-          {WELCOME_FEATURES.map((f, i) => (
+          {ew.features.map((f, i) => (
             <View key={i} style={styles.featureItem}>
-              <View style={styles.featureIconWrap}>
-                <Ionicons name={f.icon} size={18} color="#F97340" />
+              <View style={[styles.featureIconWrap, { backgroundColor: emotion === "疲惫" ? "#D0DFFF" : emotion === "好奇" ? "#D8D0FF" : emotion === "开心" ? "#FFF0C0" : "#FFE4D5" }]}>
+                <Ionicons name={f.icon as any} size={18} color={accentColor} />
               </View>
               <Text style={styles.featureText}>{f.text}</Text>
             </View>
@@ -359,12 +428,14 @@ export default function XiaoxiangAiScreen() {
           }}
         >
           <LinearGradient
-            colors={["#FF8C5A", "#F97340", "#E86030"]}
+            colors={btnColors}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.startBtn}
           >
-            <Text style={styles.startBtnText}>开始旅程</Text>
+            <Text style={styles.startBtnText}>
+              {emotion === "疲惫" ? "去找休息点" : emotion === "好奇" ? "开始探索" : emotion === "开心" ? "出发打卡" : "开始旅程"}
+            </Text>
             <Ionicons name="arrow-forward" size={18} color="white" style={{ marginLeft: 6 }} />
           </LinearGradient>
         </Pressable>
