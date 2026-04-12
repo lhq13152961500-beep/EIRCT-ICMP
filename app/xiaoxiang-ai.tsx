@@ -400,15 +400,17 @@ export default function XiaoxiangAiScreen() {
         style={StyleSheet.absoluteFill}
       />
 
-      <WebView
-        ref={speechWebViewRef}
-        source={{ uri: new URL("/api/speech-recognition", getApiUrl()).href }}
-        style={{ width: 0, height: 0, position: "absolute", opacity: 0 }}
-        onMessage={handleSpeechMessage}
-        javaScriptEnabled
-        mediaPlaybackRequiresUserAction={false}
-        allowsInlineMediaPlayback
-      />
+      <View style={{ height: 0, width: 0, overflow: "hidden" }}>
+        <WebView
+          ref={speechWebViewRef}
+          source={{ uri: new URL("/api/speech-recognition", getApiUrl()).href }}
+          style={{ width: 1, height: 1 }}
+          onMessage={handleSpeechMessage}
+          javaScriptEnabled
+          mediaPlaybackRequiresUserAction={false}
+          allowsInlineMediaPlayback
+        />
+      </View>
 
       <View style={styles.chatHeader}>
         <Pressable
