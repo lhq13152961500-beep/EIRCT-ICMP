@@ -381,7 +381,7 @@ var EVT_FINISH_SESSION = 102;
 var EVT_TASK_REQUEST = 200;
 var EVT_CONN_STARTED = 50;
 var EVT_TTS_ENDED = 359;
-var DEFAULT_SPEAKER = "";
+var DEFAULT_SPEAKER = "zh_female_vv_jupiter_bigtts";
 function int32BE(n) {
   const b = Buffer.alloc(4);
   b.writeInt32BE(n, 0);

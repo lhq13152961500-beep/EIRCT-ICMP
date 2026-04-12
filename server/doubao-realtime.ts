@@ -26,9 +26,9 @@ const EVT_TASK_REQUEST  = 200;
 const EVT_CONN_STARTED  = 50;
 const EVT_TTS_ENDED     = 359;
 
-// Leave empty to use the dialog service's built-in default voice.
-// Once voice clone data is uploaded, set this to "S_hQJPcOyZ".
-export const DEFAULT_SPEAKER = "";
+// O2.0 model built-in voices: zh_female_vv_jupiter_bigtts (活泼女声, default)
+// zh_female_xiaohe_jupiter_bigtts / zh_male_yunzhou_jupiter_bigtts / zh_male_xiaotian_jupiter_bigtts
+export const DEFAULT_SPEAKER = "zh_female_vv_jupiter_bigtts";
 
 function int32BE(n: number): Buffer {
   const b = Buffer.alloc(4);
