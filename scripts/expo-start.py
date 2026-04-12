@@ -76,7 +76,7 @@ def run_expo():
         os.dup2(slave_fd, 2)
         if slave_fd > 2:
             os.close(slave_fd)
-        os.execvpe('npx', ['npx', 'expo', 'start', '--go', '--tunnel', '--max-workers', '1'], env)
+        os.execvpe('npx', ['npx', 'expo', 'start', '--go', '--tunnel', '--max-workers', '1', '--no-dev'], env)
     else:
         os.close(slave_fd)
         last_anon_answer = 0.0
@@ -205,8 +205,8 @@ def main():
         result = run_expo()
         if result == "ngrok_error":
             ngrok_fails += 1
-            # Exponential back-off: 3min, 6min, 12min, 15min cap
-            wait = min(180 * (2 ** (ngrok_fails - 1)), 900)
+            # Fixed 15-min wait — give Ngrok rate-limit window time to fully reset
+            wait = 900
             sys.stdout.write(f'[Waiting {wait}s for Ngrok rate-limit to reset (fail #{ngrok_fails})...]\n')
             sys.stdout.flush()
             time.sleep(wait)
@@ -221,15 +221,15 @@ def main():
             since_last = now - last_oom_time
             last_oom_time = now
             ngrok_fails = 0  # successful connection, reset fail count
-            if since_last < 1200:  # rapid OOM (< 20 min): longer wait
+            if since_last < 1800:  # rapid OOM (< 30 min): longer wait
                 rapid_oom_count = getattr(main, '_rapid_oom', 0) + 1
                 main._rapid_oom = rapid_oom_count
-                # Escalating: 300s, 420s, 600s, 900s (cap)
-                wait = min(300 * (1 + (rapid_oom_count - 1) * 0.5), 900)
+                # Escalating: 600s, 720s, 900s (cap) — gives Ngrok time to breathe
+                wait = min(600 + (rapid_oom_count - 1) * 120, 900)
                 wait = int(wait)
             else:
                 main._rapid_oom = 0
-                wait = 120  # infrequent OOM: 2-min cooldown is enough
+                wait = 300  # infrequent OOM: 5-min cooldown
             sys.stdout.write(f'[Metro OOM #{oom_count} — waiting {wait}s before restart...]\n')
             sys.stdout.flush()
             time.sleep(wait)
