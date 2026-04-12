@@ -497,10 +497,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/ai/chat", async (req, res) => {
     try {
-      const { messages, emotion, userLocation } = req.body as {
+      const { messages, emotion, userLocation, activityData } = req.body as {
         messages: { role: string; content: string }[];
         emotion?: string;
         userLocation?: { name: string; lat: number; lng: number } | null;
+        activityData?: { hint: string; stepRate: number } | null;
       };
       if (!Array.isArray(messages) || messages.length === 0) {
         return res.status(400).json({ error: "messages required" });
@@ -568,12 +569,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 【吐鲁番实时天气】${weatherInfo}
 
 【游客当前信息】
-- 情绪状态：${emotion || "平静"}（疲惫时建议休息景点，好奇时深入讲解，愉快时分享趣味细节）
+- 情绪状态：${emotion || "平静"}
+- 游览状态：${activityData?.hint || "静候中"}（步频约${activityData?.stepRate ?? 0}步/分钟）
 - 当前位置：${userLocation ? userLocation.name : "位置未知"}
 - 距吐峪沟景区的距离：${distanceInfo}
 
+【根据游览状态动态调整风格】
+- 「正在休息/疲惫」：语气轻柔，主动关心是否需要休息，推荐附近的休息区和轻松景点
+- 「缓步游览中」：娓娓道来，深入讲解历史文化，配合悠闲节奏
+- 「探索中/好奇」：详细解说，多讲趣味典故，满足求知欲
+- 「活力游览/开心」：语气活泼，分享有趣互动体验，推荐拍照打卡点
+- 「精力充沛/愉快」：充满热情，推荐全程游览路线，激发探索欲
+
 【回答原则】
 - 直接回答用户的具体问题，不要答非所问
+- 根据游览状态自然融入关怀（如疲惫时主动提醒休息）
 - 涉及交通/距离时，必须根据用户当前位置给出准确信息
 - 结合以上具体景点信息给出实用建议
 - 回答简洁生动，控制在200字以内

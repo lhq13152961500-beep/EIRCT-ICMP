@@ -12,6 +12,7 @@ import { queryClient } from "@/lib/query-client";
 import { RecordingsProvider, useRecordings } from "@/contexts/RecordingsContext";
 import { LocationProvider } from "@/contexts/LocationContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { ActivityProvider } from "@/contexts/ActivityContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -98,6 +99,7 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <LocationProvider>
+            <ActivityProvider>
             <RecordingsProvider>
               <SyncUserToRecordings />
               <GestureHandlerRootView>
@@ -106,6 +108,7 @@ export default function RootLayout() {
                 </KeyboardProvider>
               </GestureHandlerRootView>
             </RecordingsProvider>
+            </ActivityProvider>
           </LocationProvider>
         </AuthProvider>
       </QueryClientProvider>

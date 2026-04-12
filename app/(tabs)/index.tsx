@@ -20,6 +20,8 @@ import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "@/contexts/LocationContext";
+import { useActivity } from "@/contexts/ActivityContext";
+import { XiaoxiangFace } from "@/components/XiaoxiangFace";
 import { router } from "expo-router";
 import { getConnectedDevice } from "@/lib/terminal-store";
 
@@ -119,6 +121,8 @@ export default function HomeScreen() {
   const locationText = locationStatus.state === "located"
     ? locationStatus.locationName
     : isLocating ? "定位中..." : locationStatus.state === "denied" ? "未授权定位" : "无法定位";
+
+  const { emotion, activityHint } = useActivity();
 
   const [bannerIndex, setBannerIndex] = useState(0);
   const [infoBanner, setInfoBanner] = useState<BannerItem | null>(null);
@@ -260,6 +264,36 @@ export default function HomeScreen() {
             ))}
           </View>
         </View>
+
+        {/* ── 小乡 AI 伴游卡片 ── */}
+        <Pressable
+          style={styles.xiangCard}
+          onPress={() => { haptic(); router.push("/xiaoxiang-ai"); }}
+        >
+          <LinearGradient
+            colors={["#FFF3EC", "#FFE4CC"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.xiangCardInner}
+          >
+            <View style={styles.xiangLeft}>
+              <XiaoxiangFace size={64} emotion={emotion} animate />
+            </View>
+            <View style={styles.xiangMid}>
+              <Text style={styles.xiangName}>小乡 AI 伴游</Text>
+              <Text style={styles.xiangHint}>{activityHint} · 点击开始对话</Text>
+              <View style={styles.xiangEmoBadge}>
+                <Text style={styles.xiangEmoText}>
+                  {emotion === "疲惫" ? "😴 " : emotion === "平静" ? "😊 " : emotion === "好奇" ? "🤔 " : emotion === "开心" ? "😄 " : "🥳 "}
+                  {emotion}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.xiangRight}>
+              <Ionicons name="chevron-forward" size={20} color="#E07830" />
+            </View>
+          </LinearGradient>
+        </Pressable>
 
         {/* ── Two feature cards ── */}
         <View style={styles.featureRow}>
@@ -480,6 +514,40 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     width: 18, borderRadius: 3,
   },
+
+  /* ── 小乡 AI widget ── */
+  xiangCard: {
+    marginHorizontal: CONTENT_PAD,
+    marginBottom: CARD_GAP,
+    borderRadius: 20,
+    overflow: "hidden",
+    shadowColor: "#F97340",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  xiangCardInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  xiangLeft: { alignItems: "center", justifyContent: "center" },
+  xiangMid: { flex: 1, gap: 4 },
+  xiangRight: { paddingLeft: 4 },
+  xiangName: { fontSize: 16, fontWeight: "700", color: "#5A2D10" },
+  xiangHint: { fontSize: 12, color: "#A06030" },
+  xiangEmoBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(249,115,64,0.12)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginTop: 2,
+  },
+  xiangEmoText: { fontSize: 12, color: "#E07030", fontWeight: "600" },
 
   /* ── Feature cards ── */
   featureRow: { flexDirection: "row" },

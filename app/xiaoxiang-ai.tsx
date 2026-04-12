@@ -24,6 +24,8 @@ import * as Haptics from "expo-haptics";
 import { router, Stack } from "expo-router";
 import { apiRequest } from "@/lib/query-client";
 import { useLocation } from "@/contexts/LocationContext";
+import { useActivity } from "@/contexts/ActivityContext";
+import { XiaoxiangFace } from "@/components/XiaoxiangFace";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 
@@ -65,108 +67,12 @@ function nowTime() {
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
-function XiaoxiangFace({
-  size = 80,
-  emotion = "平静" as Emotion,
-  animate = false,
-}: {
-  size?: number;
-  emotion?: Emotion;
-  animate?: boolean;
-}) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (!animate) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(scaleAnim, { toValue: 1.06, duration: 1200, useNativeDriver: true }),
-        Animated.timing(scaleAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [animate]);
-
-  const tired = emotion === "疲惫";
-  const curious = emotion === "好奇";
-  const happy = emotion === "愉快" || emotion === "开心";
-
-  const eyeH = tired ? size * 0.055 : size * 0.09;
-  const eyeW = size * 0.09;
-  const eyeTop = size * (tired ? 0.35 : 0.33);
-
-  const mouthW = happy ? size * 0.38 : size * 0.26;
-  const mouthH = happy ? size * 0.16 : size * 0.1;
-  const mouthTop = size * (tired ? 0.56 : 0.54);
-  const mouthRadius = happy ? size * 0.16 : size * 0.08;
-
-  return (
-    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-      <LinearGradient
-        colors={["#FF8C5A", "#F97340"]}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          alignItems: "center",
-          position: "relative",
-          shadowColor: "#F97340",
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.35,
-          shadowRadius: 10,
-          elevation: 8,
-        }}
-      >
-        <View
-          style={{
-            position: "absolute",
-            top: eyeTop,
-            left: size * 0.24,
-            width: eyeW,
-            height: eyeH,
-            borderRadius: eyeH / 2,
-            backgroundColor: "white",
-          }}
-        />
-        <View
-          style={{
-            position: "absolute",
-            top: eyeTop,
-            right: size * 0.24,
-            width: curious ? eyeW * 1.3 : eyeW,
-            height: eyeH,
-            borderRadius: eyeH / 2,
-            backgroundColor: "white",
-          }}
-        />
-        <View
-          style={{
-            position: "absolute",
-            top: mouthTop,
-            left: (size - mouthW) / 2,
-            width: mouthW,
-            height: mouthH,
-            borderBottomLeftRadius: mouthRadius,
-            borderBottomRightRadius: mouthRadius,
-            borderTopLeftRadius: tired ? mouthRadius : 0,
-            borderTopRightRadius: tired ? mouthRadius : 0,
-            backgroundColor: "white",
-            opacity: 0.9,
-          }}
-        />
-      </LinearGradient>
-    </Animated.View>
-  );
-}
-
 export default function XiaoxiangAiScreen() {
   const insets = useSafeAreaInsets();
   const { locationStatus } = useLocation();
+  const { emotion: activityEmotion, activityHint, stepRate, overrideEmotion } = useActivity();
   const [screen, setScreen] = useState<Screen>("welcome");
-  const [emotion, setEmotion] = useState<Emotion>("平静");
+  const [emotion, setEmotion] = useState<Emotion>(activityEmotion);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "0",
@@ -192,6 +98,10 @@ export default function XiaoxiangAiScreen() {
       .then((d: any) => setVoiceAvailable(!!d?.available))
       .catch(() => setVoiceAvailable(false));
   }, []);
+
+  useEffect(() => {
+    setEmotion(activityEmotion);
+  }, [activityEmotion]);
 
   useEffect(() => {
     if (!isListening) { micAnim.setValue(1); return; }
@@ -349,11 +259,13 @@ export default function XiaoxiangAiScreen() {
         const userLocation = locationStatus.state === "located"
           ? { name: locationStatus.locationName, lat: locationStatus.lat, lng: locationStatus.lng }
           : null;
-        const resp = await apiRequest("POST", "/api/ai/chat", { messages: history, emotion, userLocation });
+        const activityData = { hint: activityHint, stepRate };
+        const resp = await apiRequest("POST", "/api/ai/chat", { messages: history, emotion, userLocation, activityData });
         const data = await resp.json();
         if (data.reply) {
           if (data.emotion && EMOTIONS[data.emotion as Emotion]) {
             setEmotion(data.emotion as Emotion);
+            overrideEmotion(data.emotion as Emotion);
           }
           const aiMsg: Message = {
             id: (Date.now() + 1).toString(),
