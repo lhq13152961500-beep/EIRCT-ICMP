@@ -1,11 +1,12 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import https from "node:https";
 import OpenAI, { toFile } from "openai";
 import { storage, type InsertRecording } from "./storage";
+const uuidv4 = () => randomUUID();
 
 const PW_SALT = "xiangyin_banlu_2026";
 
@@ -460,6 +461,101 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const hasKey = !!(process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY);
     res.set("Cache-Control", "no-store");
     res.json({ available: hasKey });
+  });
+
+  // ── Doubao (豆包) Voice Routes ──────────────────────────────────────────
+  app.get("/api/doubao/status", (_req, res) => {
+    const configured = !!(process.env.VOLCENGINE_APP_ID && process.env.VOLCENGINE_ACCESS_TOKEN);
+    res.set("Cache-Control", "no-store");
+    res.json({ configured });
+  });
+
+  // Doubao TTS – text → base64 MP3
+  app.post("/api/doubao/tts", async (req, res) => {
+    const { text, voice } = req.body as { text?: string; voice?: string };
+    const appId = process.env.VOLCENGINE_APP_ID;
+    const token = process.env.VOLCENGINE_ACCESS_TOKEN;
+    if (!appId || !token) return res.status(503).json({ error: "doubao_not_configured" });
+    if (!text?.trim()) return res.status(400).json({ error: "text required" });
+
+    const voiceType = voice || "BV700_V2_streaming"; // 灿灿2.0 – warm female
+    const payload = {
+      app: { appid: appId, token, cluster: "volcano_mega" },
+      user: { uid: "xiaoxiang_companion" },
+      audio: {
+        voice_type: voiceType,
+        encoding: "mp3",
+        speed_ratio: 1.0,
+        volume_ratio: 1.0,
+        pitch_ratio: 1.0,
+      },
+      request: {
+        reqid: uuidv4(),
+        text: text.slice(0, 2000),
+        text_type: "plain",
+        operation: "query",
+      },
+    };
+
+    try {
+      const resp = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer;${token}`,
+          "Content-Type": "application/json",
+          "Resource-Id": "volc.tts_large",
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = (await resp.json()) as { code?: number; message?: string; data?: string };
+      console.log(`[DoubaoTTS] code=${data.code} msg=${data.message}`);
+      if (data.code === 3000 && data.data) {
+        return res.json({ audio: data.data, encoding: "mp3" });
+      }
+      return res.status(500).json({ error: data.message || "tts_failed" });
+    } catch (err: any) {
+      console.error("[DoubaoTTS] error:", err?.message);
+      return res.status(500).json({ error: "tts_request_failed" });
+    }
+  });
+
+  // Doubao ASR – base64 audio → transcript text
+  app.post("/api/doubao/asr", async (req, res) => {
+    const { audio, mime } = req.body as { audio?: string; mime?: string };
+    const appId = process.env.VOLCENGINE_APP_ID;
+    const token = process.env.VOLCENGINE_ACCESS_TOKEN;
+    if (!appId || !token) return res.status(503).json({ error: "doubao_not_configured", text: "" });
+    if (!audio) return res.status(400).json({ error: "audio required", text: "" });
+
+    const fmt = (mime || "audio/m4a").includes("m4a") ? "mp4" : "mp3";
+    const payload: Record<string, unknown> = {
+      app: { appid: appId, token, cluster: "volcengine_input_common" },
+      user: { uid: "xiaoxiang_companion" },
+      audio: { format: fmt, rate: 16000, language: "zh-CN", bits: 16, channel: 1 },
+      request: { reqid: uuidv4(), nbest: 1, show_utterances: false, sequence: -1 },
+      audio_data: audio,
+    };
+
+    try {
+      const resp = await fetch("https://openspeech.bytedance.com/api/v1/asr", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer;${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = (await resp.json()) as { code?: number; message?: string; resp?: { result?: { text: string }[] } };
+      console.log(`[DoubaoASR] code=${data.code} msg=${data.message}`);
+      if (data.code === 1000) {
+        const text = data.resp?.result?.[0]?.text ?? "";
+        return res.json({ text });
+      }
+      return res.status(500).json({ error: data.message || "asr_failed", text: "" });
+    } catch (err: any) {
+      console.error("[DoubaoASR] error:", err?.message);
+      return res.status(500).json({ error: "asr_request_failed", text: "" });
+    }
   });
 
   app.post("/api/ai/transcribe", async (req, res) => {

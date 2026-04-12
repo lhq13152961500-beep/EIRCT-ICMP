@@ -141,6 +141,7 @@ export default function XiaoxiangAiScreen() {
   const companionActiveRef = useRef(false);
   const enrollRecordingRef = useRef<Audio.Recording | null>(null);
   const companionRecordingRef = useRef<Audio.Recording | null>(null);
+  const [doubaoReady, setDoubaoReady] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "0",
@@ -175,11 +176,15 @@ export default function XiaoxiangAiScreen() {
     AsyncStorage.getItem("voiceEnrollPrompt").then((val) => {
       if (val) { setVoiceEnrolled(true); setEnrolledPrompt(val); }
     });
+    apiRequest("GET", "/api/doubao/status", undefined)
+      .then((r: any) => r.json())
+      .then((d: any) => setDoubaoReady(!!d?.configured))
+      .catch(() => setDoubaoReady(false));
   }, []);
 
   const startEnrollment = useCallback(async () => {
-    if (voiceAvailable === false) {
-      Alert.alert("语音功能未配置", "需要配置 GROQ_API_KEY 才能使用语音功能。");
+    if (!doubaoReady && voiceAvailable === false) {
+      Alert.alert("语音功能未配置", "需要配置 GROQ_API_KEY 或豆包语音凭证才能使用语音功能。");
       return;
     }
     const { granted } = await Audio.requestPermissionsAsync();
@@ -269,14 +274,35 @@ export default function XiaoxiangAiScreen() {
     return false;
   };
 
-  const runCompanionLoop = useCallback(async (currentEmotion: Emotion, currentActivityHint: string, currentPrompt: string) => {
+  const playDoubaoAudio = useCallback(async (base64Mp3: string): Promise<void> => {
+    const tempUri = `${FileSystem.cacheDirectory}xiaoxiang_tts_${Date.now()}.mp3`;
+    await FileSystem.writeAsStringAsync(tempUri, base64Mp3, { encoding: FileSystem.EncodingType.Base64 });
+    await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+    const { sound } = await Audio.Sound.createAsync({ uri: tempUri }, { shouldPlay: true });
+    await new Promise<void>((resolve) => {
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (!status.isLoaded) { resolve(); return; }
+        if (status.didJustFinish) { sound.unloadAsync().catch(() => {}); resolve(); }
+      });
+      setTimeout(resolve, 30000); // safety timeout 30s
+    });
+    FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => {});
+  }, []);
+
+  const runCompanionLoop = useCallback(async (
+    currentEmotion: Emotion,
+    currentActivityHint: string,
+    currentPrompt: string,
+    useDoubao: boolean,
+  ) => {
     while (companionActiveRef.current) {
       try {
-        // Make sure any speech is done before recording (prevent feedback loop)
+        // Stop any playback before recording to prevent feedback
         if (await Speech.isSpeakingAsync()) {
           Speech.stop();
-          await new Promise<void>((r) => setTimeout(r, 500));
+          await new Promise<void>((r) => setTimeout(r, 400));
         }
+
         setCompanionStatus("listening");
         await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
         const { recording } = await Audio.Recording.createAsync({
@@ -289,22 +315,41 @@ export default function XiaoxiangAiScreen() {
         companionRecordingRef.current = null;
         if (!companionActiveRef.current) { try { await recording.stopAndUnloadAsync(); } catch {} break; }
         await recording.stopAndUnloadAsync();
+
         const uri = recording.getURI();
         if (!uri) continue;
         const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+
         setCompanionStatus("processing");
-        const tResp = await apiRequest("POST", "/api/ai/transcribe", {
-          audio: base64, mime: "audio/m4a",
-          prompt: currentPrompt || "吐峪沟 吐鲁番 游览 景点 旅行",
-        });
-        const tData = await (tResp as any).json();
-        const text: string = tData.text?.trim() ?? "";
-        console.log("[Companion] transcribed:", text);
-        // Filter noise / silence
+
+        // ── ASR: Doubao first, fall back to Groq Whisper ──
+        let text = "";
+        if (useDoubao) {
+          try {
+            const tResp = await apiRequest("POST", "/api/doubao/asr", { audio: base64, mime: "audio/m4a" });
+            const tData = await (tResp as any).json();
+            text = tData.text?.trim() ?? "";
+            console.log("[Companion/DoubaoASR]", text);
+          } catch {
+            console.warn("[Companion] DoubaoASR failed, falling back to Whisper");
+          }
+        }
+        if (!text) {
+          const tResp = await apiRequest("POST", "/api/ai/transcribe", {
+            audio: base64, mime: "audio/m4a",
+            prompt: currentPrompt || "吐峪沟 吐鲁番 游览 景点 旅行",
+          });
+          const tData = await (tResp as any).json();
+          text = tData.text?.trim() ?? "";
+          console.log("[Companion/WhisperASR]", text);
+        }
+
         if (isNoise(text) || !companionActiveRef.current) {
           setCompanionStatus("listening");
           continue;
         }
+
+        // ── LLM: DeepSeek ──
         const loc = locationStatus.state === "located" ? { name: locationStatus.locationName, lat: 0, lng: 0 } : null;
         const aiResp = await apiRequest("POST", "/api/ai/chat", {
           messages: [{ role: "user", content: text }],
@@ -314,23 +359,31 @@ export default function XiaoxiangAiScreen() {
         });
         const aiData = await (aiResp as any).json();
         const reply: string = aiData.reply || "";
-        if (reply && companionActiveRef.current) {
-          setCompanionResponse(reply);
-          if (aiData.emotion) setEmotion(aiData.emotion as Emotion);
-          // Switch audio mode for playback, then speak
-          await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
-          await new Promise<void>((resolve) => {
-            Speech.speak(reply, {
-              language: "zh-CN",
-              rate: 0.95,
-              pitch: 1.05,
-              onDone: resolve,
-              onError: resolve,
-              onStopped: resolve,
-            });
-          });
-          setCompanionResponse("");
+        if (!reply || !companionActiveRef.current) continue;
+
+        setCompanionResponse(reply);
+        if (aiData.emotion) setEmotion(aiData.emotion as Emotion);
+
+        // ── TTS: Doubao first, fall back to expo-speech ──
+        if (useDoubao) {
+          try {
+            const ttsResp = await apiRequest("POST", "/api/doubao/tts", { text: reply });
+            const ttsData = await (ttsResp as any).json();
+            if (ttsData.audio && companionActiveRef.current) {
+              await playDoubaoAudio(ttsData.audio);
+              setCompanionResponse("");
+              continue;
+            }
+          } catch {
+            console.warn("[Companion] DoubaoTTS failed, falling back to expo-speech");
+          }
         }
+        // Fallback: expo-speech
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+        await new Promise<void>((resolve) => {
+          Speech.speak(reply, { language: "zh-CN", rate: 0.95, pitch: 1.05, onDone: resolve, onError: resolve, onStopped: resolve });
+        });
+        setCompanionResponse("");
       } catch (e) {
         console.error("[Companion] loop error:", e);
         await new Promise<void>((resolve) => setTimeout(resolve, 2000));
@@ -338,7 +391,7 @@ export default function XiaoxiangAiScreen() {
     }
     Speech.stop();
     setCompanionStatus("idle");
-  }, [locationStatus]);
+  }, [locationStatus, playDoubaoAudio]);
 
   useEffect(() => {
     if (!isListening) { micAnim.setValue(1); return; }
@@ -561,8 +614,8 @@ export default function XiaoxiangAiScreen() {
       setCompanionResponse("");
       Speech.stop();
     } else {
-      if (voiceAvailable === false) {
-        Alert.alert("语音功能未配置", "伴游模式需要配置 GROQ_API_KEY，请联系管理员。");
+      if (!doubaoReady && voiceAvailable === false) {
+        Alert.alert("语音功能未配置", "伴游模式需要配置豆包语音或 GROQ_API_KEY。");
         return;
       }
       const { granted } = await Audio.requestPermissionsAsync();
@@ -579,9 +632,9 @@ export default function XiaoxiangAiScreen() {
       }
       companionActiveRef.current = true;
       setIsCompanionActive(true);
-      runCompanionLoop(emotion, activityHint, enrolledPrompt);
+      runCompanionLoop(emotion, activityHint, enrolledPrompt, doubaoReady);
     }
-  }, [isCompanionActive, voiceAvailable, emotion, activityHint, enrolledPrompt, runCompanionLoop]);
+  }, [isCompanionActive, voiceAvailable, emotion, activityHint, enrolledPrompt, doubaoReady, runCompanionLoop]);
 
   const emotionInfo = EMOTIONS[emotion];
 
@@ -717,6 +770,12 @@ export default function XiaoxiangAiScreen() {
           </View>
 
           <Text style={styles.companionPageTitle}>小乡伴游模式</Text>
+          <View style={styles.doubaoModeBadge}>
+            <Ionicons name={doubaoReady ? "checkmark-circle" : "mic-circle-outline"} size={12} color={doubaoReady ? "#1AAD6B" : "#A07050"} />
+            <Text style={[styles.doubaoModeBadgeText, { color: doubaoReady ? "#1AAD6B" : "#A07050" }]}>
+              {doubaoReady ? "豆包语音 · 大模型" : "标准语音"}
+            </Text>
+          </View>
           <Text style={styles.companionPageSub}>{ew.sub}</Text>
           <Text style={styles.companionActivityHint}>{activityHint}</Text>
 
@@ -1376,6 +1435,17 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   emotionBadgeLargeText: { fontSize: 13, fontWeight: "700" },
+  doubaoModeBadge: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 4,
+    backgroundColor: "rgba(255,255,255,0.7)",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  doubaoModeBadgeText: { fontSize: 11, fontWeight: "600" as const },
   companionPageTitle: {
     fontSize: 26,
     fontWeight: "800",
