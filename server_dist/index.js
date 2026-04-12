@@ -602,6 +602,22 @@ async function registerRoutes(app2) {
       return res.status(500).send("Failed to load locate page");
     }
   });
+  app2.get("/api/speech-recognition", (_req, res) => {
+    try {
+      const candidates = [
+        join(process.cwd(), "server_dist", "speech-recognition.html"),
+        join(process.cwd(), "server", "speech-recognition.html")
+      ];
+      const htmlPath = candidates.find((p) => existsSync(p));
+      if (!htmlPath) return res.status(500).send("speech-recognition.html not found");
+      const html = readFileSync(htmlPath, "utf-8");
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      return res.send(html);
+    } catch (e) {
+      return res.status(500).send("Failed to load speech recognition page");
+    }
+  });
   app2.get("/api/tiles/:z/:x/:y", (req, res) => {
     const { z, x, y } = req.params;
     const tileUrl = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
@@ -839,7 +855,7 @@ async function registerRoutes(app2) {
             ...messages
           ],
           max_tokens: 300,
-          temperature: 1.3
+          temperature: 0.85
         });
         console.log("[DeepSeek] usage:", completion.usage);
         const reply2 = completion.choices[0]?.message?.content || "\u62B1\u6B49\uFF0C\u6211\u6682\u65F6\u65E0\u6CD5\u56DE\u7B54\u8FD9\u4E2A\u95EE\u9898\uFF5E";

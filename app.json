@@ -48,14 +48,7 @@
         }
       ],
       "expo-font",
-      "expo-web-browser",
-      [
-        "expo-speech-recognition",
-        {
-          "microphonePermission": "允许「乡音伴旅」使用麦克风进行语音输入",
-          "speechRecognitionPermission": "允许「乡音伴旅」使用语音识别将语音转为文字"
-        }
-      ]
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

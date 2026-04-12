@@ -280,6 +280,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/speech-recognition", (_req, res) => {
+    try {
+      const candidates = [
+        join(process.cwd(), "server_dist", "speech-recognition.html"),
+        join(process.cwd(), "server", "speech-recognition.html"),
+      ];
+      const htmlPath = candidates.find(p => existsSync(p));
+      if (!htmlPath) return res.status(500).send("speech-recognition.html not found");
+      const html = readFileSync(htmlPath, "utf-8");
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      return res.send(html);
+    } catch (e) {
+      return res.status(500).send("Failed to load speech recognition page");
+    }
+  });
+
   app.get("/api/tiles/:z/:x/:y", (req, res) => {
     const { z, x, y } = req.params;
     const tileUrl = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;

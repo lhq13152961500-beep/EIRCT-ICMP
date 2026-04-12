@@ -21,12 +21,9 @@ import Markdown from "react-native-markdown-display";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 import { router, Stack } from "expo-router";
-import { apiRequest } from "@/lib/query-client";
+import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { useLocation } from "@/contexts/LocationContext";
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-} from "expo-speech-recognition";
+import { WebView } from "react-native-webview";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -181,32 +178,10 @@ export default function XiaoxiangAiScreen() {
   const [isListening, setIsListening] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const voiceTranscriptRef = useRef("");
+  const speechWebViewRef = useRef<WebView>(null);
   const flatListRef = useRef<FlatList>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const micAnim = useRef(new Animated.Value(1)).current;
-
-  useSpeechRecognitionEvent("start", () => setIsListening(true));
-  useSpeechRecognitionEvent("end", () => {
-    setIsListening(false);
-    const final = voiceTranscriptRef.current.trim();
-    if (final) {
-      sendMessage(final);
-      voiceTranscriptRef.current = "";
-      setVoiceTranscript("");
-      setInput("");
-    }
-  });
-  useSpeechRecognitionEvent("result", (event) => {
-    const text = event.results?.[0]?.transcript ?? "";
-    voiceTranscriptRef.current = text;
-    setVoiceTranscript(text);
-    setInput(text);
-  });
-  useSpeechRecognitionEvent("error", () => {
-    setIsListening(false);
-    voiceTranscriptRef.current = "";
-    setVoiceTranscript("");
-  });
 
   useEffect(() => {
     if (!isListening) { micAnim.setValue(1); return; }
@@ -220,21 +195,46 @@ export default function XiaoxiangAiScreen() {
     return () => loop.stop();
   }, [isListening]);
 
-  const handleVoice = useCallback(async () => {
+  const handleSpeechMessage = useCallback((event: { nativeEvent: { data: string } }) => {
+    try {
+      const msg = JSON.parse(event.nativeEvent.data);
+      if (msg.type === "start") {
+        setIsListening(true);
+      } else if (msg.type === "result") {
+        voiceTranscriptRef.current = msg.data;
+        setVoiceTranscript(msg.data);
+        setInput(msg.data);
+      } else if (msg.type === "end") {
+        setIsListening(false);
+        const final = voiceTranscriptRef.current.trim();
+        if (final) {
+          sendMessage(final);
+          voiceTranscriptRef.current = "";
+          setVoiceTranscript("");
+          setInput("");
+        }
+      } else if (msg.type === "error") {
+        setIsListening(false);
+        voiceTranscriptRef.current = "";
+        setVoiceTranscript("");
+        if (msg.data === "not_supported") {
+          setInput("（此设备不支持语音识别，请手动输入）");
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }, [sendMessage]);
+
+  const handleVoice = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (isListening) {
-      ExpoSpeechRecognitionModule.stop();
+      speechWebViewRef.current?.injectJavaScript('stop(); true;');
+      setIsListening(false);
       return;
     }
-    const { status } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-    if (status !== "granted") return;
+    voiceTranscriptRef.current = "";
     setVoiceTranscript("");
     setInput("");
-    ExpoSpeechRecognitionModule.start({
-      lang: "zh-CN",
-      interimResults: true,
-      continuous: false,
-    });
+    speechWebViewRef.current?.injectJavaScript('start("zh-CN"); true;');
   }, [isListening]);
 
   useEffect(() => {
@@ -398,6 +398,16 @@ export default function XiaoxiangAiScreen() {
       <LinearGradient
         colors={["#FFF4EE", "#FFF9F6"]}
         style={StyleSheet.absoluteFill}
+      />
+
+      <WebView
+        ref={speechWebViewRef}
+        source={{ uri: new URL("/api/speech-recognition", getApiUrl()).href }}
+        style={{ width: 0, height: 0, position: "absolute", opacity: 0 }}
+        onMessage={handleSpeechMessage}
+        javaScriptEnabled
+        mediaPlaybackRequiresUserAction={false}
+        allowsInlineMediaPlayback
       />
 
       <View style={styles.chatHeader}>
