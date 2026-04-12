@@ -770,6 +770,7 @@ async function registerRoutes(app2) {
   });
   app2.get("/api/ai/voice-status", (_req, res) => {
     const hasKey = !!(process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY);
+    res.set("Cache-Control", "no-store");
     res.json({ available: hasKey });
   });
   app2.post("/api/ai/transcribe", async (req, res) => {
