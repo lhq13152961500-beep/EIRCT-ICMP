@@ -21,9 +21,10 @@ import Markdown from "react-native-markdown-display";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 import { router, Stack } from "expo-router";
-import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { apiRequest } from "@/lib/query-client";
 import { useLocation } from "@/contexts/LocationContext";
-import { WebView } from "react-native-webview";
+import { Audio } from "expo-av";
+import * as FileSystem from "expo-file-system";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -176,9 +177,8 @@ export default function XiaoxiangAiScreen() {
   const [loading, setLoading] = useState(false);
   const [showMediaPanel, setShowMediaPanel] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [voiceTranscript, setVoiceTranscript] = useState("");
-  const voiceTranscriptRef = useRef("");
-  const speechWebViewRef = useRef<WebView>(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const recordingRef = useRef<Audio.Recording | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const micAnim = useRef(new Animated.Value(1)).current;
@@ -195,47 +195,52 @@ export default function XiaoxiangAiScreen() {
     return () => loop.stop();
   }, [isListening]);
 
-  const handleSpeechMessage = useCallback((event: { nativeEvent: { data: string } }) => {
+  const stopAndTranscribe = useCallback(async () => {
+    const recording = recordingRef.current;
+    if (!recording) return;
     try {
-      const msg = JSON.parse(event.nativeEvent.data);
-      if (msg.type === "start") {
-        setIsListening(true);
-      } else if (msg.type === "result") {
-        voiceTranscriptRef.current = msg.data;
-        setVoiceTranscript(msg.data);
-        setInput(msg.data);
-      } else if (msg.type === "end") {
-        setIsListening(false);
-        const final = voiceTranscriptRef.current.trim();
-        if (final) {
-          sendMessage(final);
-          voiceTranscriptRef.current = "";
-          setVoiceTranscript("");
-          setInput("");
-        }
-      } else if (msg.type === "error") {
-        setIsListening(false);
-        voiceTranscriptRef.current = "";
-        setVoiceTranscript("");
-        if (msg.data === "not_supported") {
-          setInput("（此设备不支持语音识别，请手动输入）");
-        }
+      setIsListening(false);
+      setIsTranscribing(true);
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      recordingRef.current = null;
+      if (!uri) { setIsTranscribing(false); return; }
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      const data = await apiRequest("POST", "/api/ai/transcribe", { audio: base64, mime: "audio/m4a" });
+      const text: string = data.text?.trim() ?? "";
+      setIsTranscribing(false);
+      if (text) {
+        sendMessage(text);
+      } else if (data.error === "no_key") {
+        setInput("（语音功能需配置 GROQ_API_KEY，请联系管理员）");
+      } else {
+        setInput("（未能识别语音，请重试或手动输入）");
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      setIsTranscribing(false);
+      recordingRef.current = null;
+    }
   }, [sendMessage]);
 
-  const handleVoice = useCallback(() => {
+  const handleVoice = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (isListening) {
-      speechWebViewRef.current?.injectJavaScript('stop(); true;');
-      setIsListening(false);
+      await stopAndTranscribe();
       return;
     }
-    voiceTranscriptRef.current = "";
-    setVoiceTranscript("");
-    setInput("");
-    speechWebViewRef.current?.injectJavaScript('start("zh-CN"); true;');
-  }, [isListening]);
+    try {
+      const { granted } = await Audio.requestPermissionsAsync();
+      if (!granted) { setInput("（需要麦克风权限）"); return; }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      recordingRef.current = recording;
+      setIsListening(true);
+    } catch (e) {
+      setIsListening(false);
+    }
+  }, [isListening, stopAndTranscribe]);
 
   useEffect(() => {
     if (screen !== "chat") return;
@@ -400,18 +405,6 @@ export default function XiaoxiangAiScreen() {
         style={StyleSheet.absoluteFill}
       />
 
-      <View style={{ height: 0, width: 0, overflow: "hidden" }}>
-        <WebView
-          ref={speechWebViewRef}
-          source={{ uri: new URL("/api/speech-recognition", getApiUrl()).href }}
-          style={{ width: 1, height: 1 }}
-          onMessage={handleSpeechMessage}
-          javaScriptEnabled
-          mediaPlaybackRequiresUserAction={false}
-          allowsInlineMediaPlayback
-        />
-      </View>
-
       <View style={styles.chatHeader}>
         <Pressable
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setScreen("welcome"); }}
@@ -550,13 +543,13 @@ export default function XiaoxiangAiScreen() {
         </View>
       )}
 
-      {isListening && (
+      {(isListening || isTranscribing) && (
         <View style={styles.listeningBar}>
-          <Animated.View style={{ transform: [{ scale: micAnim }] }}>
-            <Ionicons name="mic" size={18} color="#E03A20" />
+          <Animated.View style={{ transform: [{ scale: isListening ? micAnim : 1 }] }}>
+            <Ionicons name={isTranscribing ? "hourglass-outline" : "mic"} size={18} color="#E03A20" />
           </Animated.View>
           <Text style={styles.listeningText}>
-            {voiceTranscript ? voiceTranscript : "正在听，请说话..."}
+            {isTranscribing ? "正在识别语音..." : "正在听，请说话...点击停止"}
           </Text>
         </View>
       )}
@@ -575,16 +568,16 @@ export default function XiaoxiangAiScreen() {
           style={styles.inputField}
           value={input}
           onChangeText={setInput}
-          placeholder={isListening ? "语音识别中..." : "问问小乡任何问题..."}
+          placeholder={isListening ? "录音中..." : isTranscribing ? "识别中..." : "问问小乡任何问题..."}
           placeholderTextColor={isListening ? "#E03A20" : "#BBA"}
           multiline
           maxLength={300}
           onSubmitEditing={() => sendMessage(input)}
           returnKeyType="send"
           onFocus={() => setShowMediaPanel(false)}
-          editable={!isListening}
+          editable={!isListening && !isTranscribing}
         />
-        {input.trim() && !isListening ? (
+        {input.trim() && !isListening && !isTranscribing ? (
           <Pressable
             style={[styles.sendBtn, loading && styles.sendBtnDisabled]}
             onPress={() => sendMessage(input)}
@@ -598,17 +591,16 @@ export default function XiaoxiangAiScreen() {
             </LinearGradient>
           </Pressable>
         ) : (
-          <Pressable style={styles.micBtn} onPress={handleVoice} disabled={loading}>
+          <Pressable style={styles.micBtn} onPress={handleVoice} disabled={loading || isTranscribing}>
             <Animated.View style={[
               styles.micGrad,
-              isListening && styles.micGradActive,
+              (isListening || isTranscribing) && styles.micGradActive,
               { transform: [{ scale: isListening ? micAnim : 1 }] },
             ]}>
-              <Ionicons
-                name={isListening ? "stop" : "mic"}
-                size={18}
-                color="white"
-              />
+              {isTranscribing
+                ? <ActivityIndicator size="small" color="white" />
+                : <Ionicons name={isListening ? "stop" : "mic"} size={18} color="white" />
+              }
             </Animated.View>
           </Pressable>
         )}

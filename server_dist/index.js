@@ -7,7 +7,7 @@ import { createHash } from "crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import https from "node:https";
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 
 // server/storage.ts
 import { randomUUID } from "crypto";
@@ -766,6 +766,32 @@ async function registerRoutes(app2) {
     } catch (err) {
       console.error(err);
       return res.status(500).json({ error: "Failed to serve comment voice" });
+    }
+  });
+  app2.post("/api/ai/transcribe", async (req, res) => {
+    const { audio, mime } = req.body;
+    if (!audio) return res.status(400).json({ error: "audio required" });
+    const groqKey = process.env.GROQ_API_KEY;
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (!groqKey && !openaiKey) {
+      console.log("[Transcribe] No STT API key configured (GROQ_API_KEY or OPENAI_API_KEY)");
+      return res.json({ text: "", error: "no_key" });
+    }
+    try {
+      const client = groqKey ? new OpenAI({ apiKey: groqKey, baseURL: "https://api.groq.com/openai/v1" }) : new OpenAI({ apiKey: openaiKey });
+      const model = groqKey ? "whisper-large-v3" : "whisper-1";
+      const audioBuffer = Buffer.from(audio, "base64");
+      const file = await toFile(audioBuffer, "audio.m4a", { type: mime || "audio/m4a" });
+      const transcription = await client.audio.transcriptions.create({
+        file,
+        model,
+        language: "zh"
+      });
+      console.log(`[Transcribe] text="${transcription.text}"`);
+      return res.json({ text: transcription.text });
+    } catch (err) {
+      console.error("[Transcribe] error:", err?.message);
+      return res.status(500).json({ error: "transcription_failed", text: "" });
     }
   });
   app2.post("/api/ai/chat", async (req, res) => {
