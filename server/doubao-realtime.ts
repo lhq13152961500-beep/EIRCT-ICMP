@@ -26,8 +26,9 @@ const EVT_TASK_REQUEST  = 200;
 const EVT_CONN_STARTED  = 50;
 const EVT_TTS_ENDED     = 359;
 
-// 克隆声音 ID (S_HqJPcQyZ) for the realtime dialog model
-export const DEFAULT_SPEAKER = "S_HqJPcQyZ";
+// Leave empty to use the dialog service's built-in default voice.
+// Once voice clone data is uploaded, set this to "S_hQJPcOyZ".
+export const DEFAULT_SPEAKER = "";
 
 function int32BE(n: number): Buffer {
   const b = Buffer.alloc(4);
@@ -296,28 +297,26 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
     const sessionId  = randomUUID();
     const systemRole = req.systemRole || buildSystemPrompt(req.emotion, req.location, req.activityHint, req.stepRate);
 
-    // O2.0 model: no speaker field needed — server default is vv; if unavailable falls to HTTP TTS
+    const speakerToUse = req.speaker || DEFAULT_SPEAKER;
+    const ttsConfig: Record<string, unknown> = {
+      audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24000 },
+    };
+    if (speakerToUse) ttsConfig.speaker = speakerToUse;
+
     const sessionPayload = {
       asr: {
         audio_config: { format: "pcm_s16le", sample_rate: 16000, channel: 1 },
         language: "zh-CN",
       },
-      tts: {
-        audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24000 },
-        speaker: DEFAULT_SPEAKER,
-      },
+      tts: ttsConfig,
       dialog: {
         bot_name: "小乡",
         system_role: systemRole,
         speaking_style: "说话活泼可爱，像熟悉新疆文化的年轻导游朋友。",
-        extra: {
-          input_mod: "audio_file",
-          model: "2.2.0.0",
-        },
       },
     };
 
-    console.log(`[DoubaoS2S] speaker=${DEFAULT_SPEAKER} model=2.2.0.0`);
+    console.log(`[DoubaoS2S] speaker="${speakerToUse || "(default)"}"`);
     const result = await attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPayload, systemRole);
 
     if (result === null) throw new Error("Doubao S2S failed — check credentials and API access");

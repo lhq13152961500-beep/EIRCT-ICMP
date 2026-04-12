@@ -381,7 +381,7 @@ var EVT_FINISH_SESSION = 102;
 var EVT_TASK_REQUEST = 200;
 var EVT_CONN_STARTED = 50;
 var EVT_TTS_ENDED = 359;
-var DEFAULT_SPEAKER = "S_HqJPcQyZ";
+var DEFAULT_SPEAKER = "";
 function int32BE(n) {
   const b = Buffer.alloc(4);
   b.writeInt32BE(n, 0);
@@ -606,26 +606,24 @@ async function doublaoRealtimeTurn(req) {
     console.log(`[DoubaoS2S] PCM: ${pcmData.length}B (~${(pcmData.length / 32e3).toFixed(1)}s)`);
     const sessionId = randomUUID2();
     const systemRole = req.systemRole || buildSystemPrompt(req.emotion, req.location, req.activityHint, req.stepRate);
+    const speakerToUse = req.speaker || DEFAULT_SPEAKER;
+    const ttsConfig = {
+      audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24e3 }
+    };
+    if (speakerToUse) ttsConfig.speaker = speakerToUse;
     const sessionPayload = {
       asr: {
         audio_config: { format: "pcm_s16le", sample_rate: 16e3, channel: 1 },
         language: "zh-CN"
       },
-      tts: {
-        audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24e3 },
-        speaker: DEFAULT_SPEAKER
-      },
+      tts: ttsConfig,
       dialog: {
         bot_name: "\u5C0F\u4E61",
         system_role: systemRole,
-        speaking_style: "\u8BF4\u8BDD\u6D3B\u6CFC\u53EF\u7231\uFF0C\u50CF\u719F\u6089\u65B0\u7586\u6587\u5316\u7684\u5E74\u8F7B\u5BFC\u6E38\u670B\u53CB\u3002",
-        extra: {
-          input_mod: "audio_file",
-          model: "2.2.0.0"
-        }
+        speaking_style: "\u8BF4\u8BDD\u6D3B\u6CFC\u53EF\u7231\uFF0C\u50CF\u719F\u6089\u65B0\u7586\u6587\u5316\u7684\u5E74\u8F7B\u5BFC\u6E38\u670B\u53CB\u3002"
       }
     };
-    console.log(`[DoubaoS2S] speaker=${DEFAULT_SPEAKER} model=2.2.0.0`);
+    console.log(`[DoubaoS2S] speaker="${speakerToUse || "(default)"}"`);
     const result = await attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPayload, systemRole);
     if (result === null) throw new Error("Doubao S2S failed \u2014 check credentials and API access");
     const allPcm = Buffer.concat(result.audioChunks);
