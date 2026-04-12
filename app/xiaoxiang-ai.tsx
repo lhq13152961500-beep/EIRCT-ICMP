@@ -326,6 +326,7 @@ export default function XiaoxiangAiScreen() {
         if (useDoubao) {
           try {
             const locName = locationStatus.state === "located" ? locationStatus.locationName : "新疆";
+            console.log("[S2S] 发送请求…");
             const s2sResp = await apiRequest("POST", "/api/doubao/s2s", {
               audioBase64: base64,
               mimeType: "audio/m4a",
@@ -333,7 +334,10 @@ export default function XiaoxiangAiScreen() {
               location: locName,
             });
             const s2sData = await (s2sResp as any).json();
-            if (s2sData.audioBase64 && companionActiveRef.current) {
+            if (s2sData.error) {
+              console.warn("[S2S] 服务端错误:", s2sData.error);
+              // Fall through to Whisper chain
+            } else if (s2sData.audioBase64 && companionActiveRef.current) {
               if (s2sData.transcript) console.log("[S2S] 用户说:", s2sData.transcript);
               if (s2sData.aiText) {
                 setCompanionResponse(s2sData.aiText);
@@ -342,9 +346,14 @@ export default function XiaoxiangAiScreen() {
               await playDoubaoAudio(s2sData.audioBase64);
               setCompanionResponse("");
               continue;
+            } else if (!s2sData.audioBase64) {
+              // Empty response (silence detected) — restart listening immediately
+              console.log("[S2S] 静音，重新监听");
+              setCompanionStatus("listening");
+              continue;
             }
-          } catch (s2sErr) {
-            console.warn("[Companion] S2S failed, falling back to chain:", s2sErr);
+          } catch (s2sErr: any) {
+            console.warn("[Companion] S2S failed, falling back:", s2sErr?.message);
           }
         }
 

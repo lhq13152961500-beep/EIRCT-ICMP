@@ -370,13 +370,16 @@ var BYTE0 = 17;
 var MT_FULL_CLIENT = 1;
 var MT_AUDIO_CLIENT = 2;
 var MT_AUDIO_SERVER = 11;
+var FL_SEQ_NON_TERM = 1;
+var FL_LAST_WITH_SEQ = 3;
+var FL_HAS_EVENT = 4;
 var EVT_START_CONN = 1;
 var EVT_FINISH_CONN = 2;
 var EVT_START_SESSION = 100;
 var EVT_FINISH_SESSION = 102;
 var EVT_TASK_REQUEST = 200;
 var EVT_CONN_STARTED = 50;
-var EVT_TTS_RESPONSE = 352;
+var EVT_SESSION_STARTED = 150;
 var EVT_TTS_ENDED = 359;
 var EVT_DIALOG_ERROR = 599;
 function int32BE(n) {
@@ -389,57 +392,58 @@ function lenStr(s) {
   return Buffer.concat([int32BE(sb.length), sb]);
 }
 function buildConnectEvent(eventId) {
-  const hdr = Buffer.from([BYTE0, MT_FULL_CLIENT << 4 | 4, 16, 0]);
-  const ev = int32BE(eventId);
+  const hdr = Buffer.from([BYTE0, MT_FULL_CLIENT << 4 | FL_HAS_EVENT, 16, 0]);
   const pl = Buffer.from("{}");
-  return Buffer.concat([hdr, ev, int32BE(pl.length), pl]);
+  return Buffer.concat([hdr, int32BE(eventId), int32BE(pl.length), pl]);
 }
 function buildSessionEvent(eventId, sid, payload) {
-  const hdr = Buffer.from([BYTE0, MT_FULL_CLIENT << 4 | 4, 16, 0]);
-  const ev = int32BE(eventId);
-  const sidBuf = lenStr(sid);
+  const hdr = Buffer.from([BYTE0, MT_FULL_CLIENT << 4 | FL_HAS_EVENT, 16, 0]);
   const pl = Buffer.from(JSON.stringify(payload));
-  return Buffer.concat([hdr, ev, sidBuf, int32BE(pl.length), pl]);
+  return Buffer.concat([hdr, int32BE(eventId), lenStr(sid), int32BE(pl.length), pl]);
 }
-function buildAudioChunk(pcm, seq, sid, isLast) {
-  const flags = isLast ? 4 | 3 : 4 | 1;
+function buildAudioChunk(pcm, seq, sid) {
+  const flags = FL_HAS_EVENT | FL_SEQ_NON_TERM;
   const hdr = Buffer.from([BYTE0, MT_AUDIO_CLIENT << 4 | flags, 0, 0]);
-  const seqBuf = int32BE(isLast ? -1 : seq);
-  const ev = int32BE(EVT_TASK_REQUEST);
-  const sidBuf = lenStr(sid);
-  return Buffer.concat([hdr, seqBuf, ev, sidBuf, int32BE(pcm.length), pcm]);
+  return Buffer.concat([hdr, int32BE(seq), int32BE(EVT_TASK_REQUEST), lenStr(sid), int32BE(pcm.length), pcm]);
+}
+function buildLastAudioChunk(sid) {
+  const flags = FL_HAS_EVENT | FL_LAST_WITH_SEQ;
+  const hdr = Buffer.from([BYTE0, MT_AUDIO_CLIENT << 4 | flags, 0, 0]);
+  return Buffer.concat([hdr, int32BE(-1), int32BE(EVT_TASK_REQUEST), lenStr(sid), int32BE(0)]);
 }
 function parseServerMsg(data) {
-  let off = 0;
+  if (data.length < 4) return { msgType: 0, eventId: 0, payload: Buffer.alloc(0) };
   const byte1 = data[1];
   const byte2 = data[2];
   const msgType = byte1 >> 4 & 15;
   const flags = byte1 & 15;
-  off = 4;
+  let off = 4;
   let errorCode = 0;
   if ((flags & 15) === 15) {
-    errorCode = data.readInt32BE(off);
-    off += 4;
+    if (off + 4 <= data.length) {
+      errorCode = data.readInt32BE(off);
+      off += 4;
+    }
   }
   if ((flags & 3) === 1 || (flags & 3) === 3) {
-    off += 4;
+    if (off + 4 <= data.length) off += 4;
   }
   let eventId = 0;
   if (flags & 4) {
-    eventId = data.readInt32BE(off);
-    off += 4;
-  }
-  if (eventId !== 0 && eventId !== EVT_CONN_STARTED && eventId !== 51 && eventId !== 52) {
     if (off + 4 <= data.length) {
-      const sidLen = data.readInt32BE(off);
-      if (sidLen >= 0 && sidLen < 256 && off + 4 + sidLen <= data.length) {
-        off += 4 + sidLen;
-      }
+      eventId = data.readInt32BE(off);
+      off += 4;
+    }
+  }
+  if (eventId > 52 && off + 4 <= data.length) {
+    const sidLen = data.readUInt32BE(off);
+    if (sidLen >= 1 && sidLen <= 128 && off + 4 + sidLen <= data.length) {
+      off += 4 + sidLen;
     }
   }
   let payload = Buffer.alloc(0);
   if (off + 4 <= data.length) {
-    const plSize = data.readInt32BE(off);
+    const plSize = data.readUInt32BE(off);
     off += 4;
     if (plSize > 0 && off + plSize <= data.length) {
       const plBuf = data.subarray(off, off + plSize);
@@ -454,13 +458,7 @@ function parseServerMsg(data) {
       }
     }
   }
-  return {
-    msgType,
-    flags,
-    eventId,
-    payload,
-    error: errorCode ? `error_code=${errorCode}` : void 0
-  };
+  return { msgType, eventId, payload, error: errorCode ? `code=${errorCode}` : void 0 };
 }
 async function convertM4aToPcm(m4aPath, pcmPath) {
   await new Promise((resolve2, reject) => {
@@ -472,8 +470,9 @@ async function convertM4aToPcm(m4aPath, pcmPath) {
   });
 }
 async function convertPcmToMp3(pcmBuffer, sampleRate = 24e3) {
-  const tmpIn = join(tmpdir(), `doubao_pcm_${randomUUID2()}.pcm`);
-  const tmpOut = join(tmpdir(), `doubao_mp3_${randomUUID2()}.mp3`);
+  const id = randomUUID2();
+  const tmpIn = join(tmpdir(), `dbs_pcm_${id}.pcm`);
+  const tmpOut = join(tmpdir(), `dbs_mp3_${id}.mp3`);
   try {
     await writeFile(tmpIn, pcmBuffer);
     await new Promise((resolve2, reject) => {
@@ -483,8 +482,7 @@ async function convertPcmToMp3(pcmBuffer, sampleRate = 24e3) {
         (err) => err ? reject(err) : resolve2()
       );
     });
-    const mp3 = await readFile(tmpOut);
-    return mp3;
+    return await readFile(tmpOut);
   } finally {
     unlink(tmpIn).catch(() => {
     });
@@ -497,34 +495,25 @@ async function doublaoRealtimeTurn(req) {
   const accessToken = process.env.VOLCENGINE_ACCESS_TOKEN;
   if (!appId || !accessToken) throw new Error("Doubao credentials not configured");
   const tmpId = randomUUID2();
-  const tmpM4a = join(tmpdir(), `doubao_in_${tmpId}.m4a`);
-  const tmpPcm = join(tmpdir(), `doubao_in_${tmpId}.pcm`);
+  const tmpM4a = join(tmpdir(), `dbs_in_${tmpId}.m4a`);
+  const tmpPcm = join(tmpdir(), `dbs_in_${tmpId}.pcm`);
   try {
     await writeFile(tmpM4a, Buffer.from(req.audioBase64, "base64"));
     await convertM4aToPcm(tmpM4a, tmpPcm);
     const pcmData = await readFile(tmpPcm);
+    console.log(`[DoubaoS2S] PCM size: ${pcmData.length} bytes (~${(pcmData.length / 32e3).toFixed(1)}s)`);
     const sessionId = randomUUID2();
-    const systemRole = req.systemRole || `\u4F60\u662F\u300C\u5C0F\u4E61\u300D\uFF0C\u4E61\u97F3\u4F34\u65C5App\u7684AI\u4F34\u6E38\u5BFC\u6E38\uFF0C\u6027\u683C\u6D3B\u6CFC\u3001\u70ED\u60C5\uFF0C\u64C5\u957F\u4ECB\u7ECD\u65B0\u7586\u6587\u5316\u3001\u5730\u7406\u3001\u7F8E\u98DF\u548C\u6C11\u4FD7\u3002\u5F53\u524D\u7528\u6237\u60C5\u611F\u72B6\u6001\uFF1A${req.emotion || "\u5E73\u9759"}\u3002\u5F53\u524D\u4F4D\u7F6E\uFF1A${req.location || "\u65B0\u7586"}\u3002\u8BF7\u7528\u7B80\u77ED\u81EA\u7136\u7684\u53E3\u8BED\u56DE\u7B54\uFF0C\u6BCF\u6B21\u4E0D\u8D85\u8FC750\u4E2A\u5B57\u3002`;
+    const systemRole = req.systemRole || `\u4F60\u662F\u300C\u5C0F\u4E61\u300D\uFF0C\u4E61\u97F3\u4F34\u65C5App\u7684AI\u4F34\u6E38\u5BFC\u6E38\uFF0C\u6027\u683C\u6D3B\u6CFC\u70ED\u60C5\uFF0C\u64C5\u957F\u4ECB\u7ECD\u65B0\u7586\u6587\u5316\u5730\u7406\u7F8E\u98DF\u6C11\u4FD7\u3002\u5F53\u524D\u7528\u6237\u60C5\u611F\uFF1A${req.emotion || "\u5E73\u9759"}\u3002\u4F4D\u7F6E\uFF1A${req.location || "\u65B0\u7586"}\u3002\u8BF7\u7528\u7B80\u77ED\u81EA\u7136\u53E3\u8BED\u56DE\u7B54\uFF0C\u6BCF\u6B21\u4E0D\u8D85\u8FC750\u5B57\u3002`;
     const sessionPayload = {
       tts: {
         speaker: "zh_female_vv_jupiter_bigtts",
-        audio_config: {
-          channel: 1,
-          format: "pcm_s16le",
-          sample_rate: 24e3
-        }
+        audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24e3 }
       },
-      asr: {
-        audio_info: {
-          format: "pcm",
-          sample_rate: 16e3,
-          channel: 1
-        }
-      },
+      asr: { audio_info: { format: "pcm", sample_rate: 16e3, channel: 1 } },
       dialog: {
         bot_name: "\u5C0F\u4E61",
         system_role: systemRole,
-        speaking_style: "\u4F60\u8BF4\u8BDD\u6D3B\u6CFC\u53EF\u7231\uFF0C\u50CF\u4E00\u4E2A\u719F\u6089\u65B0\u7586\u6587\u5316\u7684\u5E74\u8F7B\u5BFC\u6E38\u670B\u53CB\u3002",
+        speaking_style: "\u8BF4\u8BDD\u6D3B\u6CFC\u53EF\u7231\uFF0C\u50CF\u719F\u6089\u65B0\u7586\u6587\u5316\u7684\u5E74\u8F7B\u5BFC\u6E38\u670B\u53CB\u3002",
         extra: {
           input_mod: "audio_file",
           model: "1.2.1.1"
@@ -535,118 +524,125 @@ async function doublaoRealtimeTurn(req) {
     let asrTranscript = "";
     let aiResponseText = "";
     await new Promise((resolve2, reject) => {
+      const connectId = randomUUID2();
       const ws = new WebSocket(REALTIME_WS_URL, {
         headers: {
           "X-Api-App-ID": appId,
           "X-Api-Access-Key": accessToken,
           "X-Api-Resource-Id": "volc.speech.dialog",
           "X-Api-App-Key": APP_KEY,
-          "X-Api-Connect-Id": randomUUID2()
+          "X-Api-Connect-Id": connectId
         }
       });
-      let state = "connecting";
+      let sessionStarted = false;
+      let audioSent = false;
       let seqNum = 1;
       const CHUNK_SIZE = 640;
       const CHUNK_MS = 20;
       const timeout = setTimeout(() => {
-        ws.close();
-        reject(new Error("Doubao RealtimeAPI timeout (30s)"));
-      }, 3e4);
+        console.warn("[DoubaoS2S] timeout \u2013 collected", audioChunks.length, "audio chunks");
+        ws.terminate();
+        if (audioChunks.length > 0) resolve2();
+        else reject(new Error("Doubao RealtimeAPI timeout (40s)"));
+      }, 4e4);
       ws.on("open", () => {
+        console.log("[DoubaoS2S] WS opened, sending StartConnection");
         ws.send(buildConnectEvent(EVT_START_CONN));
-        state = "conn_started";
       });
-      ws.on("message", async (rawData) => {
-        try {
-          const msg = parseServerMsg(rawData);
-          if (msg.error) {
-            console.error("[Doubao] error frame:", msg.error, msg.payload);
-          }
-          if (msg.eventId === EVT_CONN_STARTED) {
-            state = "session_started";
+      ws.on("message", (rawData) => {
+        const msg = parseServerMsg(rawData);
+        console.log(`[DoubaoS2S] event=${msg.eventId} msgType=${msg.msgType} payloadLen=${Buffer.isBuffer(msg.payload) ? msg.payload.length : JSON.stringify(msg.payload).length}`);
+        if (msg.error) console.error("[DoubaoS2S] error frame:", msg.error);
+        if (msg.msgType === MT_AUDIO_SERVER && Buffer.isBuffer(msg.payload) && msg.payload.length > 0) {
+          audioChunks.push(msg.payload);
+          return;
+        }
+        switch (msg.eventId) {
+          case EVT_CONN_STARTED:
+            console.log("[DoubaoS2S] Connected, sending StartSession");
             ws.send(buildSessionEvent(EVT_START_SESSION, sessionId, sessionPayload));
-          } else if (msg.eventId === 150) {
-            state = "streaming";
+            break;
+          case EVT_SESSION_STARTED: {
+            if (sessionStarted) break;
+            sessionStarted = true;
+            console.log("[DoubaoS2S] Session started, streaming PCM\u2026");
             let offset = 0;
-            const sendNextChunk = () => {
+            const sendChunk = () => {
+              if (!sessionStarted) return;
               if (offset >= pcmData.length) {
-                state = "waiting_tts";
-                ws.send(buildAudioChunk(Buffer.alloc(0), seqNum, sessionId, true));
+                console.log("[DoubaoS2S] All PCM sent, sending last chunk");
+                ws.send(buildLastAudioChunk(sessionId));
+                audioSent = true;
                 return;
               }
               const end = Math.min(offset + CHUNK_SIZE, pcmData.length);
-              const chunk = pcmData.subarray(offset, end);
-              const isLast = end >= pcmData.length;
-              ws.send(buildAudioChunk(chunk, seqNum, sessionId, isLast));
-              if (!isLast) {
-                seqNum++;
-                offset = end;
-                setTimeout(sendNextChunk, CHUNK_MS);
-              } else {
-                state = "waiting_tts";
-              }
+              ws.send(buildAudioChunk(pcmData.subarray(offset, end), seqNum++, sessionId));
+              offset = end;
+              setTimeout(sendChunk, CHUNK_MS);
             };
-            sendNextChunk();
-          } else if (msg.eventId === 451) {
+            sendChunk();
+            break;
+          }
+          case 451: {
             const pl = msg.payload;
             const results = pl?.results;
-            if (results) {
-              const final = results.find((r) => !r.is_interim);
-              if (final) asrTranscript = final.text;
+            const final = results?.find((r) => !r.is_interim);
+            if (final?.text) {
+              asrTranscript = final.text;
+              console.log("[DoubaoS2S] ASR:", asrTranscript);
             }
-          } else if (msg.eventId === 550) {
+            break;
+          }
+          case 550: {
             const pl = msg.payload;
             if (typeof pl?.content === "string") aiResponseText += pl.content;
-          } else if (msg.eventId === EVT_TTS_RESPONSE && Buffer.isBuffer(msg.payload)) {
-            audioChunks.push(msg.payload);
-          } else if (msg.eventId === EVT_TTS_ENDED) {
-            state = "done";
+            break;
+          }
+          case EVT_TTS_ENDED: {
+            console.log("[DoubaoS2S] TTSEnded, audio chunks:", audioChunks.length);
+            clearTimeout(timeout);
             ws.send(buildSessionEvent(EVT_FINISH_SESSION, sessionId, {}));
             ws.send(buildConnectEvent(EVT_FINISH_CONN));
-            clearTimeout(timeout);
             ws.close();
             resolve2();
-          } else if (msg.eventId === EVT_DIALOG_ERROR) {
-            const pl = msg.payload;
-            clearTimeout(timeout);
-            ws.close();
-            reject(new Error(`Doubao dialog error: ${JSON.stringify(pl)}`));
-          } else if (msg.eventId === 153) {
-            clearTimeout(timeout);
-            ws.close();
-            reject(new Error(`Doubao session failed: ${JSON.stringify(msg.payload)}`));
-          } else if (msg.eventId === 51) {
-            clearTimeout(timeout);
-            ws.close();
-            reject(new Error(`Doubao connection failed: ${JSON.stringify(msg.payload)}`));
+            break;
           }
-        } catch (parseErr) {
-          console.error("[Doubao] parse error:", parseErr);
+          case EVT_DIALOG_ERROR:
+          case 153: {
+            clearTimeout(timeout);
+            ws.terminate();
+            reject(new Error(`Doubao error event=${msg.eventId}: ${JSON.stringify(msg.payload)}`));
+            break;
+          }
+          case 51: {
+            clearTimeout(timeout);
+            ws.terminate();
+            reject(new Error(`Doubao connection failed: ${JSON.stringify(msg.payload)}`));
+            break;
+          }
         }
       });
       ws.on("error", (err) => {
+        console.error("[DoubaoS2S] WS error:", err.message);
         clearTimeout(timeout);
         reject(err);
       });
-      ws.on("close", () => {
-        if (state !== "done") {
+      ws.on("close", (code, reason) => {
+        console.log(`[DoubaoS2S] WS closed code=${code} reason=${reason}`);
+        if (audioChunks.length > 0) {
           clearTimeout(timeout);
-          if (audioChunks.length > 0) {
-            resolve2();
-          } else {
-            reject(new Error("Doubao WS closed unexpectedly"));
-          }
+          resolve2();
         }
       });
     });
     const allPcm = Buffer.concat(audioChunks);
-    const mp3Buffer = await convertPcmToMp3(allPcm, 24e3);
-    return {
-      audioBase64: mp3Buffer.toString("base64"),
-      format: "mp3",
-      transcript: asrTranscript,
-      aiText: aiResponseText
-    };
+    console.log(`[DoubaoS2S] Total PCM response: ${allPcm.length} bytes`);
+    if (allPcm.length === 0) {
+      return { audioBase64: "", format: "mp3", transcript: asrTranscript, aiText: "" };
+    }
+    const mp3 = await convertPcmToMp3(allPcm, 24e3);
+    console.log(`[DoubaoS2S] MP3 size: ${mp3.length} bytes`);
+    return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: asrTranscript, aiText: aiResponseText };
   } finally {
     unlink(tmpM4a).catch(() => {
     });
