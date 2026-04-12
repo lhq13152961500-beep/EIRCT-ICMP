@@ -308,6 +308,8 @@ export default function XiaoxiangAiScreen() {
 
     while (companionActiveRef.current) {
       let recording: Audio.Recording | null = null;
+      let uri: string | null = null;
+      let base64 = "";
       try {
         // Stop any playback before recording to prevent feedback
         if (await Speech.isSpeakingAsync()) {
@@ -315,8 +317,11 @@ export default function XiaoxiangAiScreen() {
           await new Promise<void>((r) => setTimeout(r, 400));
         }
 
-        setCompanionStatus("listening");
+        // Release→acquire audio mode to flush any lingering native recorder state
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
         await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+
+        setCompanionStatus("listening");
         const result = await Audio.Recording.createAsync({
           android: { extension: ".m4a", outputFormat: 2, audioEncoder: 3, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000 },
           ios: { extension: ".m4a", audioQuality: 127, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000, linearPCMBitDepth: 16, linearPCMIsBigEndian: false, linearPCMIsFloat: false },
@@ -325,13 +330,15 @@ export default function XiaoxiangAiScreen() {
         recording = result.recording;
         companionRecordingRef.current = recording;
         await new Promise<void>((resolve) => setTimeout(resolve, 5000));
-        companionRecordingRef.current = null;
-        if (!companionActiveRef.current) { try { await recording.stopAndUnloadAsync(); } catch {} recording = null; break; }
-        const uri = recording.getURI();
+        if (!companionActiveRef.current) break; // finally will stop recording
+
+        uri = recording.getURI();
         await recording.stopAndUnloadAsync();
-        recording = null;
+        recording = null; // owned by finally only if still non-null
+        companionRecordingRef.current = null;
+
         if (!uri) continue;
-        const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+        base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
 
         setCompanionStatus("processing");
 
@@ -429,13 +436,14 @@ export default function XiaoxiangAiScreen() {
         setCompanionResponse("");
       } catch (e) {
         console.error("[Companion] loop error:", e);
-        // Always clean up recording on error to prevent "Only one Recording" crash
+        await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+      } finally {
+        // ALWAYS clean up the recording — this runs after both normal and error paths
         if (recording) {
           try { await recording.stopAndUnloadAsync(); } catch {}
           recording = null;
         }
         companionRecordingRef.current = null;
-        await new Promise<void>((resolve) => setTimeout(resolve, 1500));
       }
     }
     Speech.stop();

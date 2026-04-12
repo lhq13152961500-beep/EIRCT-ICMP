@@ -518,6 +518,10 @@ async function doublaoRealtimeTurn(req) {
     const speaker = req.speaker || DEFAULT_SPEAKER;
     const systemRole = req.systemRole || `\u4F60\u662F\u300C\u5C0F\u4E61\u300D\uFF0C\u4E61\u97F3\u4F34\u65C5App\u7684AI\u4F34\u6E38\u5BFC\u6E38\uFF0C\u6027\u683C\u6D3B\u6CFC\u70ED\u60C5\uFF0C\u64C5\u957F\u4ECB\u7ECD\u65B0\u7586\u6587\u5316\u5730\u7406\u7F8E\u98DF\u6C11\u4FD7\u3002\u5F53\u524D\u7528\u6237\u60C5\u611F\uFF1A${req.emotion || "\u5E73\u9759"}\u3002\u4F4D\u7F6E\uFF1A${req.location || "\u65B0\u7586"}\u3002\u8BF7\u7528\u7B80\u77ED\u81EA\u7136\u53E3\u8BED\u56DE\u7B54\uFF0C\u6BCF\u6B21\u4E0D\u8D85\u8FC750\u5B57\u3002`;
     const sessionPayload = {
+      asr: {
+        audio_config: { format: "pcm_s16le", sample_rate: 16e3, channel: 1 },
+        language: "zh-CN"
+      },
       tts: {
         audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24e3 }
       },

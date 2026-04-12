@@ -208,9 +208,12 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
       req.systemRole ||
       `你是「小乡」，乡音伴旅App的AI伴游导游，性格活泼热情，擅长介绍新疆文化地理美食民俗。当前用户情感：${req.emotion || "平静"}。位置：${req.location || "新疆"}。请用简短自然口语回答，每次不超过50字。`;
 
-    // Do NOT specify speaker — let the server use the account's default voice
-    // (Specifying BigTTS voices requires separate activation per account)
+    // ASR config required for speech recognition; TTS uses default voice (no speaker field)
     const sessionPayload = {
+      asr: {
+        audio_config: { format: "pcm_s16le", sample_rate: 16000, channel: 1 },
+        language: "zh-CN",
+      },
       tts: {
         audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24000 },
       },
