@@ -59,7 +59,7 @@ def run_expo():
     kill_port_8081()
 
     env = os.environ.copy()
-    env['NODE_OPTIONS'] = '--max-old-space-size=384 --expose-gc'
+    env['NODE_OPTIONS'] = '--max-old-space-size=512 --expose-gc'
     env['EXPO_NO_INLINE_SOURCEMAPS'] = '1'
     env['REACT_NATIVE_PACKAGER_HOSTNAME'] = 'localhost'
 
@@ -117,8 +117,26 @@ def run_expo():
                                 pass
                             return "ngrok_error"
 
+                        # Detect V8 heap OOM (FATAL ERROR: Reached heap limit)
+                        if 'FATAL ERROR' in buf_str and ('heap' in buf_str.lower() or 'out of memory' in buf_str.lower()):
+                            sys.stdout.write('\n[Metro V8 OOM (FATAL ERROR) — restarting...]\n')
+                            sys.stdout.flush()
+                            try:
+                                os.kill(pid, 9)
+                            except OSError:
+                                pass
+                            try:
+                                os.waitpid(pid, 0)
+                            except ChildProcessError:
+                                pass
+                            try:
+                                os.close(master_fd)
+                            except OSError:
+                                pass
+                            return "oom"
+
                         # Detect OOM kill — Metro served the bundle and died; restart quietly
-                        if buf_str.strip().endswith('Killed') or '\nKilled\n' in buf_str:
+                        if buf_str.strip().endswith('Killed') or '\nKilled\n' in buf_str or 'Aborted (core dumped)' in buf_str:
                             sys.stdout.write('\n[Metro OOM after bundle served — restarting...]\n')
                             sys.stdout.flush()
                             try:
