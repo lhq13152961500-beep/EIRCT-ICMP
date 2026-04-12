@@ -479,45 +479,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!appId || !token) return res.status(503).json({ error: "doubao_not_configured" });
     if (!text?.trim()) return res.status(400).json({ error: "text required" });
 
-    const voiceType = voice || "BV700_V2_streaming"; // 灿灿2.0 – warm female
-    const payload = {
-      app: { appid: appId, token, cluster: "volcano_mega" },
-      user: { uid: "xiaoxiang_companion" },
-      audio: {
-        voice_type: voiceType,
-        encoding: "mp3",
-        speed_ratio: 1.0,
-        volume_ratio: 1.0,
-        pitch_ratio: 1.0,
-      },
-      request: {
-        reqid: uuidv4(),
-        text: text.slice(0, 2000),
-        text_type: "plain",
-        operation: "query",
-      },
-    };
+    // Try BigTTS (volcano_mega) first for better quality, fall back to standard (volcano_tts)
+    const attempts = [
+      { cluster: "volcano_mega", voice_type: voice || "BV700_V2_streaming" },
+      { cluster: "volcano_tts",  voice_type: "BV700_streaming" },
+    ];
 
-    try {
-      const resp = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer;${token}`,
-          "Content-Type": "application/json",
-          "Resource-Id": "volc.tts_large",
-        },
-        body: JSON.stringify(payload),
-      });
-      const data = (await resp.json()) as { code?: number; message?: string; data?: string };
-      console.log(`[DoubaoTTS] code=${data.code} msg=${data.message}`);
-      if (data.code === 3000 && data.data) {
-        return res.json({ audio: data.data, encoding: "mp3" });
+    for (const { cluster, voice_type } of attempts) {
+      const payload = {
+        app: { appid: appId, token, cluster },
+        user: { uid: "xiaoxiang_companion" },
+        audio: { voice_type, encoding: "mp3", speed_ratio: 1.0, volume_ratio: 1.0, pitch_ratio: 1.0 },
+        request: { reqid: uuidv4(), text: text.slice(0, 2000), text_type: "plain", operation: "query" },
+      };
+      try {
+        const resp = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
+          method: "POST",
+          headers: { Authorization: `Bearer;${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = (await resp.json()) as { code?: number; message?: string; data?: string };
+        console.log(`[DoubaoTTS] cluster=${cluster} voice=${voice_type} code=${data.code} msg=${data.message}`);
+        if (data.code === 3000 && data.data) {
+          return res.json({ audio: data.data, encoding: "mp3" });
+        }
+        // code 4000-4999: auth/access error → try next
+        console.warn(`[DoubaoTTS] cluster=${cluster} failed, trying next…`);
+      } catch (err: any) {
+        console.error("[DoubaoTTS] fetch error:", err?.message);
       }
-      return res.status(500).json({ error: data.message || "tts_failed" });
-    } catch (err: any) {
-      console.error("[DoubaoTTS] error:", err?.message);
-      return res.status(500).json({ error: "tts_request_failed" });
     }
+    return res.status(500).json({ error: "tts_failed_all_clusters" });
   });
 
   // Doubao ASR – base64 audio → transcript text

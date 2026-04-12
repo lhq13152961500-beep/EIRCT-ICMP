@@ -519,7 +519,6 @@ async function doublaoRealtimeTurn(req) {
     const systemRole = req.systemRole || `\u4F60\u662F\u300C\u5C0F\u4E61\u300D\uFF0C\u4E61\u97F3\u4F34\u65C5App\u7684AI\u4F34\u6E38\u5BFC\u6E38\uFF0C\u6027\u683C\u6D3B\u6CFC\u70ED\u60C5\uFF0C\u64C5\u957F\u4ECB\u7ECD\u65B0\u7586\u6587\u5316\u5730\u7406\u7F8E\u98DF\u6C11\u4FD7\u3002\u5F53\u524D\u7528\u6237\u60C5\u611F\uFF1A${req.emotion || "\u5E73\u9759"}\u3002\u4F4D\u7F6E\uFF1A${req.location || "\u65B0\u7586"}\u3002\u8BF7\u7528\u7B80\u77ED\u81EA\u7136\u53E3\u8BED\u56DE\u7B54\uFF0C\u6BCF\u6B21\u4E0D\u8D85\u8FC750\u5B57\u3002`;
     const sessionPayload = {
       tts: {
-        speaker,
         audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24e3 }
       },
       dialog: {
@@ -532,7 +531,7 @@ async function doublaoRealtimeTurn(req) {
         }
       }
     };
-    console.log(`[DoubaoS2S] model=2.2.0.0 speaker=${speaker}`);
+    console.log(`[DoubaoS2S] model=2.2.0.0 (default speaker)`);
     const result = await attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPayload);
     if (result === null) throw new Error("Doubao S2S failed \u2014 check credentials and API access");
     const allPcm = Buffer.concat(result.audioChunks);
@@ -1104,44 +1103,34 @@ async function registerRoutes(app2) {
     const token = process.env.VOLCENGINE_ACCESS_TOKEN;
     if (!appId || !token) return res.status(503).json({ error: "doubao_not_configured" });
     if (!text?.trim()) return res.status(400).json({ error: "text required" });
-    const voiceType = voice || "BV700_V2_streaming";
-    const payload = {
-      app: { appid: appId, token, cluster: "volcano_mega" },
-      user: { uid: "xiaoxiang_companion" },
-      audio: {
-        voice_type: voiceType,
-        encoding: "mp3",
-        speed_ratio: 1,
-        volume_ratio: 1,
-        pitch_ratio: 1
-      },
-      request: {
-        reqid: uuidv4(),
-        text: text.slice(0, 2e3),
-        text_type: "plain",
-        operation: "query"
+    const attempts = [
+      { cluster: "volcano_mega", voice_type: voice || "BV700_V2_streaming" },
+      { cluster: "volcano_tts", voice_type: "BV700_streaming" }
+    ];
+    for (const { cluster, voice_type } of attempts) {
+      const payload = {
+        app: { appid: appId, token, cluster },
+        user: { uid: "xiaoxiang_companion" },
+        audio: { voice_type, encoding: "mp3", speed_ratio: 1, volume_ratio: 1, pitch_ratio: 1 },
+        request: { reqid: uuidv4(), text: text.slice(0, 2e3), text_type: "plain", operation: "query" }
+      };
+      try {
+        const resp = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
+          method: "POST",
+          headers: { Authorization: `Bearer;${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        console.log(`[DoubaoTTS] cluster=${cluster} voice=${voice_type} code=${data.code} msg=${data.message}`);
+        if (data.code === 3e3 && data.data) {
+          return res.json({ audio: data.data, encoding: "mp3" });
+        }
+        console.warn(`[DoubaoTTS] cluster=${cluster} failed, trying next\u2026`);
+      } catch (err) {
+        console.error("[DoubaoTTS] fetch error:", err?.message);
       }
-    };
-    try {
-      const resp = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer;${token}`,
-          "Content-Type": "application/json",
-          "Resource-Id": "volc.tts_large"
-        },
-        body: JSON.stringify(payload)
-      });
-      const data = await resp.json();
-      console.log(`[DoubaoTTS] code=${data.code} msg=${data.message}`);
-      if (data.code === 3e3 && data.data) {
-        return res.json({ audio: data.data, encoding: "mp3" });
-      }
-      return res.status(500).json({ error: data.message || "tts_failed" });
-    } catch (err) {
-      console.error("[DoubaoTTS] error:", err?.message);
-      return res.status(500).json({ error: "tts_request_failed" });
     }
+    return res.status(500).json({ error: "tts_failed_all_clusters" });
   });
   app2.post("/api/doubao/asr", async (req, res) => {
     const { audio, mime } = req.body;

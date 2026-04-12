@@ -376,7 +376,7 @@ export default function XiaoxiangAiScreen() {
           continue;
         }
 
-        // ── Fallback chain (仅 doubaoReady=false 时): Whisper → DeepSeek → expo-speech ──
+        // ── Fallback chain: Whisper ASR → DeepSeek LLM → Doubao TTS ──
         let text = "";
         const tResp = await apiRequest("POST", "/api/ai/transcribe", {
           audio: base64, mime: "audio/m4a",
@@ -405,10 +405,27 @@ export default function XiaoxiangAiScreen() {
         setCompanionResponse(reply);
         if (aiData.emotion) setEmotion(aiData.emotion as Emotion);
 
-        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
-        await new Promise<void>((resolve) => {
-          Speech.speak(reply, { language: "zh-CN", rate: 0.95, pitch: 1.05, onDone: resolve, onError: resolve, onStopped: resolve });
-        });
+        // Try Doubao TTS first for natural female voice
+        let ttsPlayed = false;
+        if (doubaoReadyRef.current) {
+          try {
+            const ttsResp = await apiRequest("POST", "/api/doubao/tts", { text: reply });
+            const ttsData = await (ttsResp as any).json();
+            if (ttsData.audio && companionActiveRef.current) {
+              console.log("[Companion/DoubaoTTS] 播放豆包音色");
+              await playDoubaoAudio(ttsData.audio);
+              ttsPlayed = true;
+            }
+          } catch (ttsErr) {
+            console.warn("[Companion/DoubaoTTS] 失败，转expo-speech:", ttsErr);
+          }
+        }
+        if (!ttsPlayed && companionActiveRef.current) {
+          await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+          await new Promise<void>((resolve) => {
+            Speech.speak(reply, { language: "zh-CN", rate: 0.95, pitch: 1.05, onDone: resolve, onError: resolve, onStopped: resolve });
+          });
+        }
         setCompanionResponse("");
       } catch (e) {
         console.error("[Companion] loop error:", e);
@@ -662,6 +679,7 @@ export default function XiaoxiangAiScreen() {
         try { await enrollRecordingRef.current.stopAndUnloadAsync(); } catch {}
         enrollRecordingRef.current = null;
       }
+      if (companionActiveRef.current) return; // Already running — prevent double-loop
       companionActiveRef.current = true;
       setIsCompanionActive(true);
       runCompanionLoop(emotion, activityHint, enrolledPrompt);
