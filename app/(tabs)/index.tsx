@@ -268,7 +268,7 @@ export default function HomeScreen() {
         {/* ── 小乡 AI 伴游卡片 ── */}
         <Pressable
           style={styles.xiangCard}
-          onPress={() => { haptic(); router.push("/xiaoxiang-ai"); }}
+          onPress={() => { haptic(); router.push("/xiaoxiang-ai?companion=1"); }}
         >
           <LinearGradient
             colors={["#FFF3EC", "#FFE4CC"]}
@@ -280,22 +280,12 @@ export default function HomeScreen() {
               <XiaoxiangFace size={64} emotion={emotion} animate />
             </View>
             <View style={styles.xiangMid}>
-              <Text style={styles.xiangName}>小乡 · AI伴游助手</Text>
+              <Text style={styles.xiangName}>小乡 · AI陪伴</Text>
               <View style={styles.xiangStatusRow}>
-                <Ionicons
-                  name={
-                    emotion === "疲惫" ? "moon-outline" :
-                    emotion === "好奇" ? "search-outline" :
-                    emotion === "开心" ? "sunny-outline" :
-                    emotion === "感快" ? "star-outline" :
-                    "leaf-outline"
-                  }
-                  size={12}
-                  color="#C06828"
-                />
-                <Text style={styles.xiangStatusText} numberOfLines={1}>
-                  {emotion}{"  ·  "}{activityHint}
-                </Text>
+                <View style={styles.xiangEmoPill}>
+                  <Text style={styles.xiangEmoPillText}>{emotion}</Text>
+                </View>
+                <Text style={styles.xiangStatusText} numberOfLines={1}>{activityHint}</Text>
               </View>
               <Text style={styles.xiangHint}>点击与小乡开始对话</Text>
             </View>
@@ -545,12 +535,19 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   xiangLeft: { alignItems: "center", justifyContent: "center" },
-  xiangMid: { flex: 1, gap: 4, overflow: "hidden" },
+  xiangMid: { flex: 1, gap: 5, overflow: "hidden" },
   xiangRight: { paddingLeft: 4 },
   xiangName: { fontSize: 15, fontWeight: "700", color: "#5A2D10" },
-  xiangStatusRow: { flexDirection: "row", alignItems: "center", gap: 5 },
-  xiangStatusText: { fontSize: 12, color: "#B05820", fontWeight: "500", flexShrink: 1 },
-  xiangHint: { fontSize: 11, color: "#C08050" },
+  xiangStatusRow: { flexDirection: "row", alignItems: "center", gap: 7 },
+  xiangEmoPill: {
+    backgroundColor: "rgba(224, 110, 30, 0.15)",
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  xiangEmoPillText: { fontSize: 11, fontWeight: "700", color: "#C05810", letterSpacing: 0.5 },
+  xiangStatusText: { fontSize: 12, color: "#A05828", flexShrink: 1 },
+  xiangHint: { fontSize: 11, color: "#C09070" },
 
   /* ── Feature cards ── */
   featureRow: { flexDirection: "row" },

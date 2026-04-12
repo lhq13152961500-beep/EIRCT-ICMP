@@ -21,7 +21,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Markdown from "react-native-markdown-display";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
-import { router, Stack } from "expo-router";
+import { router, Stack, useLocalSearchParams } from "expo-router";
 import { apiRequest } from "@/lib/query-client";
 import { useLocation } from "@/contexts/LocationContext";
 import { useActivity } from "@/contexts/ActivityContext";
@@ -123,10 +123,12 @@ function nowTime() {
 
 export default function XiaoxiangAiScreen() {
   const insets = useSafeAreaInsets();
+  const { companion } = useLocalSearchParams<{ companion?: string }>();
   const { locationStatus } = useLocation();
   const { emotion: activityEmotion, activityHint, stepRate, overrideEmotion } = useActivity();
-  const [screen, setScreen] = useState<Screen>("welcome");
+  const [screen, setScreen] = useState<Screen>(companion === "1" ? "chat" : "welcome");
   const [emotion, setEmotion] = useState<Emotion>(activityEmotion);
+  const companionTriggered = useRef(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "0",
@@ -368,6 +370,16 @@ export default function XiaoxiangAiScreen() {
     setShowMediaPanel(false);
     sendMessage("[文件] 请帮我分析这个内容");
   }, [sendMessage]);
+
+  useEffect(() => {
+    if (companion === "1" && !companionTriggered.current) {
+      companionTriggered.current = true;
+      const timer = setTimeout(() => {
+        sendMessage("\u6211\u9700\u8981\u4f60\u7684\u966a\u4f34\u548c\u652f\u6301\uff0c\u5e2e\u6211\u63a8\u8350\u4e00\u4e9b\u653e\u677e\u7684\u6d3b\u52a8");
+      }, 600);
+      return () => clearTimeout(timer);
+    }
+  }, [companion, sendMessage]);
 
   const emotionInfo = EMOTIONS[emotion];
 

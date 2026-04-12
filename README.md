@@ -136,59 +136,127 @@ postgresql://用户名:密码@主机:5432/数据库名
 
 在你的数据库管理界面（如 Neon Console、Supabase SQL Editor）中，执行 `db/setup.sql` 文件中的所有 SQL 语句，这会创建 App 所需的全部数据表。
 
-### 第四步：配置环境变量
+### 第四步：配置所有 API 密钥（必须全部配置）
 
-```bash
-cp .env.example .env
-```
+本项目共需要 **5 类 API 密钥**，换账号后必须重新配置。在 Replit 中，所有密钥通过 **Secrets（环境变量）** 管理，不要写入代码文件。
 
-编辑 `.env` 文件，填入你的配置：
+---
 
-```env
-DATABASE_URL=postgresql://...  # 第二步获取的连接字符串
+#### 1. 数据库连接
 
-AMAP_API_KEY=...               # 高德地图 Web JS API Key
-AMAP_SERVER_KEY=...            # 高德地图 Web 服务 API Key
-AMAP_SECURITY_KEY=...          # 高德地图安全密钥（可选）
-```
+| 变量名 | 说明 |
+|--------|------|
+| `DATABASE_URL` | PostgreSQL 连接字符串，格式：`postgresql://用户名:密码@主机:5432/数据库名` |
 
-> **申请高德地图 Key：** https://console.amap.com/dev/key/app
-> - `AMAP_API_KEY`：平台选 **Web端(JS API)**
-> - `AMAP_SERVER_KEY`：平台选 **Web服务**
+第二步已获取，填入此处即可。
+
+---
+
+#### 2. 高德地图 API（地图 + 定位 + 天气）
+
+前往 [高德开放平台控制台](https://console.amap.com/dev/key/app) 创建应用，添加三个 Key：
+
+| 变量名 | 平台类型 | 用途 |
+|--------|----------|------|
+| `AMAP_API_KEY` | **Web端(JS API)** | 地图渲染、AR导览 |
+| `AMAP_SERVER_KEY` | **Web服务** | 天气查询、路线规划 |
+| `AMAP_SECURITY_KEY` | **安全密钥**（JS API 配套） | JS API 安全加固 |
+
+> 申请步骤：控制台 → 我的应用 → 创建应用 → 添加 Key → 选择对应平台类型
+
+---
+
+#### 3. DeepSeek AI（小乡 AI 对话）
+
+| 变量名 | 申请地址 | 说明 |
+|--------|----------|------|
+| `DEEPSEEK_API_KEY` | https://platform.deepseek.com/api_keys | 注册后创建 API Key，有免费额度 |
+
+> 申请步骤：注册 → 控制台 → API Keys → 创建新的 Key → 复制以 `sk-` 开头的字符串
+
+---
+
+#### 4. Groq API（语音识别 Whisper）
+
+语音输入功能（对着小乡说话）需要此密钥：
+
+| 变量名 | 申请地址 | 说明 |
+|--------|----------|------|
+| `GROQ_API_KEY` | https://console.groq.com/keys | 完全免费，注册即可获取 |
+
+> 申请步骤：注册 → API Keys → Create API Key → 复制以 `gsk_` 开头的字符串
+
+---
+
+#### 在 Replit 中配置 Secrets
+
+1. 打开 Replit 项目，点击左侧工具栏的 **🔒 Secrets**（锁形图标）
+2. 点击 **+ New Secret**
+3. 逐一添加上述所有变量名和对应的值
+4. 配置完成后，重启后端工作流（Stop → Run）
+
+> 注意：Secrets 配置完毕后，前端扫码重新加载即可生效。无需修改任何代码文件。
+
+---
 
 ### 第五步：启动项目
 
-```bash
-# 启动后端（端口 5000）
-npm run server:dev
+在 Replit 中，点击顶部 **Run** 按钮会自动启动后端。前端通过以下命令启动：
 
-# 新开一个终端，启动前端
-npm run expo:dev
+```bash
+EXPO_PUBLIC_DOMAIN=$REPLIT_DEV_DOMAIN python3 scripts/expo-start.py
 ```
 
-用 **Expo Go** App 扫描终端中出现的 QR 码即可在手机上预览。
+用手机上的 **Expo Go** App 扫描终端中出现的 QR 码即可在手机上预览。
+
+> 如扫码后无法加载，请重新扫码，不要点「Reload」按钮。
 
 ---
 
 ## 技术栈
 
-- **前端**：Expo / React Native / Expo Router
-- **后端**：Node.js / Express / TypeScript
-- **数据库**：PostgreSQL
-- **地图**：高德地图 API
+| 层级 | 技术 |
+|------|------|
+| 前端 | Expo / React Native / Expo Router |
+| 后端 | Node.js / Express / TypeScript |
+| 数据库 | PostgreSQL（Replit 内置 / Neon / Supabase） |
+| 地图 | 高德地图 JS API v2 |
+| AI 对话 | DeepSeek Chat API |
+| 语音识别 | Groq Whisper API |
+| 传感器 | expo-sensors（加速度计情感检测） |
 
 ## 项目结构
 
 ```
-├── app/            # Expo 页面（Expo Router）
-├── components/     # 公共 UI 组件
-├── server/         # Express 后端
-│   ├── index.ts    # 服务入口
-│   ├── routes.ts   # API 路由
-│   └── storage.ts  # 数据库操作
+├── app/                    # Expo 页面（Expo Router）
+│   ├── (tabs)/             # 底部导航页面
+│   │   └── index.tsx       # 首页
+│   ├── xiaoxiang-ai.tsx    # 小乡 AI 伴游页
+│   ├── voice-guide-entry.tsx
+│   └── _layout.tsx         # 根布局（含 ActivityProvider）
+├── components/
+│   └── XiaoxiangFace.tsx   # 小乡表情组件
+├── contexts/
+│   ├── ActivityContext.tsx  # 加速度计情感检测
+│   ├── AuthContext.tsx
+│   └── LocationContext.tsx
+├── server/                 # Express 后端
+│   ├── index.ts            # 服务入口（端口 5000）
+│   ├── routes.ts           # API 路由
+│   └── storage.ts          # 数据库操作
+├── scripts/
+│   └── expo-start.py       # Expo 启动脚本
 ├── db/
-│   └── setup.sql   # 数据库初始化脚本
-├── shared/
-│   └── schema.ts   # 数据类型定义
-└── .env.example    # 环境变量示例
+│   └── setup.sql           # 数据库初始化脚本
+└── shared/
+    └── schema.ts           # 数据类型定义
 ```
+
+## 主要功能
+
+- **首页**：景区发现、地图、活动推荐
+- **小乡 AI**：基于 DeepSeek 的旅游伴游助手，支持文字 + 语音输入
+- **情感检测**：加速度计实时感知游览状态（疲惫/平静/好奇/开心/愉快），AI 自动调整对话风格
+- **语伴导游**：方言语音导览
+- **AR 导览**：增强现实景点介绍
+- **吐峪沟地图**：高德地图实景导览
