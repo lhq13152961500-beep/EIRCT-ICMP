@@ -8,19 +8,22 @@ import subprocess
 import threading
 
 
-def kill_port_8081():
-    """Kill any process using port 8081 via /proc/net/tcp on Linux."""
+METRO_PORT = 8082
+
+def kill_metro_port():
+    """Kill any process using the Metro port."""
+    port = METRO_PORT
     try:
-        result = subprocess.run(["fuser", "-k", "8081/tcp"], capture_output=True)
+        result = subprocess.run(["fuser", "-k", f"{port}/tcp"], capture_output=True)
         if result.returncode == 0:
-            sys.stdout.write("[killed process on port 8081 via fuser]\n")
+            sys.stdout.write(f"[killed process on port {port} via fuser]\n")
             time.sleep(1.0)
             return
     except FileNotFoundError:
         pass
 
     try:
-        target_hex = format(8081, '04X')
+        target_hex = format(port, '04X')
         with open("/proc/net/tcp") as f:
             lines = f.readlines()[1:]
         pids_to_kill = set()
@@ -46,17 +49,17 @@ def kill_port_8081():
         for pid in pids_to_kill:
             try:
                 os.kill(int(pid), 9)
-                sys.stdout.write(f"[killed PID {pid} on port 8081]\n")
+                sys.stdout.write(f"[killed PID {pid} on port {port}]\n")
             except (ProcessLookupError, PermissionError):
                 pass
         if pids_to_kill:
             time.sleep(1.0)
     except Exception as e:
-        sys.stdout.write(f"[port 8081 cleanup skipped: {e}]\n")
+        sys.stdout.write(f"[port {port} cleanup skipped: {e}]\n")
 
 
 def run_expo():
-    kill_port_8081()
+    kill_metro_port()
 
     env = os.environ.copy()
     env['NODE_OPTIONS'] = '--max-old-space-size=512 --expose-gc'
@@ -76,7 +79,7 @@ def run_expo():
         os.dup2(slave_fd, 2)
         if slave_fd > 2:
             os.close(slave_fd)
-        os.execvpe('npx', ['npx', 'expo', 'start', '--go', '--tunnel', '--max-workers', '1', '--no-dev'], env)
+        os.execvpe('npx', ['npx', 'expo', 'start', '--go', '--tunnel', '--port', str(METRO_PORT), '--max-workers', '1', '--no-dev'], env)
     else:
         os.close(slave_fd)
         last_anon_answer = 0.0
