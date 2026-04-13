@@ -429,7 +429,7 @@ export default function LocalShopPage() {
 
         {/* Footer */}
         <View style={s.footer}>
-          <Text style={s.footerL1}>每一处乡村每一个景点都有属于自己的特色文化及特色产品</Text>
+          <Text style={s.footerL1}>每一处乡村景点都有属于自己的特色文化与地域产品</Text>
           <Text style={s.footerL2}>连续2个月评分低于2.0星的店铺将暂停营业</Text>
         </View>
       </ScrollView>
@@ -495,8 +495,8 @@ const s = StyleSheet.create({
 
   /* Categories */
   catBar: { backgroundColor:CARD, borderBottomWidth:1, borderBottomColor:BORDER },
-  catRow: { flexDirection:"row", gap:8, paddingVertical:6 },
-  catPill:      { flexDirection:"row", alignItems:"center", gap:4, paddingHorizontal:12, paddingVertical:8, borderRadius:20, backgroundColor:CARD, borderWidth:1, borderColor:BORDER },
+  catRow: { flexDirection:"row", alignItems:"center", gap:8, paddingVertical:8 },
+  catPill:      { flexDirection:"row", alignItems:"center", alignSelf:"flex-start", gap:4, paddingHorizontal:12, paddingVertical:8, borderRadius:20, backgroundColor:CARD, borderWidth:1, borderColor:BORDER },
   catPillActive: { backgroundColor:ORANGE, borderColor:ORANGE },
   catPillText:   { fontSize:12, color:TEXT2, fontWeight:"500" },
   catPillTextActive: { color:"#fff", fontWeight:"700" },
@@ -581,7 +581,7 @@ const s = StyleSheet.create({
 
   /* Modal */
   modalOverlay: { flex:1, backgroundColor:"rgba(0,0,0,0.45)", justifyContent:"flex-end" },
-  modalSheet:   { backgroundColor:CARD, borderTopLeftRadius:28, borderTopRightRadius:28, height:SCREEN_H * 0.75, paddingBottom:40 },
+  modalSheet:   { backgroundColor:CARD, borderTopLeftRadius:28, borderTopRightRadius:28, height:SCREEN_H * 0.72 },
   modalHandle:  { width:40, height:4, backgroundColor:"#E0DAD4", borderRadius:2, alignSelf:"center", marginTop:12, marginBottom:4 },
   modalHeader:  { flexDirection:"row", alignItems:"center", justifyContent:"space-between", paddingHorizontal:20, paddingVertical:14, borderBottomWidth:1, borderBottomColor:BORDER },
   modalTitle:   { fontSize:17, fontWeight:"700", color:TEXT1 },
