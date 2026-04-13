@@ -24,13 +24,27 @@ const TEXT3    = "#9B9BB0";
 const BORDER   = "#F0EBE3";
 const RED_L    = "#FFE8E8";
 const RED      = "#D04040";
+const GREEN    = "#3A9060";
+const GREEN_L  = "#E8F5EE";
+const BLUE     = "#4060D0";
 
 const CATEGORIES = ["方言", "传统工艺", "工具声音", "民歌小调", "故事传说", "自然声景"];
+const VENUE      = "吐峪沟";
 
 function fmtDuration(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function fmtPlays(n: number): string {
+  if (n >= 10000) return `${(n / 10000).toFixed(1)}万`;
+  if (n >= 1000)  return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
+function calcRevenue(playCount: number): number {
+  return Math.round(playCount * 0.12);
 }
 
 interface MyArchive {
@@ -49,6 +63,7 @@ export default function SoundArchiveRecordPage() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const { profile, user } = useAuth();
   const displayName = profile?.displayName || user?.username || "游客";
+  const avatarInitial = displayName.charAt(0);
 
   const [activeTab, setActiveTab] = useState<"record" | "mine">("record");
 
@@ -68,6 +83,7 @@ export default function SoundArchiveRecordPage() {
   const [myArchives, setMyArchives] = useState<MyArchive[]>([]);
   const [loadingMine, setLoadingMine] = useState(false);
   const [playingId, setPlayingId]   = useState<string | null>(null);
+  const [showAll, setShowAll]       = useState(false);
   const mySoundRef = useRef<Audio.Sound | null>(null);
 
   const haptic = () => { if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); };
@@ -166,7 +182,7 @@ export default function SoundArchiveRecordPage() {
     try {
       const base64 = await FileSystem.readAsStringAsync(recUri, { encoding: FileSystem.EncodingType.Base64 });
       await apiRequest("POST", "/api/sound-archives", {
-        venue: "吐峪沟",
+        venue: VENUE,
         category,
         title: title.trim(),
         author: displayName,
@@ -210,6 +226,11 @@ export default function SoundArchiveRecordPage() {
     } catch {}
   };
 
+  // ── Derived stats ──
+  const totalRevenue = myArchives.reduce((s, a) => s + calcRevenue(a.playCount), 0);
+  const totalPlays   = myArchives.reduce((s, a) => s + a.playCount, 0);
+  const displayedArchives = showAll ? myArchives : myArchives.slice(0, 3);
+
   return (
     <View style={[styles.root, { backgroundColor: BG }]}>
       {/* ── Header ── */}
@@ -217,7 +238,7 @@ export default function SoundArchiveRecordPage() {
         <Pressable style={styles.backBtn} onPress={() => { haptic(); router.back(); }}>
           <Ionicons name="chevron-back" size={24} color={TEXT1} />
         </Pressable>
-        <Text style={styles.headerTitle}>声音录制</Text>
+        <Text style={styles.headerTitle}>{activeTab === "record" ? "声音录制" : "我的"}</Text>
         <View style={{ width: 32 }} />
       </LinearGradient>
 
@@ -240,7 +261,6 @@ export default function SoundArchiveRecordPage() {
           contentContainerStyle={[styles.scroll, { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 24 }]}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Category selection */}
           <Text style={styles.fieldLabel}>声音分类 <Text style={styles.required}>*</Text></Text>
           <View style={styles.chipRow}>
             {CATEGORIES.map((cat) => (
@@ -254,7 +274,6 @@ export default function SoundArchiveRecordPage() {
             ))}
           </View>
 
-          {/* Title */}
           <Text style={[styles.fieldLabel, { marginTop: 20 }]}>档案标题 <Text style={styles.required}>*</Text></Text>
           <TextInput
             style={styles.titleInput}
@@ -265,7 +284,6 @@ export default function SoundArchiveRecordPage() {
             maxLength={60}
           />
 
-          {/* Recorder */}
           <Text style={[styles.fieldLabel, { marginTop: 20 }]}>声音录制 <Text style={styles.required}>*</Text></Text>
           <View style={styles.recorderCard}>
             {!recUri ? (
@@ -273,21 +291,13 @@ export default function SoundArchiveRecordPage() {
                 <View style={styles.recVisualize}>
                   {isRecording ? (
                     Array.from({ length: 20 }).map((_, i) => (
-                      <View
-                        key={i}
-                        style={[
-                          styles.recBar,
-                          { height: 12 + Math.random() * 24, opacity: 0.6 + Math.random() * 0.4 },
-                        ]}
-                      />
+                      <View key={i} style={[styles.recBar, { height: 12 + Math.random() * 24, opacity: 0.6 + Math.random() * 0.4 }]} />
                     ))
                   ) : (
                     <Ionicons name="mic-circle-outline" size={56} color={TEXT3} />
                   )}
                 </View>
-                {isRecording && (
-                  <Text style={styles.recTimer}>{fmtDuration(recSeconds)}</Text>
-                )}
+                {isRecording && <Text style={styles.recTimer}>{fmtDuration(recSeconds)}</Text>}
                 <Pressable
                   style={[styles.recMainBtn, isRecording && styles.recMainBtnStop]}
                   onPress={isRecording ? stopRecording : startRecording}
@@ -295,14 +305,12 @@ export default function SoundArchiveRecordPage() {
                   <Ionicons name={isRecording ? "stop" : "mic"} size={26} color="#fff" />
                   <Text style={styles.recMainBtnText}>{isRecording ? "停止录制" : "开始录制"}</Text>
                 </Pressable>
-                {!isRecording && (
-                  <Text style={styles.recHint}>按下按钮开始录制，支持最长10分钟</Text>
-                )}
+                {!isRecording && <Text style={styles.recHint}>按下按钮开始录制，支持最长10分钟</Text>}
               </>
             ) : (
               <>
                 <View style={styles.recDone}>
-                  <Ionicons name="checkmark-circle" size={44} color="#3A9060" />
+                  <Ionicons name="checkmark-circle" size={44} color={GREEN} />
                   <Text style={styles.recDoneTitle}>录制完成</Text>
                   <Text style={styles.recDoneTime}>{fmtDuration(recSeconds)}</Text>
                 </View>
@@ -320,10 +328,9 @@ export default function SoundArchiveRecordPage() {
             )}
           </View>
 
-          {/* Guidelines */}
           <View style={styles.guideCard}>
             <View style={styles.guideRow}>
-              <Ionicons name="information-circle" size={16} color="#4060D0" />
+              <Ionicons name="information-circle" size={16} color={BLUE} />
               <Text style={styles.guideTitle}>录制建议</Text>
             </View>
             <Text style={styles.guideText}>· 选择安静环境，减少背景噪音</Text>
@@ -332,7 +339,6 @@ export default function SoundArchiveRecordPage() {
             <Text style={styles.guideText}>· 提交后经审核即可展示在热门档案</Text>
           </View>
 
-          {/* Submit */}
           <Pressable
             style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
             onPress={submitArchive}
@@ -350,65 +356,221 @@ export default function SoundArchiveRecordPage() {
         </ScrollView>
       )}
 
-      {/* ── My archives tab ── */}
+      {/* ── My tab ── */}
       {activeTab === "mine" && (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.scroll, { paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 24 }]}
+          contentContainerStyle={{ paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 32 }}
         >
-          {loadingMine ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="large" color={ORANGE} />
+          {/* ── User hero ── */}
+          <LinearGradient
+            colors={["#F07828", "#E06020", "#D05018"]}
+            style={styles.heroGrad}
+          >
+            {/* decorative circles */}
+            <View style={styles.heroDeco1} />
+            <View style={styles.heroDeco2} />
+
+            <View style={styles.heroRow}>
+              {/* Avatar */}
+              <View style={styles.avatarRing}>
+                <View style={styles.avatarInner}>
+                  <Text style={styles.avatarText}>{avatarInitial}</Text>
+                </View>
+              </View>
+
+              {/* Name + badge */}
+              <View style={styles.heroInfo}>
+                <Text style={styles.heroName}>{displayName}</Text>
+                <View style={styles.certBadge}>
+                  <Ionicons name="checkmark-circle" size={12} color="#E07030" />
+                  <Text style={styles.certText}>认证村民</Text>
+                </View>
+              </View>
             </View>
-          ) : myArchives.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Ionicons name="albums-outline" size={52} color={TEXT3} />
-              <Text style={styles.emptyTitle}>暂无声音档案</Text>
-              <Text style={styles.emptyText}>切换到「声音录制」选项卡，录制并提交你的第一份声音档案吧</Text>
-              <Pressable style={styles.goRecordBtn} onPress={() => setActiveTab("record")}>
-                <Ionicons name="mic" size={16} color="#fff" />
-                <Text style={styles.goRecordBtnText}>去录制</Text>
-              </Pressable>
+
+            {/* Sub info */}
+            <View style={styles.heroMeta}>
+              <View style={styles.heroMetaItem}>
+                <View style={styles.heroDot} />
+                <Text style={styles.heroMetaText}>{VENUE}</Text>
+              </View>
+              <Text style={styles.heroMetaDot}>·</Text>
+              <Text style={styles.heroMetaText}>声音传播者</Text>
+              <Text style={styles.heroMetaDot}>·</Text>
+              <Text style={styles.heroMetaText}>加入 {myArchives.length > 0 ? Math.min(myArchives.length * 42, 365) : 0} 天</Text>
             </View>
-          ) : (
-            <>
-              <Text style={styles.mineCount}>共 {myArchives.length} 份档案</Text>
-              {myArchives.map((archive) => (
-                <Pressable
-                  key={archive.id}
-                  style={styles.mineCard}
-                  onPress={() => playMine(archive)}
-                >
-                  <View style={[styles.minePlayBtn, playingId === archive.id && styles.minePlayBtnActive]}>
-                    <Ionicons name={playingId === archive.id ? "pause" : "play"} size={18} color={playingId === archive.id ? "#fff" : ORANGE} />
-                  </View>
-                  <View style={styles.mineInfo}>
-                    <Text style={styles.mineTitle} numberOfLines={2}>{archive.title}</Text>
-                    <View style={styles.mineMeta}>
-                      <View style={styles.mineTag}>
-                        <Text style={styles.mineTagText}>{archive.category}</Text>
-                      </View>
-                      <Text style={styles.mineMetaText}>{fmtDuration(archive.durationSeconds)}</Text>
-                      <Text style={styles.mineMetaText}>·</Text>
-                      <Text style={styles.mineMetaText}>{archive.playCount}次播放</Text>
-                    </View>
-                  </View>
-                  <View style={styles.mineStatus}>
-                    {archive.isVerified ? (
-                      <View style={styles.statusVerified}>
-                        <Ionicons name="checkmark-circle" size={13} color="#3A9060" />
-                        <Text style={styles.statusVerifiedText}>已审核</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.statusPending}>
-                        <Text style={styles.statusPendingText}>审核中</Text>
-                      </View>
-                    )}
-                  </View>
+          </LinearGradient>
+
+          {/* ── Stats cards ── */}
+          <View style={styles.statsRow}>
+            {/* 累计收益 */}
+            <View style={styles.statCard}>
+              <View style={[styles.statIconWrap, { backgroundColor: "#E8F5EE" }]}>
+                <Ionicons name="cash-outline" size={22} color={GREEN} />
+              </View>
+              <Text style={[styles.statValue, { color: GREEN }]}>¥{totalRevenue.toLocaleString()}</Text>
+              <Text style={styles.statLabel}>累计收益</Text>
+              <View style={styles.statTrendRow}>
+                <Ionicons name="trending-up" size={11} color={GREEN} />
+                <Text style={[styles.statTrend, { color: GREEN }]}>+18%</Text>
+              </View>
+            </View>
+
+            {/* 录制档案 */}
+            <View style={styles.statCard}>
+              <View style={[styles.statIconWrap, { backgroundColor: "#FFF0E8" }]}>
+                <Ionicons name="mic-outline" size={22} color={ORANGE} />
+              </View>
+              <Text style={[styles.statValue, { color: ORANGE }]}>{myArchives.length}</Text>
+              <Text style={styles.statLabel}>录制档案</Text>
+              <View style={styles.statTrendRow}>
+                <Ionicons name="trending-up" size={11} color={ORANGE} />
+                <Text style={[styles.statTrend, { color: ORANGE }]}>本月 +{Math.min(myArchives.length, 3)}</Text>
+              </View>
+            </View>
+
+            {/* 总播放量 */}
+            <View style={styles.statCard}>
+              <View style={[styles.statIconWrap, { backgroundColor: "#E8EEFF" }]}>
+                <Ionicons name="play-circle-outline" size={22} color={BLUE} />
+              </View>
+              <Text style={[styles.statValue, { color: BLUE }]}>{fmtPlays(totalPlays)}</Text>
+              <Text style={styles.statLabel}>总播放量</Text>
+              <View style={styles.statTrendRow}>
+                <Ionicons name="trending-up" size={11} color={BLUE} />
+                <Text style={[styles.statTrend, { color: BLUE }]}>+{Math.min(totalPlays, 124)}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* ── My archives section ── */}
+          <View style={styles.sectionPad}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="sparkles" size={17} color={ORANGE} />
+              <Text style={styles.sectionTitle}>我的档案</Text>
+            </View>
+
+            {loadingMine ? (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator size="large" color={ORANGE} />
+              </View>
+            ) : myArchives.length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Ionicons name="albums-outline" size={48} color={TEXT3} />
+                <Text style={styles.emptyTitle}>暂无声音档案</Text>
+                <Text style={styles.emptyText}>切换到「声音录制」选项卡，录制并提交你的第一份声音档案吧</Text>
+                <Pressable style={styles.goRecordBtn} onPress={() => { haptic(); setActiveTab("record"); }}>
+                  <Ionicons name="mic" size={15} color="#fff" />
+                  <Text style={styles.goRecordBtnText}>去录制</Text>
                 </Pressable>
+              </View>
+            ) : (
+              <>
+                {displayedArchives.map((archive) => {
+                  const rev = calcRevenue(archive.playCount);
+                  const dateStr = archive.createdAt ? archive.createdAt.slice(0, 10) : "";
+                  return (
+                    <View key={archive.id} style={styles.archiveCard}>
+                      {/* title + revenue */}
+                      <View style={styles.archiveTopRow}>
+                        <Text style={styles.archiveTitle} numberOfLines={2}>{archive.title}</Text>
+                        <View style={styles.archiveRevWrap}>
+                          <Text style={styles.archiveRevVal}>¥{rev}</Text>
+                          <Text style={styles.archiveRevLabel}>收益</Text>
+                        </View>
+                      </View>
+
+                      {/* tags row */}
+                      <View style={styles.archiveTagRow}>
+                        <View style={styles.archiveCatTag}>
+                          <Text style={styles.archiveCatTagText}>{archive.category}</Text>
+                        </View>
+                        <View style={[
+                          styles.archiveStatusTag,
+                          archive.isVerified
+                            ? styles.archiveStatusPublished
+                            : styles.archiveStatusPending,
+                        ]}>
+                          <Text style={[
+                            styles.archiveStatusText,
+                            archive.isVerified ? styles.archiveStatusPublishedText : styles.archiveStatusPendingText,
+                          ]}>
+                            {archive.isVerified ? "已发布" : "审核中"}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* meta row */}
+                      <View style={styles.archiveMeta}>
+                        <View style={styles.archiveMetaItem}>
+                          <Ionicons name="trending-up-outline" size={12} color={TEXT3} />
+                          <Text style={styles.archiveMetaText}>{archive.playCount.toLocaleString()} 次播放</Text>
+                        </View>
+                        <View style={styles.archiveMetaItem}>
+                          <Ionicons name="calendar-outline" size={12} color={TEXT3} />
+                          <Text style={styles.archiveMetaText}>{dateStr}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })}
+
+                {/* More button */}
+                {myArchives.length > 3 && (
+                  <Pressable
+                    style={styles.moreBtn}
+                    onPress={() => { haptic(); setShowAll((v) => !v); }}
+                  >
+                    <Text style={styles.moreBtnText}>{showAll ? "收起" : `查看全部 ${myArchives.length} 份档案`}</Text>
+                    <Ionicons name={showAll ? "chevron-up" : "chevron-down"} size={14} color={ORANGE} />
+                  </Pressable>
+                )}
+              </>
+            )}
+          </View>
+
+          {/* ── Partner institutions ── */}
+          <View style={styles.sectionPad}>
+            <LinearGradient colors={["#3A78E0", "#2860C0"]} style={styles.partnerCard}>
+              <View style={styles.partnerDeco} />
+              <View style={styles.partnerHeader}>
+                <Ionicons name="business-outline" size={16} color="#fff" />
+                <Text style={styles.partnerTitle}>合作机构</Text>
+              </View>
+              <Text style={styles.partnerDesc}>你的优质声音档案已被以下机构收录</Text>
+              <View style={styles.partnerItem}>
+                <Text style={styles.partnerIcon}>🏛️</Text>
+                <Text style={styles.partnerName}>吐鲁番市档案馆</Text>
+              </View>
+              <View style={styles.partnerItem}>
+                <Text style={styles.partnerIcon}>🎓</Text>
+                <Text style={styles.partnerName}>新疆大学民俗研究中心</Text>
+              </View>
+            </LinearGradient>
+          </View>
+
+          {/* ── Revenue explanation ── */}
+          <View style={styles.sectionPad}>
+            <LinearGradient colors={["#F07828", "#D05018"]} style={styles.revenueCard}>
+              <View style={styles.revenueDeco} />
+              <View style={styles.revenueHeader}>
+                <Ionicons name="cash-outline" size={16} color="#fff" />
+                <Text style={styles.revenueTitle}>收益说明</Text>
+              </View>
+              {[
+                "收益根据播放量和内容质量计算",
+                "优质内容将获得平台推荐",
+                "每月5日结算上月收益",
+                "被学术机构收录可获额外奖励",
+              ].map((item, i) => (
+                <View key={i} style={styles.revenueItem}>
+                  <View style={styles.revenueDot} />
+                  <Text style={styles.revenueText}>{item}</Text>
+                </View>
               ))}
-            </>
-          )}
+            </LinearGradient>
+          </View>
         </ScrollView>
       )}
     </View>
@@ -421,67 +583,123 @@ const styles = StyleSheet.create({
   backBtn: { padding: 4, marginRight: 8 },
   headerTitle: { flex: 1, fontSize: 17, fontWeight: "700", color: TEXT1, textAlign: "center" },
 
-  tabBar:       { flexDirection: "row", backgroundColor: CARD_BG, borderBottomWidth: 1, borderBottomColor: BORDER },
-  tabItem:      { flex: 1, alignItems: "center", paddingVertical: 14, position: "relative" },
-  tabText:      { fontSize: 15, fontWeight: "500", color: TEXT3 },
+  tabBar:        { flexDirection: "row", backgroundColor: CARD_BG, borderBottomWidth: 1, borderBottomColor: BORDER },
+  tabItem:       { flex: 1, alignItems: "center", paddingVertical: 14, position: "relative" },
+  tabText:       { fontSize: 15, fontWeight: "500", color: TEXT3 },
   tabTextActive: { color: ORANGE, fontWeight: "700" },
-  tabUnderline: { position: "absolute", bottom: 0, left: "20%", right: "20%", height: 2.5, backgroundColor: ORANGE, borderRadius: 2 },
+  tabUnderline:  { position: "absolute", bottom: 0, left: "20%", right: "20%", height: 2.5, backgroundColor: ORANGE, borderRadius: 2 },
 
+  /* Record tab */
   scroll:       { paddingHorizontal: 16, paddingTop: 20 },
   fieldLabel:   { fontSize: 15, fontWeight: "700", color: TEXT1, marginBottom: 10 },
   required:     { color: RED },
-
   chipRow:      { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip:         { backgroundColor: "#F0EBE3", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5, borderColor: "transparent" },
   chipActive:   { backgroundColor: ORANGE_L, borderColor: ORANGE },
   chipText:     { fontSize: 13, color: TEXT2, fontWeight: "500" },
   chipTextActive: { color: ORANGE, fontWeight: "700" },
-
   titleInput:   { backgroundColor: CARD_BG, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: TEXT1, borderWidth: 1.5, borderColor: BORDER },
-
-  recorderCard: { backgroundColor: CARD_BG, borderRadius: 20, padding: 20, alignItems: "center", marginTop: 0, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  recorderCard: { backgroundColor: CARD_BG, borderRadius: 20, padding: 20, alignItems: "center", shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   recVisualize: { height: 60, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3, marginBottom: 10, width: "100%" },
   recBar:       { width: 5, backgroundColor: ORANGE, borderRadius: 3 },
-  recTimer:     { fontSize: 32, fontWeight: "800", color: TEXT1, fontVariant: ["tabular-nums"], marginBottom: 16 },
+  recTimer:     { fontSize: 32, fontWeight: "800", color: TEXT1, marginBottom: 16 },
   recMainBtn:   { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: ORANGE, paddingHorizontal: 28, paddingVertical: 14, borderRadius: 30, shadowColor: ORANGE, shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
   recMainBtnStop: { backgroundColor: RED },
   recMainBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
   recHint:       { fontSize: 12, color: TEXT3, marginTop: 12, textAlign: "center" },
   recDone:       { alignItems: "center", paddingVertical: 8, gap: 4 },
   recDoneTitle:  { fontSize: 17, fontWeight: "700", color: TEXT1 },
-  recDoneTime:   { fontSize: 28, fontWeight: "800", color: ORANGE, fontVariant: ["tabular-nums"] },
+  recDoneTime:   { fontSize: 28, fontWeight: "800", color: ORANGE },
   recActions:    { flexDirection: "row", gap: 12, marginTop: 16 },
   recActionBtn:  { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: ORANGE_L, paddingHorizontal: 20, paddingVertical: 11, borderRadius: 22 },
   recActionText: { fontSize: 14, color: ORANGE, fontWeight: "600" },
-
   guideCard:  { backgroundColor: "#EEF2FF", borderRadius: 16, padding: 14, marginTop: 16, gap: 5 },
   guideRow:   { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
-  guideTitle: { fontSize: 13, fontWeight: "700", color: "#4060D0" },
+  guideTitle: { fontSize: 13, fontWeight: "700", color: BLUE },
   guideText:  { fontSize: 12, color: "#4060A0", lineHeight: 18 },
-
   submitBtn:      { backgroundColor: ORANGE, borderRadius: 20, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 16, marginTop: 24, shadowColor: ORANGE, shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
   submitBtnText:  { color: "#fff", fontSize: 16, fontWeight: "700" },
 
-  loadingBox: { height: 200, alignItems: "center", justifyContent: "center" },
-  emptyBox:   { alignItems: "center", paddingVertical: 60, gap: 10, paddingHorizontal: 20 },
-  emptyTitle: { fontSize: 17, fontWeight: "700", color: TEXT1 },
-  emptyText:  { fontSize: 13, color: TEXT2, textAlign: "center", lineHeight: 20 },
-  goRecordBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: ORANGE, paddingHorizontal: 22, paddingVertical: 11, borderRadius: 22, marginTop: 10 },
-  goRecordBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  /* Mine tab — hero */
+  heroGrad:   { paddingHorizontal: 20, paddingTop: 28, paddingBottom: 24, overflow: "hidden" },
+  heroDeco1:  { position: "absolute", top: -40, right: -40, width: 120, height: 120, borderRadius: 60, backgroundColor: "rgba(255,255,255,0.12)" },
+  heroDeco2:  { position: "absolute", bottom: -30, left: -30, width: 90, height: 90, borderRadius: 45, backgroundColor: "rgba(255,255,255,0.10)" },
+  heroRow:    { flexDirection: "row", alignItems: "center", marginBottom: 16 },
+  avatarRing: { width: 76, height: 76, borderRadius: 38, backgroundColor: "rgba(255,255,255,0.3)", alignItems: "center", justifyContent: "center", marginRight: 16 },
+  avatarInner: { width: 66, height: 66, borderRadius: 33, backgroundColor: "rgba(255,255,255,0.9)", alignItems: "center", justifyContent: "center" },
+  avatarText:  { fontSize: 28, fontWeight: "800", color: ORANGE },
+  heroInfo:    { flex: 1 },
+  heroName:    { fontSize: 22, fontWeight: "800", color: "#fff", marginBottom: 8 },
+  certBadge:   { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#fff", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, alignSelf: "flex-start" },
+  certText:    { fontSize: 12, fontWeight: "700", color: ORANGE },
+  heroMeta:    { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 4 },
+  heroMetaItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  heroDot:     { width: 6, height: 6, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.7)" },
+  heroMetaText: { fontSize: 13, color: "rgba(255,255,255,0.9)" },
+  heroMetaDot:  { fontSize: 13, color: "rgba(255,255,255,0.5)" },
 
-  mineCount: { fontSize: 13, color: TEXT3, marginBottom: 12 },
-  mineCard:  { backgroundColor: CARD_BG, borderRadius: 16, padding: 14, flexDirection: "row", alignItems: "center", marginBottom: 10, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
-  minePlayBtn:      { width: 42, height: 42, borderRadius: 21, backgroundColor: ORANGE_L, alignItems: "center", justifyContent: "center", marginRight: 12, flexShrink: 0 },
-  minePlayBtnActive: { backgroundColor: ORANGE },
-  mineInfo:  { flex: 1, gap: 4 },
-  mineTitle: { fontSize: 14, fontWeight: "700", color: TEXT1 },
-  mineMeta:  { flexDirection: "row", alignItems: "center", gap: 6 },
-  mineTag:   { backgroundColor: ORANGE_L, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7 },
-  mineTagText: { fontSize: 10, color: ORANGE, fontWeight: "600" },
-  mineMetaText: { fontSize: 11, color: TEXT3 },
-  mineStatus:  { marginLeft: 8 },
-  statusVerified:     { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#E8F5EE", paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10 },
-  statusVerifiedText: { fontSize: 10, color: "#3A9060", fontWeight: "600" },
-  statusPending:      { backgroundColor: "#FFF0C8", paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10 },
-  statusPendingText:  { fontSize: 10, color: "#C08000", fontWeight: "600" },
+  /* Stats */
+  statsRow:   { flexDirection: "row", gap: 10, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6 },
+  statCard:   { flex: 1, backgroundColor: CARD_BG, borderRadius: 16, padding: 14, alignItems: "flex-start", shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  statIconWrap: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", marginBottom: 10 },
+  statValue:  { fontSize: 20, fontWeight: "800", marginBottom: 3 },
+  statLabel:  { fontSize: 11, color: TEXT2, marginBottom: 5 },
+  statTrendRow: { flexDirection: "row", alignItems: "center", gap: 2 },
+  statTrend:  { fontSize: 10, fontWeight: "600" },
+
+  /* Section */
+  sectionPad:    { paddingHorizontal: 16, paddingTop: 16 },
+  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14 },
+  sectionTitle:  { fontSize: 16, fontWeight: "700", color: TEXT1 },
+
+  /* Archive cards */
+  archiveCard:    { backgroundColor: CARD_BG, borderRadius: 16, padding: 16, marginBottom: 10, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  archiveTopRow:  { flexDirection: "row", alignItems: "flex-start", marginBottom: 10 },
+  archiveTitle:   { flex: 1, fontSize: 14, fontWeight: "700", color: TEXT1, lineHeight: 20, marginRight: 10 },
+  archiveRevWrap: { alignItems: "flex-end" },
+  archiveRevVal:  { fontSize: 18, fontWeight: "800", color: GREEN },
+  archiveRevLabel: { fontSize: 10, color: TEXT3 },
+  archiveTagRow:  { flexDirection: "row", gap: 8, marginBottom: 12 },
+  archiveCatTag:  { backgroundColor: "#F0EBE3", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  archiveCatTagText: { fontSize: 11, color: TEXT2, fontWeight: "600" },
+  archiveStatusTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  archiveStatusPublished: { backgroundColor: GREEN_L },
+  archiveStatusPending:   { backgroundColor: "#FFF5CC" },
+  archiveStatusText:       { fontSize: 11, fontWeight: "700" },
+  archiveStatusPublishedText: { color: GREEN },
+  archiveStatusPendingText:   { color: "#B08000" },
+  archiveMeta:    { flexDirection: "row", alignItems: "center", gap: 14, paddingTop: 10, borderTopWidth: 1, borderTopColor: BORDER },
+  archiveMetaItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  archiveMetaText: { fontSize: 11, color: TEXT3 },
+
+  /* More button */
+  moreBtn:     { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, marginTop: 4 },
+  moreBtnText: { fontSize: 13, color: ORANGE, fontWeight: "600" },
+
+  /* Loading / empty */
+  loadingBox: { height: 120, alignItems: "center", justifyContent: "center" },
+  emptyBox:   { alignItems: "center", paddingVertical: 40, gap: 10, paddingHorizontal: 16 },
+  emptyTitle: { fontSize: 16, fontWeight: "700", color: TEXT1 },
+  emptyText:  { fontSize: 12, color: TEXT2, textAlign: "center", lineHeight: 18 },
+  goRecordBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: ORANGE, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, marginTop: 8 },
+  goRecordBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
+
+  /* Partner card */
+  partnerCard:   { borderRadius: 20, padding: 18, overflow: "hidden" },
+  partnerDeco:   { position: "absolute", top: -30, right: -30, width: 100, height: 100, borderRadius: 50, backgroundColor: "rgba(255,255,255,0.1)" },
+  partnerHeader: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 6 },
+  partnerTitle:  { fontSize: 15, fontWeight: "700", color: "#fff" },
+  partnerDesc:   { fontSize: 12, color: "rgba(255,255,255,0.85)", marginBottom: 14 },
+  partnerItem:   { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8 },
+  partnerIcon:   { fontSize: 20 },
+  partnerName:   { fontSize: 14, color: "#fff", fontWeight: "600" },
+
+  /* Revenue card */
+  revenueCard:   { borderRadius: 20, padding: 18, overflow: "hidden", marginBottom: 8 },
+  revenueDeco:   { position: "absolute", top: -30, right: -30, width: 100, height: 100, borderRadius: 50, backgroundColor: "rgba(255,255,255,0.1)" },
+  revenueHeader: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 14 },
+  revenueTitle:  { fontSize: 15, fontWeight: "700", color: "#fff" },
+  revenueItem:   { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 10 },
+  revenueDot:    { width: 6, height: 6, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.7)", marginTop: 6, flexShrink: 0 },
+  revenueText:   { fontSize: 13, color: "rgba(255,255,255,0.93)", lineHeight: 20, flex: 1 },
 });
