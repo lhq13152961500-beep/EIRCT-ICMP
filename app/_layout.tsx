@@ -68,6 +68,7 @@ function RootLayoutNav() {
       <Stack.Screen name="terminal-device"      options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="sound-archive"        options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="sound-archive-record" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="villager-companion"   options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="(tabs)"   options={{ headerShown: false }} />
     </Stack>
   );
