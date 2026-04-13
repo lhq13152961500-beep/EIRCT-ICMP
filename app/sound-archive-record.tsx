@@ -363,42 +363,40 @@ export default function SoundArchiveRecordPage() {
           contentContainerStyle={{ paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 32 }}
         >
           {/* ── User hero ── */}
-          <LinearGradient
-            colors={["#F07828", "#E06020", "#D05018"]}
-            style={styles.heroGrad}
-          >
-            {/* decorative circles */}
+          <LinearGradient colors={["#FFF4EC", "#F5EFE6"]} style={styles.heroGrad}>
+            {/* top-right decorative arc */}
             <View style={styles.heroDeco1} />
-            <View style={styles.heroDeco2} />
 
+            {/* Avatar row */}
             <View style={styles.heroRow}>
               {/* Avatar */}
-              <View style={styles.avatarRing}>
-                <View style={styles.avatarInner}>
+              <View style={styles.avatarShadow}>
+                <LinearGradient colors={["#F07828", "#D05018"]} style={styles.avatarGrad}>
                   <Text style={styles.avatarText}>{avatarInitial}</Text>
-                </View>
+                </LinearGradient>
               </View>
 
-              {/* Name + badge */}
+              {/* Name + badges */}
               <View style={styles.heroInfo}>
                 <Text style={styles.heroName}>{displayName}</Text>
-                <View style={styles.certBadge}>
-                  <Ionicons name="checkmark-circle" size={12} color="#E07030" />
-                  <Text style={styles.certText}>认证村民</Text>
+                <View style={styles.heroBadgeRow}>
+                  <View style={styles.certBadge}>
+                    <Ionicons name="checkmark-circle" size={12} color={ORANGE} />
+                    <Text style={styles.certText}>认证村民</Text>
+                  </View>
+                  <View style={styles.roleBadge}>
+                    <Ionicons name="mic" size={10} color="#fff" />
+                    <Text style={styles.roleText}>声音传播者</Text>
+                  </View>
+                </View>
+                <View style={styles.heroMetaRow}>
+                  <Ionicons name="location-outline" size={12} color={TEXT3} />
+                  <Text style={styles.heroMetaText}>{VENUE}</Text>
+                  <Text style={styles.heroMetaDivider}>|</Text>
+                  <Ionicons name="calendar-outline" size={12} color={TEXT3} />
+                  <Text style={styles.heroMetaText}>加入 {myArchives.length > 0 ? Math.min(myArchives.length * 42, 365) : 126} 天</Text>
                 </View>
               </View>
-            </View>
-
-            {/* Sub info */}
-            <View style={styles.heroMeta}>
-              <View style={styles.heroMetaItem}>
-                <View style={styles.heroDot} />
-                <Text style={styles.heroMetaText}>{VENUE}</Text>
-              </View>
-              <Text style={styles.heroMetaDot}>·</Text>
-              <Text style={styles.heroMetaText}>声音传播者</Text>
-              <Text style={styles.heroMetaDot}>·</Text>
-              <Text style={styles.heroMetaText}>加入 {myArchives.length > 0 ? Math.min(myArchives.length * 42, 365) : 0} 天</Text>
             </View>
           </LinearGradient>
 
@@ -530,26 +528,6 @@ export default function SoundArchiveRecordPage() {
             )}
           </View>
 
-          {/* ── Partner institutions ── */}
-          <View style={styles.sectionPad}>
-            <LinearGradient colors={["#3A78E0", "#2860C0"]} style={styles.partnerCard}>
-              <View style={styles.partnerDeco} />
-              <View style={styles.partnerHeader}>
-                <Ionicons name="business-outline" size={16} color="#fff" />
-                <Text style={styles.partnerTitle}>合作机构</Text>
-              </View>
-              <Text style={styles.partnerDesc}>你的优质声音档案已被以下机构收录</Text>
-              <View style={styles.partnerItem}>
-                <Text style={styles.partnerIcon}>🏛️</Text>
-                <Text style={styles.partnerName}>吐鲁番市档案馆</Text>
-              </View>
-              <View style={styles.partnerItem}>
-                <Text style={styles.partnerIcon}>🎓</Text>
-                <Text style={styles.partnerName}>新疆大学民俗研究中心</Text>
-              </View>
-            </LinearGradient>
-          </View>
-
           {/* ── Revenue explanation ── */}
           <View style={styles.sectionPad}>
             <LinearGradient colors={["#F07828", "#D05018"]} style={styles.revenueCard}>
@@ -621,22 +599,22 @@ const styles = StyleSheet.create({
   submitBtnText:  { color: "#fff", fontSize: 16, fontWeight: "700" },
 
   /* Mine tab — hero */
-  heroGrad:   { paddingHorizontal: 20, paddingTop: 28, paddingBottom: 24, overflow: "hidden" },
-  heroDeco1:  { position: "absolute", top: -40, right: -40, width: 120, height: 120, borderRadius: 60, backgroundColor: "rgba(255,255,255,0.12)" },
-  heroDeco2:  { position: "absolute", bottom: -30, left: -30, width: 90, height: 90, borderRadius: 45, backgroundColor: "rgba(255,255,255,0.10)" },
-  heroRow:    { flexDirection: "row", alignItems: "center", marginBottom: 16 },
-  avatarRing: { width: 76, height: 76, borderRadius: 38, backgroundColor: "rgba(255,255,255,0.3)", alignItems: "center", justifyContent: "center", marginRight: 16 },
-  avatarInner: { width: 66, height: 66, borderRadius: 33, backgroundColor: "rgba(255,255,255,0.9)", alignItems: "center", justifyContent: "center" },
-  avatarText:  { fontSize: 28, fontWeight: "800", color: ORANGE },
-  heroInfo:    { flex: 1 },
-  heroName:    { fontSize: 22, fontWeight: "800", color: "#fff", marginBottom: 8 },
-  certBadge:   { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#fff", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, alignSelf: "flex-start" },
-  certText:    { fontSize: 12, fontWeight: "700", color: ORANGE },
-  heroMeta:    { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 4 },
-  heroMetaItem: { flexDirection: "row", alignItems: "center", gap: 5 },
-  heroDot:     { width: 6, height: 6, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.7)" },
-  heroMetaText: { fontSize: 13, color: "rgba(255,255,255,0.9)" },
-  heroMetaDot:  { fontSize: 13, color: "rgba(255,255,255,0.5)" },
+  heroGrad:      { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 20, overflow: "hidden", borderBottomWidth: 1, borderBottomColor: BORDER },
+  heroDeco1:     { position: "absolute", top: -50, right: -50, width: 140, height: 140, borderRadius: 70, backgroundColor: "rgba(224,112,48,0.07)" },
+  heroRow:       { flexDirection: "row", alignItems: "center", gap: 16 },
+  avatarShadow:  { shadowColor: ORANGE, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  avatarGrad:    { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" },
+  avatarText:    { fontSize: 28, fontWeight: "800", color: "#fff" },
+  heroInfo:      { flex: 1 },
+  heroName:      { fontSize: 20, fontWeight: "800", color: TEXT1, marginBottom: 8 },
+  heroBadgeRow:  { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  certBadge:     { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: ORANGE_L, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10, borderWidth: 1, borderColor: "#F5C8A0" },
+  certText:      { fontSize: 11, fontWeight: "700", color: ORANGE },
+  roleBadge:     { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: ORANGE, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10 },
+  roleText:      { fontSize: 11, fontWeight: "700", color: "#fff" },
+  heroMetaRow:   { flexDirection: "row", alignItems: "center", gap: 5 },
+  heroMetaText:  { fontSize: 12, color: TEXT2 },
+  heroMetaDivider: { fontSize: 12, color: BORDER, marginHorizontal: 2 },
 
   /* Stats */
   statsRow:   { flexDirection: "row", gap: 10, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6 },
@@ -683,16 +661,6 @@ const styles = StyleSheet.create({
   emptyText:  { fontSize: 12, color: TEXT2, textAlign: "center", lineHeight: 18 },
   goRecordBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: ORANGE, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, marginTop: 8 },
   goRecordBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
-
-  /* Partner card */
-  partnerCard:   { borderRadius: 20, padding: 18, overflow: "hidden" },
-  partnerDeco:   { position: "absolute", top: -30, right: -30, width: 100, height: 100, borderRadius: 50, backgroundColor: "rgba(255,255,255,0.1)" },
-  partnerHeader: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 6 },
-  partnerTitle:  { fontSize: 15, fontWeight: "700", color: "#fff" },
-  partnerDesc:   { fontSize: 12, color: "rgba(255,255,255,0.85)", marginBottom: 14 },
-  partnerItem:   { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8 },
-  partnerIcon:   { fontSize: 20 },
-  partnerName:   { fontSize: 14, color: "#fff", fontWeight: "600" },
 
   /* Revenue card */
   revenueCard:   { borderRadius: 20, padding: 18, overflow: "hidden", marginBottom: 8 },
