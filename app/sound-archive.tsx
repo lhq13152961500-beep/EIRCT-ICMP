@@ -11,7 +11,6 @@ import { router } from "expo-router";
 import { apiRequest } from "@/lib/query-client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Audio } from "expo-av";
-import * as FileSystem from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
 
 const BG       = "#F5EFE6";
