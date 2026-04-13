@@ -363,37 +363,31 @@ export default function SoundArchiveRecordPage() {
           contentContainerStyle={{ paddingBottom: (Platform.OS === "web" ? 34 : insets.bottom) + 32 }}
         >
           {/* ── User hero ── */}
-          <LinearGradient colors={["#FFF4EC", "#F5EFE6"]} style={styles.heroGrad}>
-            {/* top-right decorative arc */}
+          <LinearGradient colors={["#FF9340", "#E85E18"]} style={styles.heroGrad}>
             <View style={styles.heroDeco1} />
+            <View style={styles.heroDeco2} />
+            <View style={styles.heroDeco3} />
 
-            {/* Avatar row */}
             <View style={styles.heroRow}>
               {/* Avatar */}
               <View style={styles.avatarShadow}>
-                <LinearGradient colors={["#F07828", "#D05018"]} style={styles.avatarGrad}>
+                <View style={styles.avatarInner}>
                   <Text style={styles.avatarText}>{avatarInitial}</Text>
-                </LinearGradient>
+                </View>
               </View>
 
-              {/* Name + badges */}
+              {/* Name + badge + meta */}
               <View style={styles.heroInfo}>
                 <Text style={styles.heroName}>{displayName}</Text>
-                <View style={styles.heroBadgeRow}>
-                  <View style={styles.certBadge}>
-                    <Ionicons name="checkmark-circle" size={12} color={ORANGE} />
-                    <Text style={styles.certText}>认证村民</Text>
-                  </View>
-                  <View style={styles.roleBadge}>
-                    <Ionicons name="mic" size={10} color="#fff" />
-                    <Text style={styles.roleText}>声音传播者</Text>
-                  </View>
+                <View style={styles.certBadge}>
+                  <Ionicons name="checkmark-circle" size={12} color={ORANGE} />
+                  <Text style={styles.certText}>认证村民</Text>
                 </View>
                 <View style={styles.heroMetaRow}>
-                  <Ionicons name="location-outline" size={12} color={TEXT3} />
+                  <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.7)" />
                   <Text style={styles.heroMetaText}>{VENUE}</Text>
-                  <Text style={styles.heroMetaDivider}>|</Text>
-                  <Ionicons name="calendar-outline" size={12} color={TEXT3} />
+                  <Text style={styles.heroMetaDivider}>·</Text>
+                  <Ionicons name="calendar-outline" size={12} color="rgba(255,255,255,0.7)" />
                   <Text style={styles.heroMetaText}>加入 {myArchives.length > 0 ? Math.min(myArchives.length * 42, 365) : 126} 天</Text>
                 </View>
               </View>
@@ -599,22 +593,21 @@ const styles = StyleSheet.create({
   submitBtnText:  { color: "#fff", fontSize: 16, fontWeight: "700" },
 
   /* Mine tab — hero */
-  heroGrad:      { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 20, overflow: "hidden", borderBottomWidth: 1, borderBottomColor: BORDER },
-  heroDeco1:     { position: "absolute", top: -50, right: -50, width: 140, height: 140, borderRadius: 70, backgroundColor: "rgba(224,112,48,0.07)" },
-  heroRow:       { flexDirection: "row", alignItems: "center", gap: 16 },
-  avatarShadow:  { shadowColor: ORANGE, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
-  avatarGrad:    { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" },
-  avatarText:    { fontSize: 28, fontWeight: "800", color: "#fff" },
+  heroGrad:      { paddingHorizontal: 22, paddingTop: 28, paddingBottom: 28, overflow: "hidden" },
+  heroDeco1:     { position: "absolute", top: -40, right: -40, width: 130, height: 130, borderRadius: 65, backgroundColor: "rgba(255,255,255,0.15)" },
+  heroDeco2:     { position: "absolute", bottom: -50, left: -30, width: 110, height: 110, borderRadius: 55, backgroundColor: "rgba(255,255,255,0.10)" },
+  heroDeco3:     { position: "absolute", top: 30, right: 70, width: 60, height: 60, borderRadius: 30, backgroundColor: "rgba(255,255,255,0.08)" },
+  heroRow:       { flexDirection: "row", alignItems: "center", gap: 18 },
+  avatarShadow:  { shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  avatarInner:   { width: 74, height: 74, borderRadius: 37, backgroundColor: "rgba(255,255,255,0.95)", alignItems: "center", justifyContent: "center" },
+  avatarText:    { fontSize: 30, fontWeight: "800", color: ORANGE },
   heroInfo:      { flex: 1 },
-  heroName:      { fontSize: 20, fontWeight: "800", color: TEXT1, marginBottom: 8 },
-  heroBadgeRow:  { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
-  certBadge:     { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: ORANGE_L, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10, borderWidth: 1, borderColor: "#F5C8A0" },
+  heroName:      { fontSize: 21, fontWeight: "800", color: "#fff", marginBottom: 8, textShadowColor: "rgba(0,0,0,0.1)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  certBadge:     { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#fff", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, alignSelf: "flex-start", marginBottom: 10 },
   certText:      { fontSize: 11, fontWeight: "700", color: ORANGE },
-  roleBadge:     { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: ORANGE, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10 },
-  roleText:      { fontSize: 11, fontWeight: "700", color: "#fff" },
-  heroMetaRow:   { flexDirection: "row", alignItems: "center", gap: 5 },
-  heroMetaText:  { fontSize: 12, color: TEXT2 },
-  heroMetaDivider: { fontSize: 12, color: BORDER, marginHorizontal: 2 },
+  heroMetaRow:   { flexDirection: "row", alignItems: "center", gap: 5, flexWrap: "wrap" },
+  heroMetaText:  { fontSize: 12, color: "rgba(255,255,255,0.88)" },
+  heroMetaDivider: { fontSize: 13, color: "rgba(255,255,255,0.4)", marginHorizontal: 2 },
 
   /* Stats */
   statsRow:   { flexDirection: "row", gap: 10, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6 },

@@ -280,11 +280,6 @@ export default function SoundArchivePage() {
                   </Text>
                 </View>
               </View>
-              {!archive.audioUri && (
-                <View style={styles.noAudioBadge}>
-                  <Ionicons name="volume-mute-outline" size={14} color={TEXT3} />
-                </View>
-              )}
             </Pressable>
           ))
         )}
@@ -296,17 +291,15 @@ export default function SoundArchivePage() {
         >
           <View style={styles.ctaDecoBall} />
           <View style={styles.ctaDecoBall2} />
-          <View style={styles.ctaLeft}>
-            <Text style={styles.ctaTitle}>加入认证</Text>
-            <Text style={styles.ctaSub}>成为声音档案贡献者</Text>
-            <Text style={styles.ctaDesc}>录制并上传你所在景区的声音，让珍贵的文化声音得以永久保存，还可获得平台收益奖励</Text>
-          </View>
+          <Text style={styles.ctaTitle}>加入认证</Text>
+          <Text style={styles.ctaSub}>成为声音档案贡献者</Text>
+          <Text style={styles.ctaDesc}>录制并上传你所在景区的声音，让珍贵的文化声音得以永久保存，还可获得平台收益奖励</Text>
           <Pressable
             style={styles.ctaBtn}
             onPress={() => { haptic(); router.push("/sound-archive-record" as any); }}
           >
-            <Ionicons name="mic" size={17} color={ORANGE} />
-            <Text style={styles.ctaBtnText}>立即录制</Text>
+            <Ionicons name="mic" size={16} color={ORANGE} />
+            <Text style={styles.ctaBtnText}>立刻加入</Text>
           </Pressable>
         </LinearGradient>
       </ScrollView>
@@ -390,15 +383,15 @@ const styles = StyleSheet.create({
   archiveMetaText: { fontSize: 11, color: TEXT3 },
   noAudioBadge:  { padding: 4 },
 
-  ctaCard:      { borderRadius: 22, padding: 20, marginTop: 24, flexDirection: "row", alignItems: "center", overflow: "hidden" },
-  ctaDecoBall:  { position: "absolute", top: -32, right: 60, width: 90, height: 90, borderRadius: 45, backgroundColor: "rgba(255,255,255,0.13)" },
-  ctaDecoBall2: { position: "absolute", bottom: -24, right: -20, width: 80, height: 80, borderRadius: 40, backgroundColor: "rgba(255,255,255,0.10)" },
-  ctaLeft:      { flex: 1, marginRight: 12 },
-  ctaTitle:     { fontSize: 18, fontWeight: "800", color: "#fff", marginBottom: 2 },
-  ctaSub:       { fontSize: 12, color: "rgba(255,255,255,0.85)", fontWeight: "600", marginBottom: 8 },
-  ctaDesc:      { fontSize: 12, color: "rgba(255,255,255,0.8)", lineHeight: 18 },
-  ctaBtn:       { backgroundColor: "#fff", borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10, alignItems: "center", gap: 4, minWidth: 76 },
-  ctaBtnText:   { fontSize: 13, fontWeight: "700", color: ORANGE },
+  ctaCard:      { borderRadius: 22, padding: 22, marginTop: 24, flexDirection: "column", overflow: "hidden" },
+  ctaDecoBall:  { position: "absolute", top: -32, right: 40, width: 100, height: 100, borderRadius: 50, backgroundColor: "rgba(255,255,255,0.13)" },
+  ctaDecoBall2: { position: "absolute", bottom: -28, right: -24, width: 90, height: 90, borderRadius: 45, backgroundColor: "rgba(255,255,255,0.10)" },
+  ctaLeft:      { flex: 1 },
+  ctaTitle:     { fontSize: 20, fontWeight: "800", color: "#fff", marginBottom: 3 },
+  ctaSub:       { fontSize: 13, color: "rgba(255,255,255,0.9)", fontWeight: "600", marginBottom: 10 },
+  ctaDesc:      { fontSize: 12, color: "rgba(255,255,255,0.82)", lineHeight: 19, marginBottom: 18 },
+  ctaBtn:       { backgroundColor: "#fff", borderRadius: 20, paddingHorizontal: 22, paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" },
+  ctaBtnText:   { fontSize: 14, fontWeight: "700", color: ORANGE },
 
   modalBackdrop:     { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
   venuePicker:       { position: "absolute", right: 16, backgroundColor: CARD_BG, borderRadius: 18, padding: 16, minWidth: 180, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 10 },
