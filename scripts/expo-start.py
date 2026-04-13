@@ -8,7 +8,7 @@ import subprocess
 import threading
 
 
-METRO_PORT = 8081
+METRO_PORT = 8083
 
 def _pids_on_port(port):
     """Return set of PIDs listening on the given TCP port via /proc/net/tcp."""
@@ -105,8 +105,8 @@ def kill_metro_port():
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
 
-    # 3. Kill by port — both 8081 and 8082 to clear any stale binding
-    for port in (8081, 8082):
+    # 3. Kill by port — clear any stale binding
+    for port in (8081, 8082, 8083):
         try:
             result = subprocess.run(["fuser", "-k", f"{port}/tcp"], capture_output=True)
             if result.returncode == 0:
@@ -144,7 +144,7 @@ def run_expo():
         os.dup2(slave_fd, 2)
         if slave_fd > 2:
             os.close(slave_fd)
-        os.execvpe('npx', ['npx', 'expo', 'start', '--go', '--tunnel', '--port', str(METRO_PORT), '--max-workers', '1', '--no-dev'], env)
+        os.execvpe('npx', ['npx', 'expo', 'start', '--go', '--tunnel', '--port', str(METRO_PORT), '--max-workers', '2'], env)
     else:
         os.close(slave_fd)
         last_anon_answer = 0.0
