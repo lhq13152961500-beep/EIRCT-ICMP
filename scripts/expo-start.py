@@ -127,7 +127,7 @@ def run_expo():
     kill_metro_port()
 
     env = os.environ.copy()
-    env['NODE_OPTIONS'] = '--max-old-space-size=512 --expose-gc'
+    env['NODE_OPTIONS'] = '--max-old-space-size=4096 --expose-gc'
     env['EXPO_NO_INLINE_SOURCEMAPS'] = '1'
     env['REACT_NATIVE_PACKAGER_HOSTNAME'] = 'localhost'
 
