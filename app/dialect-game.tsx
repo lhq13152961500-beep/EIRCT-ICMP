@@ -22,6 +22,7 @@ const BORDER  = "#F0EBE3";
 const GREEN   = "#3A9060";
 const GREEN_L = "#E8F5EE";
 const BLUE    = "#3A78E0";
+const GOLD    = "#F5A623";
 
 type Screen = "list" | "dialect" | "sound" | "rewards" | "achievements";
 
