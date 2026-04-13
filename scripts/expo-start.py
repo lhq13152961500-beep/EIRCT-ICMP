@@ -8,7 +8,7 @@ import subprocess
 import threading
 
 
-METRO_PORT = 8082
+METRO_PORT = 8081
 
 def kill_metro_port():
     """Kill any process using the Metro port."""
