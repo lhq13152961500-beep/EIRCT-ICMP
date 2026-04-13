@@ -135,6 +135,20 @@ export default function HomeScreen() {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
+  const handleGridPress = (label: string) => {
+    haptic();
+    if (label === "AR实景畅游") { router.push("/ar-tour"); return; }
+    if (label === "声音邮局")   { router.push({ pathname: "/(tabs)/voice", params: { tab: "postoffice" } } as any); return; }
+    if (label === "声音档案")   { router.push("/sound-archive" as any); return; }
+    if (label === "终端互联") {
+      const device = getConnectedDevice();
+      router.push(device ? { pathname: "/terminal-device", params: device } as any : "/terminal");
+      return;
+    }
+    const item = MINI_ICONS.find(m => m.label === label);
+    if (item && (item as any).onPress) (item as any).onPress();
+  };
+
   const scrollTo = useCallback((idx: number) => {
     bannerRef.current?.scrollTo({ x: idx * BANNER_WIDTH, animated: true });
     indexRef.current = idx;
@@ -317,7 +331,7 @@ export default function HomeScreen() {
         <View style={styles.gridWrap}>
           <View style={styles.gridRow}>
             {MINI_ICONS.slice(0, 4).map((item) => (
-              <Pressable key={item.label} style={styles.gridItem} onPress={() => { haptic(); item.onPress ? item.onPress() : item.route && router.push(item.route as any); }}>
+              <Pressable key={item.label} style={styles.gridItem} onPress={() => handleGridPress(item.label)}>
                 <View style={[styles.gridIconCircle, { backgroundColor: item.bg }]}>
                   <Ionicons name={item.icon} size={22} color={item.color} />
                 </View>
@@ -327,7 +341,7 @@ export default function HomeScreen() {
           </View>
           <View style={[styles.gridRow, styles.gridRowBottom]}>
             {MINI_ICONS.slice(4).map((item) => (
-              <Pressable key={item.label} style={styles.gridItem} onPress={() => { haptic(); item.onPress ? item.onPress() : item.route && router.push(item.route as any); }}>
+              <Pressable key={item.label} style={styles.gridItem} onPress={() => handleGridPress(item.label)}>
                 <View style={[styles.gridIconCircle, { backgroundColor: item.bg }]}>
                   <Ionicons name={item.icon} size={22} color={item.color} />
                 </View>
