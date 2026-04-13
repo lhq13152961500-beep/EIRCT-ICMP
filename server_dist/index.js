@@ -355,6 +355,110 @@ var HybridStorage = class {
     return { likeCount: likeRes.rows[0].cnt, isLiked, comments };
   }
 };
+async function initSoundArchivesTable() {
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS sound_archives (
+      id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+      venue            TEXT        NOT NULL DEFAULT '\u5410\u5CEA\u6C9F',
+      category         TEXT        NOT NULL,
+      title            TEXT        NOT NULL,
+      author           TEXT        NOT NULL,
+      author_id        TEXT,
+      duration_seconds INT         NOT NULL DEFAULT 0,
+      play_count       INT         NOT NULL DEFAULT 0,
+      audio_data       TEXT,
+      is_verified      BOOLEAN     NOT NULL DEFAULT FALSE,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  const { rows } = await pgPool.query("SELECT COUNT(*)::int AS cnt FROM sound_archives");
+  if (rows[0].cnt === 0) {
+    const seeds = [
+      { venue: "\u5410\u5CEA\u6C9F", category: "\u65B9\u8A00", title: "\u7EF4\u543E\u5C14\u65CF\u8001\u4EBA\u8BB2\u8FF0\u8461\u8404\u6C9F\u5F80\u4E8B", author: "\u827E\u529B\xB7\u4E70\u4E70\u63D0", dur: 222, plays: 2847, verified: true },
+      { venue: "\u5410\u5CEA\u6C9F", category: "\u4F20\u7EDF\u5DE5\u827A", title: "\u6851\u76AE\u7EB8\u5236\u4F5C\u6280\u827A\u5B9E\u5F55", author: "\u5410\u5C14\u900A\xB7\u4F9D\u660E", dur: 318, plays: 5231, verified: true },
+      { venue: "\u5410\u5CEA\u6C9F", category: "\u5DE5\u5177\u58F0\u97F3", title: "\u574E\u513F\u4E95\u6D41\u6C34\u58F0\u4E0E\u52B3\u4F5C\u53F7\u5B50", author: "\u963F\u4E0D\u90FD\xB7\u70ED\u5408\u66FC", dur: 245, plays: 1892, verified: true },
+      { venue: "\u5410\u5CEA\u6C9F", category: "\u6C11\u6B4C\u5C0F\u8C03", title: "\u9EA6\u897F\u6765\u752B\u4F20\u7EDF\u6B4C\u8C23", author: "\u53E4\u4E3D\u5A1C\u5C14", dur: 176, plays: 6754, verified: true },
+      { venue: "\u5410\u5CEA\u6C9F", category: "\u4F20\u7EDF\u5DE5\u827A", title: "\u571F\u9676\u5236\u4F5C\u8FC7\u7A0B\u8BB0\u5F55", author: "\u4E70\u4E70\u63D0\u6C5F", dur: 392, plays: 3421, verified: true },
+      { venue: "\u5410\u5CEA\u6C9F", category: "\u6545\u4E8B\u4F20\u8BF4", title: "\u5343\u5E74\u53E4\u6751\u843D\u7684\u4F20\u8BF4\u6545\u4E8B", author: "\u52AA\u5C14\u53E4\u4E3D", dur: 487, plays: 2103, verified: false },
+      { venue: "\u5410\u5CEA\u6C9F", category: "\u81EA\u7136\u58F0\u666F", title: "\u6E05\u6668\u8461\u8404\u67B6\u4E0B\u7684\u9E1F\u9E23\u58F0", author: "\u54C8\u529B\u6728\u62C9\u63D0", dur: 134, plays: 4560, verified: true },
+      { venue: "\u5410\u5CEA\u6C9F", category: "\u65B9\u8A00", title: "\u5410\u5CEA\u6C9F\u65B9\u8A00\u6570\u5B57\u4E0E\u989C\u8272\u6C47\u603B", author: "\u4F0A\u529B\u54C8\u6728", dur: 298, plays: 1234, verified: false }
+    ];
+    for (const s of seeds) {
+      await pgPool.query(
+        `INSERT INTO sound_archives (venue, category, title, author, duration_seconds, play_count, is_verified)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [s.venue, s.category, s.title, s.author, s.dur, s.plays, s.verified]
+      );
+    }
+  }
+}
+async function getSoundArchiveStats(venue) {
+  const r = await pgPool.query(
+    `SELECT COUNT(*)::int AS cnt,
+            COUNT(DISTINCT author)::int AS contributors,
+            COALESCE(SUM(play_count),0)::int AS plays
+     FROM sound_archives WHERE venue = $1`,
+    [venue]
+  );
+  return { archiveCount: r.rows[0].cnt, contributorCount: r.rows[0].contributors, totalPlays: r.rows[0].plays };
+}
+async function getSoundArchives(venue, category, sort, limit = 20) {
+  const params = [venue];
+  let where = "venue = $1";
+  if (category && category !== "\u5168\u90E8") {
+    params.push(category);
+    where += ` AND category = $${params.length}`;
+  }
+  const orderBy = sort === "hot" ? "play_count DESC" : "created_at DESC";
+  const res = await pgPool.query(
+    `SELECT id, venue, category, title, author, author_id, duration_seconds, play_count, is_verified, created_at,
+            CASE WHEN audio_data IS NOT NULL THEN TRUE ELSE FALSE END AS has_audio
+     FROM sound_archives WHERE ${where} ORDER BY ${orderBy} LIMIT ${limit}`,
+    params
+  );
+  return res.rows.map((row) => ({
+    id: row.id,
+    venue: row.venue,
+    category: row.category,
+    title: row.title,
+    author: row.author,
+    authorId: row.author_id,
+    durationSeconds: row.duration_seconds,
+    playCount: row.play_count,
+    isVerified: row.is_verified,
+    createdAt: row.created_at.toISOString(),
+    audioUri: row.has_audio ? `/api/sound-archives/${row.id}/audio` : void 0
+  }));
+}
+async function createSoundArchive(data) {
+  const id = randomUUID();
+  const res = await pgPool.query(
+    `INSERT INTO sound_archives (id, venue, category, title, author, author_id, duration_seconds, play_count, audio_data, is_verified)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,false) RETURNING *`,
+    [id, data.venue, data.category, data.title, data.author, data.authorId ?? null, data.durationSeconds, data.audioData ?? null]
+  );
+  const row = res.rows[0];
+  return {
+    id: row.id,
+    venue: row.venue,
+    category: row.category,
+    title: row.title,
+    author: row.author,
+    authorId: row.author_id,
+    durationSeconds: row.duration_seconds,
+    playCount: 0,
+    isVerified: false,
+    createdAt: row.created_at.toISOString()
+  };
+}
+async function getSoundArchiveAudio(id) {
+  const res = await pgPool.query("SELECT audio_data FROM sound_archives WHERE id = $1", [id]);
+  if (res.rows.length === 0) return null;
+  return res.rows[0].audio_data ?? null;
+}
+async function incrementArchivePlay(id) {
+  await pgPool.query("UPDATE sound_archives SET play_count = play_count + 1 WHERE id = $1", [id]);
+}
 var storage = new HybridStorage();
 
 // server/doubao-realtime.ts
@@ -1558,6 +1662,65 @@ async function registerRoutes(app2) {
     } catch (err) {
       console.error("[ai/chat]", err);
       return res.status(500).json({ error: "AI\u670D\u52A1\u6682\u65F6\u4E0D\u53EF\u7528\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5" });
+    }
+  });
+  await initSoundArchivesTable();
+  app2.get("/api/sound-archives/stats", async (req, res) => {
+    try {
+      const venue = req.query.venue || "\u5410\u5CEA\u6C9F";
+      const stats = await getSoundArchiveStats(venue);
+      return res.json(stats);
+    } catch (err) {
+      console.error("[sound-archives/stats]", err);
+      return res.status(500).json({ error: "\u83B7\u53D6\u7EDF\u8BA1\u5931\u8D25" });
+    }
+  });
+  app2.get("/api/sound-archives", async (req, res) => {
+    try {
+      const venue = req.query.venue || "\u5410\u5CEA\u6C9F";
+      const category = req.query.category || void 0;
+      const sort = req.query.sort || "hot";
+      const limit = parseInt(req.query.limit || "20", 10);
+      const list = await getSoundArchives(venue, category, sort, limit);
+      return res.json(list);
+    } catch (err) {
+      console.error("[sound-archives]", err);
+      return res.status(500).json({ error: "\u83B7\u53D6\u6863\u6848\u5217\u8868\u5931\u8D25" });
+    }
+  });
+  app2.post("/api/sound-archives", async (req, res) => {
+    try {
+      const { venue, category, title, author, authorId, durationSeconds, audioData } = req.body;
+      if (!category || !title || !author) return res.status(400).json({ error: "\u7F3A\u5C11\u5FC5\u586B\u5B57\u6BB5" });
+      const archive = await createSoundArchive({
+        venue: venue || "\u5410\u5CEA\u6C9F",
+        category,
+        title,
+        author,
+        authorId: authorId ?? null,
+        durationSeconds: durationSeconds ?? 0,
+        playCount: 0,
+        isVerified: false,
+        audioData
+      });
+      return res.json(archive);
+    } catch (err) {
+      console.error("[sound-archives POST]", err);
+      return res.status(500).json({ error: "\u63D0\u4EA4\u5931\u8D25" });
+    }
+  });
+  app2.get("/api/sound-archives/:id/audio", async (req, res) => {
+    try {
+      await incrementArchivePlay(req.params.id);
+      const audio = await getSoundArchiveAudio(req.params.id);
+      if (!audio) return res.status(404).json({ error: "\u672A\u627E\u5230\u97F3\u9891" });
+      const buf = Buffer.from(audio, "base64");
+      res.set("Content-Type", "audio/m4a");
+      res.set("Content-Length", String(buf.length));
+      return res.send(buf);
+    } catch (err) {
+      console.error("[sound-archives/audio]", err);
+      return res.status(500).json({ error: "\u83B7\u53D6\u97F3\u9891\u5931\u8D25" });
     }
   });
   const httpServer = createServer(app2);

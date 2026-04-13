@@ -1,6 +1,6 @@
-# 逛游指南
+# 乡音伴旅 (Xiangyin Banlu)
 
-A beautiful Chinese rural tourism guide mobile app built with Expo React Native.
+A beautiful Chinese cultural travel mobile app built with Expo React Native + Express backend.
 
 ## Architecture
 

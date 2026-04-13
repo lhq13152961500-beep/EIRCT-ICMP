@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import https from "node:https";
 import OpenAI, { toFile } from "openai";
-import { storage, type InsertRecording } from "./storage";
+import { storage, type InsertRecording, initSoundArchivesTable, getSoundArchiveStats, getSoundArchives, createSoundArchive, getSoundArchiveAudio, incrementArchivePlay } from "./storage";
 import { doublaoRealtimeTurn } from "./doubao-realtime";
 const uuidv4 = () => randomUUID();
 
@@ -778,6 +778,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("[ai/chat]", err);
       return res.status(500).json({ error: "AI服务暂时不可用，请稍后再试" });
+    }
+  });
+
+  // ── Sound Archives ────────────────────────────────────
+  await initSoundArchivesTable();
+
+  app.get("/api/sound-archives/stats", async (req, res) => {
+    try {
+      const venue = (req.query.venue as string) || "吐峪沟";
+      const stats = await getSoundArchiveStats(venue);
+      return res.json(stats);
+    } catch (err) {
+      console.error("[sound-archives/stats]", err);
+      return res.status(500).json({ error: "获取统计失败" });
+    }
+  });
+
+  app.get("/api/sound-archives", async (req, res) => {
+    try {
+      const venue    = (req.query.venue    as string) || "吐峪沟";
+      const category = (req.query.category as string) || undefined;
+      const sort     = (req.query.sort     as string) || "hot";
+      const limit    = parseInt((req.query.limit as string) || "20", 10);
+      const list = await getSoundArchives(venue, category, sort, limit);
+      return res.json(list);
+    } catch (err) {
+      console.error("[sound-archives]", err);
+      return res.status(500).json({ error: "获取档案列表失败" });
+    }
+  });
+
+  app.post("/api/sound-archives", async (req, res) => {
+    try {
+      const { venue, category, title, author, authorId, durationSeconds, audioData } = req.body as {
+        venue?: string; category?: string; title?: string; author?: string;
+        authorId?: string; durationSeconds?: number; audioData?: string;
+      };
+      if (!category || !title || !author) return res.status(400).json({ error: "缺少必填字段" });
+      const archive = await createSoundArchive({
+        venue: venue || "吐峪沟",
+        category,
+        title,
+        author,
+        authorId: authorId ?? null,
+        durationSeconds: durationSeconds ?? 0,
+        playCount: 0,
+        isVerified: false,
+        audioData,
+      });
+      return res.json(archive);
+    } catch (err) {
+      console.error("[sound-archives POST]", err);
+      return res.status(500).json({ error: "提交失败" });
+    }
+  });
+
+  app.get("/api/sound-archives/:id/audio", async (req, res) => {
+    try {
+      await incrementArchivePlay(req.params.id);
+      const audio = await getSoundArchiveAudio(req.params.id);
+      if (!audio) return res.status(404).json({ error: "未找到音频" });
+      const buf = Buffer.from(audio, "base64");
+      res.set("Content-Type", "audio/m4a");
+      res.set("Content-Length", String(buf.length));
+      return res.send(buf);
+    } catch (err) {
+      console.error("[sound-archives/audio]", err);
+      return res.status(500).json({ error: "获取音频失败" });
     }
   });
 

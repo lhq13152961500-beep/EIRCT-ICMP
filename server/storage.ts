@@ -454,4 +454,122 @@ export class HybridStorage implements IStorage {
   }
 }
 
+// ────────────────────────────────────────────────────────
+// Sound Archives
+// ────────────────────────────────────────────────────────
+export interface SoundArchive {
+  id: string;
+  venue: string;
+  category: string;
+  title: string;
+  author: string;
+  authorId: string | null;
+  durationSeconds: number;
+  playCount: number;
+  audioUri?: string;
+  isVerified: boolean;
+  createdAt: string;
+}
+export type InsertSoundArchive = Omit<SoundArchive, "id" | "createdAt" | "audioUri">;
+
+export async function initSoundArchivesTable(): Promise<void> {
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS sound_archives (
+      id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+      venue            TEXT        NOT NULL DEFAULT '吐峪沟',
+      category         TEXT        NOT NULL,
+      title            TEXT        NOT NULL,
+      author           TEXT        NOT NULL,
+      author_id        TEXT,
+      duration_seconds INT         NOT NULL DEFAULT 0,
+      play_count       INT         NOT NULL DEFAULT 0,
+      audio_data       TEXT,
+      is_verified      BOOLEAN     NOT NULL DEFAULT FALSE,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  const { rows } = await pgPool.query("SELECT COUNT(*)::int AS cnt FROM sound_archives");
+  if (rows[0].cnt === 0) {
+    const seeds = [
+      { venue: "吐峪沟", category: "方言",    title: "维吾尔族老人讲述葡萄沟往事", author: "艾力·买买提",  dur: 222, plays: 2847, verified: true  },
+      { venue: "吐峪沟", category: "传统工艺", title: "桑皮纸制作技艺实录",          author: "吐尔逊·依明", dur: 318, plays: 5231, verified: true  },
+      { venue: "吐峪沟", category: "工具声音", title: "坎儿井流水声与劳作号子",      author: "阿不都·热合曼",dur: 245, plays: 1892, verified: true  },
+      { venue: "吐峪沟", category: "民歌小调", title: "麦西来甫传统歌谣",            author: "古丽娜尔",    dur: 176, plays: 6754, verified: true  },
+      { venue: "吐峪沟", category: "传统工艺", title: "土陶制作过程记录",            author: "买买提江",    dur: 392, plays: 3421, verified: true  },
+      { venue: "吐峪沟", category: "故事传说", title: "千年古村落的传说故事",        author: "努尔古丽",    dur: 487, plays: 2103, verified: false },
+      { venue: "吐峪沟", category: "自然声景", title: "清晨葡萄架下的鸟鸣声",        author: "哈力木拉提", dur: 134, plays: 4560, verified: true  },
+      { venue: "吐峪沟", category: "方言",    title: "吐峪沟方言数字与颜色汇总",    author: "伊力哈木",   dur: 298, plays: 1234, verified: false },
+    ];
+    for (const s of seeds) {
+      await pgPool.query(
+        `INSERT INTO sound_archives (venue, category, title, author, duration_seconds, play_count, is_verified)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [s.venue, s.category, s.title, s.author, s.dur, s.plays, s.verified]
+      );
+    }
+  }
+}
+
+export async function getSoundArchiveStats(venue: string): Promise<{ archiveCount: number; contributorCount: number; totalPlays: number }> {
+  const r = await pgPool.query(
+    `SELECT COUNT(*)::int AS cnt,
+            COUNT(DISTINCT author)::int AS contributors,
+            COALESCE(SUM(play_count),0)::int AS plays
+     FROM sound_archives WHERE venue = $1`,
+    [venue]
+  );
+  return { archiveCount: r.rows[0].cnt, contributorCount: r.rows[0].contributors, totalPlays: r.rows[0].plays };
+}
+
+export async function getSoundArchives(venue: string, category?: string, sort?: string, limit = 20): Promise<SoundArchive[]> {
+  const params: unknown[] = [venue];
+  let where = "venue = $1";
+  if (category && category !== "全部") { params.push(category); where += ` AND category = $${params.length}`; }
+  const orderBy = sort === "hot" ? "play_count DESC" : "created_at DESC";
+  const res = await pgPool.query(
+    `SELECT id, venue, category, title, author, author_id, duration_seconds, play_count, is_verified, created_at,
+            CASE WHEN audio_data IS NOT NULL THEN TRUE ELSE FALSE END AS has_audio
+     FROM sound_archives WHERE ${where} ORDER BY ${orderBy} LIMIT ${limit}`,
+    params
+  );
+  return res.rows.map((row: any) => ({
+    id: row.id,
+    venue: row.venue,
+    category: row.category,
+    title: row.title,
+    author: row.author,
+    authorId: row.author_id,
+    durationSeconds: row.duration_seconds,
+    playCount: row.play_count,
+    isVerified: row.is_verified,
+    createdAt: (row.created_at as Date).toISOString(),
+    audioUri: row.has_audio ? `/api/sound-archives/${row.id}/audio` : undefined,
+  }));
+}
+
+export async function createSoundArchive(data: InsertSoundArchive & { audioData?: string }): Promise<SoundArchive> {
+  const id = randomUUID();
+  const res = await pgPool.query(
+    `INSERT INTO sound_archives (id, venue, category, title, author, author_id, duration_seconds, play_count, audio_data, is_verified)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,false) RETURNING *`,
+    [id, data.venue, data.category, data.title, data.author, data.authorId ?? null, data.durationSeconds, data.audioData ?? null]
+  );
+  const row = res.rows[0];
+  return {
+    id: row.id, venue: row.venue, category: row.category, title: row.title,
+    author: row.author, authorId: row.author_id, durationSeconds: row.duration_seconds,
+    playCount: 0, isVerified: false, createdAt: (row.created_at as Date).toISOString(),
+  };
+}
+
+export async function getSoundArchiveAudio(id: string): Promise<string | null> {
+  const res = await pgPool.query("SELECT audio_data FROM sound_archives WHERE id = $1", [id]);
+  if (res.rows.length === 0) return null;
+  return res.rows[0].audio_data ?? null;
+}
+
+export async function incrementArchivePlay(id: string): Promise<void> {
+  await pgPool.query("UPDATE sound_archives SET play_count = play_count + 1 WHERE id = $1", [id]);
+}
+
 export const storage = new HybridStorage();
