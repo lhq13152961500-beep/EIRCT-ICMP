@@ -10,52 +10,117 @@ import threading
 
 METRO_PORT = 8081
 
-def kill_metro_port():
-    """Kill any process using the Metro port."""
-    port = METRO_PORT
+def _pids_on_port(port):
+    """Return set of PIDs listening on the given TCP port via /proc/net/tcp."""
+    pids = set()
     try:
-        result = subprocess.run(["fuser", "-k", f"{port}/tcp"], capture_output=True)
+        target_hex = format(port, '04X')
+        for tcp_file in ("/proc/net/tcp", "/proc/net/tcp6"):
+            try:
+                with open(tcp_file) as f:
+                    lines = f.readlines()[1:]
+            except FileNotFoundError:
+                continue
+            inodes = set()
+            for line in lines:
+                parts = line.split()
+                if len(parts) < 10:
+                    continue
+                local_addr = parts[1]
+                port_hex = local_addr.split(":")[1] if ":" in local_addr else ""
+                if port_hex.upper() == target_hex:
+                    inodes.add(parts[9])
+            for pid_dir in os.listdir("/proc"):
+                if not pid_dir.isdigit():
+                    continue
+                fd_dir = f"/proc/{pid_dir}/fd"
+                try:
+                    for fd in os.listdir(fd_dir):
+                        try:
+                            link = os.readlink(f"{fd_dir}/{fd}")
+                            if any(f"socket:[{inode}]" in link for inode in inodes):
+                                pids.add(pid_dir)
+                        except (PermissionError, FileNotFoundError):
+                            pass
+                except (PermissionError, FileNotFoundError):
+                    pass
+    except Exception as e:
+        sys.stdout.write(f"[port scan error: {e}]\n")
+    return pids
+
+
+def _kill_pids(pids, label=""):
+    for pid in pids:
+        try:
+            os.kill(int(pid), 9)
+            sys.stdout.write(f"[killed PID {pid}{' ' + label if label else ''}]\n")
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+def kill_metro_port():
+    """Kill every process that could block a clean Expo/Metro start."""
+    killed_any = False
+
+    my_pid = os.getpid()
+
+    # 1. Kill ngrok binary processes (they hold the tunnel and block reconnect)
+    try:
+        result = subprocess.run(["pkill", "-9", "-f", "ngrok-bin"], capture_output=True)
         if result.returncode == 0:
-            sys.stdout.write(f"[killed process on port {port} via fuser]\n")
-            time.sleep(1.0)
-            return
+            sys.stdout.write("[killed ngrok-bin processes]\n")
+            killed_any = True
     except FileNotFoundError:
         pass
 
+    # Also kill by process name "ngrok"
     try:
-        target_hex = format(port, '04X')
-        with open("/proc/net/tcp") as f:
-            lines = f.readlines()[1:]
-        pids_to_kill = set()
-        for line in lines:
-            parts = line.split()
-            if len(parts) < 4:
+        out = subprocess.check_output(["pgrep", "-f", "ngrok"], text=True)
+        for pid_str in out.strip().splitlines():
+            pid_int = int(pid_str.strip())
+            if pid_int == my_pid:
                 continue
-            local_addr = parts[1]
-            port_hex = local_addr.split(":")[1] if ":" in local_addr else ""
-            if port_hex.upper() == target_hex:
-                inode = parts[9]
-                for pid_dir in os.listdir("/proc"):
-                    if not pid_dir.isdigit():
-                        continue
-                    fd_dir = f"/proc/{pid_dir}/fd"
-                    try:
-                        for fd in os.listdir(fd_dir):
-                            link = os.readlink(f"{fd_dir}/{fd}")
-                            if f"socket:[{inode}]" in link:
-                                pids_to_kill.add(pid_dir)
-                    except (PermissionError, FileNotFoundError):
-                        pass
-        for pid in pids_to_kill:
             try:
-                os.kill(int(pid), 9)
-                sys.stdout.write(f"[killed PID {pid} on port {port}]\n")
+                os.kill(pid_int, 9)
+                sys.stdout.write(f"[killed ngrok PID {pid_int}]\n")
+                killed_any = True
             except (ProcessLookupError, PermissionError):
                 pass
-        if pids_to_kill:
-            time.sleep(1.0)
-    except Exception as e:
-        sys.stdout.write(f"[port {port} cleanup skipped: {e}]\n")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    # 2. Kill node processes running metro bundler (not this script)
+    try:
+        out = subprocess.check_output(["pgrep", "-f", "metro"], text=True)
+        for pid_str in out.strip().splitlines():
+            pid_int = int(pid_str.strip())
+            if pid_int == my_pid:
+                continue
+            try:
+                os.kill(pid_int, 9)
+                sys.stdout.write(f"[killed metro PID {pid_int}]\n")
+                killed_any = True
+            except (ProcessLookupError, PermissionError):
+                pass
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    # 3. Kill by port — both 8081 and 8082 to clear any stale binding
+    for port in (8081, 8082):
+        try:
+            result = subprocess.run(["fuser", "-k", f"{port}/tcp"], capture_output=True)
+            if result.returncode == 0:
+                sys.stdout.write(f"[killed process on port {port} via fuser]\n")
+                killed_any = True
+        except FileNotFoundError:
+            pass
+        pids = _pids_on_port(port)
+        if pids:
+            _kill_pids(pids, f"on port {port}")
+            killed_any = True
+
+    if killed_any:
+        time.sleep(2.0)
 
 
 def run_expo():
