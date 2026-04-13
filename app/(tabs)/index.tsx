@@ -142,6 +142,7 @@ export default function HomeScreen() {
     if (label === "声音档案")   { router.push("/sound-archive" as any); return; }
     if (label === "村民伴游")   { console.log("[Home] navigating to villager-companion"); router.push("/villager-companion" as any); return; }
     if (label === "乡音趣采")   { router.push("/dialect-game" as any); return; }
+    if (label === "特产礼品")   { router.push("/local-shop" as any); return; }
     if (label === "终端互联") {
       const device = getConnectedDevice();
       router.push(device ? { pathname: "/terminal-device", params: device } as any : "/terminal");
