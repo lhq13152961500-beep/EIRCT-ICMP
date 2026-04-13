@@ -12,6 +12,7 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
   Modal,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -91,7 +92,7 @@ const MINI_ICONS: MiniIconItem[] = [
   { label: "AR实景畅游", icon: "navigate-circle-outline", bg: CORAL_BG, color: CORAL_ICON, onPress: () => router.push("/ar-tour") },
   { label: "声音邮局",   icon: "mic-outline",             bg: GREEN_BG,  color: Colors.light.primary, onPress: () => router.push({ pathname: "/(tabs)/voice", params: { tab: "postoffice" } } as any) },
   { label: "“小乡” AI",     icon: "partly-sunny-outline",    bg: BLUE_BG,   color: BLUE_ICON, onPress: () => router.push("/xiaoxiang-ai") },
-  { label: "声音档案",   icon: "albums-outline",          bg: CORAL_BG,  color: CORAL_ICON, onPress: () => router.push("/sound-archive" as any) },
+  { label: "声音档案",   icon: "albums-outline",          bg: CORAL_BG,  color: CORAL_ICON, onPress: () => { Alert.alert("调试", "按钮已点击，正在跳转..."); router.push("/sound-archive" as any); } },
   { label: "村民伴游",   icon: "people-outline",          bg: CORAL_BG,  color: CORAL_ICON },
   { label: "乡音趣采",   icon: "flower-outline",          bg: CORAL_BG,  color: CORAL_ICON },
   { label: "特产礼品",   icon: "gift-outline",            bg: ORANGE_BG, color: ORANGE_ICON },
