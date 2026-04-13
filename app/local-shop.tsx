@@ -278,14 +278,16 @@ export default function LocalShopPage() {
     return (
       <View style={s.root}>
         <SubHeader title="热销商品" />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.catRow} style={s.catBar}>
-          {CATEGORIES.map(c => (
-            <Pressable key={c} style={[s.catPill, activeCategory===c && s.catPillActive]} onPress={() => { haptic(); setActiveCategory(c); }}>
-              <Text style={[s.catPillText, activeCategory===c && s.catPillTextActive]}>{c}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:16, paddingTop:12, paddingBottom:40 }}>
+        <View style={s.catBarWrap}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.catRow}>
+            {CATEGORIES.map(c => (
+              <Pressable key={c} style={[s.catPill, activeCategory===c && s.catPillActive]} onPress={() => { haptic(); setActiveCategory(c); }}>
+                <Text style={[s.catPillText, activeCategory===c && s.catPillTextActive]}>{c}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+        <ScrollView style={{ flex:1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop:12, paddingBottom:40 }}>
           <View style={s.gridWrap}>{filtered.map(p => <ProductCard key={p.id} p={p} haptic={haptic} />)}</View>
         </ScrollView>
       </View>
@@ -297,7 +299,7 @@ export default function LocalShopPage() {
     return (
       <View style={s.root}>
         <SubHeader title="潜力新品" />
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:16, paddingTop:12, paddingBottom:40 }}>
+        <ScrollView style={{ flex:1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop:12, paddingBottom:40 }}>
           <View style={s.gridWrap}>{POTENTIAL_PRODUCTS.map(p => <ProductCard key={p.id} p={p} haptic={haptic} />)}</View>
         </ScrollView>
       </View>
@@ -494,8 +496,9 @@ const s = StyleSheet.create({
   quickLabel: { fontSize:12, color:TEXT1, fontWeight:"500" },
 
   /* Categories */
+  catBarWrap: { backgroundColor:CARD, borderBottomWidth:1, borderBottomColor:BORDER, flexShrink:0 },
   catBar: { backgroundColor:CARD, borderBottomWidth:1, borderBottomColor:BORDER },
-  catRow: { flexDirection:"row", alignItems:"center", gap:8, paddingVertical:8 },
+  catRow: { flexDirection:"row", alignItems:"center", gap:8, paddingVertical:8, paddingHorizontal:12 },
   catPill:      { flexDirection:"row", alignItems:"center", alignSelf:"flex-start", gap:4, paddingHorizontal:12, paddingVertical:8, borderRadius:20, backgroundColor:CARD, borderWidth:1, borderColor:BORDER },
   catPillActive: { backgroundColor:ORANGE, borderColor:ORANGE },
   catPillText:   { fontSize:12, color:TEXT2, fontWeight:"500" },
