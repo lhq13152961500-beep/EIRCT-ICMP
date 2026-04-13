@@ -143,6 +143,7 @@ function StarRating({ rating }: { rating: number }) {
 }
 
 export default function VillagerCompanionPage() {
+  console.log("[VillagerCompanion] page mounted");
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [activeType, setActiveType] = useState<ServiceType>("全部服务");
@@ -650,16 +651,15 @@ const styles = StyleSheet.create({
 
   /* CTA */
   ctaCard: {
-    backgroundColor: CARD_BG,
+    backgroundColor: "#FFF8F3",
     borderRadius: 16,
     padding: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginTop: 8,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: "#F5D8C3",
-    borderStyle: "dashed",
   },
   ctaLeft: {
     flexDirection: "row",

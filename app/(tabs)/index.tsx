@@ -140,7 +140,7 @@ export default function HomeScreen() {
     if (label === "AR实景畅游") { router.push("/ar-tour"); return; }
     if (label === "声音邮局")   { router.push({ pathname: "/(tabs)/voice", params: { tab: "postoffice" } } as any); return; }
     if (label === "声音档案")   { router.push("/sound-archive" as any); return; }
-    if (label === "村民伴游")   { router.push("/villager-companion" as any); return; }
+    if (label === "村民伴游")   { console.log("[Home] navigating to villager-companion"); router.push("/villager-companion" as any); return; }
     if (label === "终端互联") {
       const device = getConnectedDevice();
       router.push(device ? { pathname: "/terminal-device", params: device } as any : "/terminal");
