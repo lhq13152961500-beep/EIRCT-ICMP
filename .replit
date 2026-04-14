@@ -7,7 +7,7 @@ packages = ["psmisc", "expect"]
 
 [deployment]
 deploymentTarget = "autoscale"
-build = ["bash", "-c", "npm run server:build && NODE_OPTIONS='--max-old-space-size=2048' npm run expo:static:build"]
+build = ["npm", "run", "server:build"]
 run = ["node", "server_dist/index.js"]
 
 [[ports]]

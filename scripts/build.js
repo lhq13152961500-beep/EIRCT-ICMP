@@ -39,7 +39,12 @@ function stripProtocol(domain) {
 }
 
 function getDeploymentDomain() {
-  // Check Replit deployment environment variables first
+  // EXPO_PUBLIC_DOMAIN takes highest priority when explicitly set (for pre-build with production domain)
+  if (process.env.EXPO_PUBLIC_DOMAIN) {
+    return stripProtocol(process.env.EXPO_PUBLIC_DOMAIN);
+  }
+
+  // Check Replit deployment environment variables
   if (process.env.REPLIT_INTERNAL_APP_DOMAIN) {
     return stripProtocol(process.env.REPLIT_INTERNAL_APP_DOMAIN);
   }
@@ -48,12 +53,8 @@ function getDeploymentDomain() {
     return stripProtocol(process.env.REPLIT_DEV_DOMAIN);
   }
 
-  if (process.env.EXPO_PUBLIC_DOMAIN) {
-    return stripProtocol(process.env.EXPO_PUBLIC_DOMAIN);
-  }
-
   console.error(
-    "ERROR: No deployment domain found. Set REPLIT_INTERNAL_APP_DOMAIN, REPLIT_DEV_DOMAIN, or EXPO_PUBLIC_DOMAIN",
+    "ERROR: No deployment domain found. Set EXPO_PUBLIC_DOMAIN, REPLIT_INTERNAL_APP_DOMAIN, or REPLIT_DEV_DOMAIN",
   );
   process.exit(1);
 }
@@ -246,40 +247,23 @@ async function downloadBundlesAndManifests(timestamp) {
   console.log("This may take several minutes for production builds...");
 
   try {
-    const results = await Promise.allSettled([
-      downloadBundle("ios", timestamp),
-      downloadBundle("android", timestamp),
+    // Download manifests in parallel (small, fast)
+    const [iosManifest, androidManifest] = await Promise.all([
       downloadManifest("ios"),
       downloadManifest("android"),
     ]);
 
-    const failures = results
-      .map((result, index) => ({ result, index }))
-      .filter(({ result }) => result.status === "rejected");
-
-    if (failures.length > 0) {
-      const errorMessages = failures.map(({ result, index }) => {
-        const names = [
-          "iOS bundle",
-          "Android bundle",
-          "iOS manifest",
-          "Android manifest",
-        ];
-        return `  - ${names[index]}: ${result.reason?.message || result.reason}`;
-      });
-
-      exitWithError(`Download failed:\n${errorMessages.join("\n")}`);
-    }
-
-    const iosManifest =
-      results[2].status === "fulfilled" ? results[2].value : null;
-    const androidManifest =
-      results[3].status === "fulfilled" ? results[3].value : null;
+    // Download bundles sequentially to avoid OOM (each bundle compiles ~300-500MB)
+    console.log("Downloading iOS bundle (sequential to reduce memory usage)...");
+    await downloadBundle("ios", timestamp);
+    console.log("iOS bundle done. Downloading Android bundle...");
+    await downloadBundle("android", timestamp);
+    console.log("Android bundle done.");
 
     console.log("All downloads completed successfully");
     return { ios: iosManifest, android: androidManifest };
   } catch (error) {
-    exitWithError(`Unexpected download error: ${error.message}`);
+    exitWithError(`Download failed: ${error.message}`);
   }
 }
 
