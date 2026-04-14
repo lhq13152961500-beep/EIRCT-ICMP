@@ -144,7 +144,7 @@ def run_expo():
         os.dup2(slave_fd, 2)
         if slave_fd > 2:
             os.close(slave_fd)
-        os.execvpe('npx', ['npx', 'expo', 'start', '--go', '--tunnel', '--port', str(METRO_PORT), '--max-workers', '1'], env)
+        os.execvpe('npx', ['npx', 'expo', 'start', '--go', '--tunnel', '--port', str(METRO_PORT), '--max-workers', '1', '--reset-cache'], env)
     else:
         os.close(slave_fd)
         last_anon_answer = 0.0
