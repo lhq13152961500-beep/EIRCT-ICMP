@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "mN6Laxf9B9jhKmO5mjbOV"
+uri = "file://乡音伴旅_用户手册.md"
+type = "text"
+title = "乡音伴旅 v1.0 用户手册"
