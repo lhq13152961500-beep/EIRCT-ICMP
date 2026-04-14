@@ -127,7 +127,7 @@ def run_expo():
     kill_metro_port()
 
     env = os.environ.copy()
-    env['NODE_OPTIONS'] = '--max-old-space-size=4096 --expose-gc'
+    env['NODE_OPTIONS'] = '--max-old-space-size=1024 --expose-gc'
     env['EXPO_NO_INLINE_SOURCEMAPS'] = '1'
     env['REACT_NATIVE_PACKAGER_HOSTNAME'] = 'localhost'
 
@@ -144,7 +144,7 @@ def run_expo():
         os.dup2(slave_fd, 2)
         if slave_fd > 2:
             os.close(slave_fd)
-        os.execvpe('npx', ['npx', 'expo', 'start', '--go', '--tunnel', '--port', str(METRO_PORT), '--max-workers', '2'], env)
+        os.execvpe('npx', ['npx', 'expo', 'start', '--go', '--tunnel', '--port', str(METRO_PORT), '--max-workers', '1'], env)
     else:
         os.close(slave_fd)
         last_anon_answer = 0.0
