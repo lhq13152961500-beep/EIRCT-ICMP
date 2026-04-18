@@ -89,21 +89,22 @@ def kill_metro_port():
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
 
-    # 2. Kill node processes running metro bundler (not this script)
-    try:
-        out = subprocess.check_output(["pgrep", "-f", "metro"], text=True)
-        for pid_str in out.strip().splitlines():
-            pid_int = int(pid_str.strip())
-            if pid_int == my_pid:
-                continue
-            try:
-                os.kill(pid_int, 9)
-                sys.stdout.write(f"[killed metro PID {pid_int}]\n")
-                killed_any = True
-            except (ProcessLookupError, PermissionError):
-                pass
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
+    # 2. Kill node processes running metro bundler or expo start (not this script)
+    for pattern in ("metro", "expo start", "expo/node_modules", "@expo/cli"):
+        try:
+            out = subprocess.check_output(["pgrep", "-f", pattern], text=True)
+            for pid_str in out.strip().splitlines():
+                pid_int = int(pid_str.strip())
+                if pid_int == my_pid:
+                    continue
+                try:
+                    os.kill(pid_int, 9)
+                    sys.stdout.write(f"[killed {pattern} PID {pid_int}]\n")
+                    killed_any = True
+                except (ProcessLookupError, PermissionError):
+                    pass
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
 
     # 3. Kill by port — clear any stale binding
     for port in (8081, 8082, 8083):
@@ -183,6 +184,7 @@ def run_expo():
                                 os.close(master_fd)
                             except OSError:
                                 pass
+                            kill_metro_port()
                             return "ngrok_error"
 
                         # Detect V8 heap OOM (FATAL ERROR: Reached heap limit)
@@ -201,6 +203,7 @@ def run_expo():
                                 os.close(master_fd)
                             except OSError:
                                 pass
+                            kill_metro_port()
                             return "oom"
 
                         # Detect OOM kill — Metro served the bundle and died; restart quietly
@@ -219,6 +222,7 @@ def run_expo():
                                 os.close(master_fd)
                             except OSError:
                                 pass
+                            kill_metro_port()
                             return "oom"
 
                         # Auto-answer "Proceed anonymously" prompt
