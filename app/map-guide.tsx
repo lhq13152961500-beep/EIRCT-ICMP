@@ -15,13 +15,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { roamSession } from "@/lib/roam-session";
 import { WebView } from "react-native-webview";
 import Colors from "@/constants/colors";
 import { useLocation } from "@/contexts/LocationContext";
 import { getApiUrl } from "@/lib/query-client";
+import { getPendingCustomRoute, clearPendingCustomRoute } from "@/lib/itinerary-store";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const SHEET_FULL = SCREEN_HEIGHT * 0.74;
@@ -171,6 +172,7 @@ export default function MapGuideScreen() {
 
   const sheetAnim = useRef(new Animated.Value(0)).current;
   const webViewRef = useRef<WebView>(null);
+  const pendingCustomRouteRef = useRef<string[] | null>(null);
 
   const mapW = SCREEN_WIDTH;
   const mapH = mapAreaHeight;
@@ -200,6 +202,34 @@ export default function MapGuideScreen() {
     const START_LAT = 42.8603;
     injectJs(`window.setMyLocation && window.setMyLocation(${START_LNG}, ${START_LAT});`);
   }, [mapReady, injectJs]);
+
+  // When map becomes ready, draw any pending custom route
+  useEffect(() => {
+    if (!mapReady) return;
+    const ids = pendingCustomRouteRef.current;
+    if (ids && ids.length > 0) {
+      pendingCustomRouteRef.current = null;
+      setActiveRouteId("custom");
+      setSheetOpen(false);
+      injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(ids)}, "#E88A2E");`);
+    }
+  }, [mapReady, injectJs]);
+
+  // Pick up custom route from store when screen is focused (returning from create-itinerary)
+  useFocusEffect(
+    useCallback(() => {
+      const ids = getPendingCustomRoute();
+      if (!ids || ids.length === 0) return;
+      clearPendingCustomRoute();
+      if (mapReady) {
+        setActiveRouteId("custom");
+        setSheetOpen(false);
+        injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(ids)}, "#E88A2E");`);
+      } else {
+        pendingCustomRouteRef.current = ids;
+      }
+    }, [mapReady, injectJs])
+  );
 
   const handleWebViewMessage = useCallback((event: { nativeEvent: { data: string } }) => {
     try {
@@ -570,7 +600,11 @@ export default function MapGuideScreen() {
               <Text style={styles.sheetFooterLabel}>没有合适的路线？</Text>
               <Pressable
                 style={styles.createBtn}
-                onPress={() => { haptic(); closeSheet(); }}
+                onPress={() => {
+                  haptic("medium");
+                  closeSheet();
+                  router.push("/create-itinerary");
+                }}
               >
                 <Ionicons name="add-circle-outline" size={16} color={Colors.light.text} />
                 <Text style={styles.createBtnText}>创建我的行程</Text>
