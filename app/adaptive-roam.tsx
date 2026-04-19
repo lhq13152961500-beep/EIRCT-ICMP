@@ -182,20 +182,21 @@ export default function AdaptiveRoamScreen() {
       // Initialize smooth baseline on first sample
       if (smoothMag < 0) { smoothMag = mag; return; }
 
-      // Exponential moving average — slow enough to track gravity, fast enough for steps
-      smoothMag = 0.92 * smoothMag + 0.08 * mag;
+      // EMA: alpha=0.85 — fast enough to track step oscillations (~1-2 Hz)
+      // expo-sensors returns g units on both Android and iOS (mag ≈ 1.0 at rest)
+      smoothMag = 0.85 * smoothMag + 0.15 * mag;
       const dev = mag - smoothMag;
 
       const now = Date.now();
-      // Debug: log mag/dev every ~2s so threshold can be tuned
-      if (stepTimes.length === 0 && now % 2000 < 40) {
-        console.log(`[Accel] mag=${mag.toFixed(3)} smooth=${smoothMag.toFixed(3)} dev=${dev.toFixed(3)}`);
+      // Debug: log every ~2s so we can verify threshold live
+      if (now % 2000 < 40) {
+        console.log(`[Accel] mag=${mag.toFixed(3)} smooth=${smoothMag.toFixed(3)} dev=${dev.toFixed(3)} steps=${stepTimes.length}`);
       }
 
       // Positive zero-crossing = upswing of a step impact
-      // threshold 0.5 works for m/s² units (Android); also handles g units (iOS ~0.05g ≈ same relative)
-      if (prevDev < 0 && dev >= 0.5 && (now - lastStepTime) > 280) {
-        console.log(`[Accel] STEP detected dev=${dev.toFixed(3)}`);
+      // Normal walking produces dev peaks of 0.10-0.25g; large motion goes 0.4+
+      // Threshold 0.10g catches normal walking while ignoring phone vibration noise
+      if (prevDev < 0 && dev >= 0.10 && (now - lastStepTime) > 250) {
         lastStepTime = now;
 
         // Keep only steps within last 6 seconds
@@ -226,9 +227,9 @@ export default function AdaptiveRoamScreen() {
       prevDev = dev;
     });
 
-    // Decay timer: if no step for 3 s, reset speed/cadence to 0
+    // Decay timer: if no step for 5 s, reset speed/cadence to 0
     const decayTimer = setInterval(() => {
-      if (!pedoActive && Date.now() - lastStepTime > 3000) {
+      if (!pedoActive && Date.now() - lastStepTime > 5000) {
         setSpeed(0); setFreq(0); setStepLen(0);
       }
     }, 1000);
