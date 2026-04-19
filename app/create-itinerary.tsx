@@ -112,7 +112,10 @@ export default function CreateItineraryScreen() {
 
   useEffect(() => {
     if (!miniMapReady) return;
-    injectMiniMap(`window.highlightSelected && window.highlightSelected(${JSON.stringify(selectedIds)});`);
+    injectMiniMap(
+      `window.highlightSelected && window.highlightSelected(${JSON.stringify(selectedIds)});` +
+      `window.fitBoundsToSelected && window.fitBoundsToSelected(${JSON.stringify(selectedIds)});`
+    );
   }, [selectedIds, miniMapReady, injectMiniMap]);
 
   const handleMiniMapMessage = useCallback((event: { nativeEvent: { data: string } }) => {
@@ -125,17 +128,9 @@ export default function CreateItineraryScreen() {
   const togglePoi = useCallback((id: string) => {
     haptic();
     setSelectedIds(prev => {
-      const isAdding = !prev.includes(id);
-      if (isAdding && miniMapReady) {
-        setTimeout(() => {
-          miniMapRef.current?.injectJavaScript(
-            `(function(){ window.zoomToSelectedPoi && window.zoomToSelectedPoi(${JSON.stringify(id)}); })(); true;`
-          );
-        }, 0);
-      }
-      return isAdding ? [...prev, id] : prev.filter(x => x !== id);
+      return prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
     });
-  }, [miniMapReady]);
+  }, []);
 
   const pickImage = useCallback(async () => {
     haptic();
@@ -247,7 +242,7 @@ export default function CreateItineraryScreen() {
     if (routeImageUri) {
       try {
         const base64 = await FileSystem.readAsStringAsync(routeImageUri, {
-          encoding: FileSystem.EncodingType.Base64,
+          encoding: "base64" as any,
         });
         imageBase64 = `data:image/jpeg;base64,${base64}`;
       } catch (e) {

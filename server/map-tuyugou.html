@@ -162,12 +162,22 @@ window.highlightSelected = function(ids) {
   });
 };
 
-window.zoomToSelectedPoi = function(id) {
-  if (!map) return;
-  var poi = POIS.find(function(p) { return p.id === id; });
-  if (!poi) return;
-  var wgs = gcj2wgs(poi.pos[0], poi.pos[1]);
-  map.flyTo([wgs[1], wgs[0]], 17, { animate: true, duration: 0.6 });
+window.fitBoundsToSelected = function(ids) {
+  if (!map || !ids || ids.length === 0) return;
+  var points = [];
+  ids.forEach(function(id) {
+    var poi = POIS.find(function(p) { return p.id === id; });
+    if (!poi) return;
+    var wgs = gcj2wgs(poi.pos[0], poi.pos[1]);
+    points.push([wgs[1], wgs[0]]);
+  });
+  if (points.length === 0) return;
+  if (points.length === 1) {
+    map.flyTo(points[0], 17, { animate: true, duration: 0.5 });
+  } else {
+    var bounds = L.latLngBounds(points);
+    map.flyToBounds(bounds, { padding: [52, 52], maxZoom: 17, animate: true, duration: 0.5 });
+  }
 };
 
 function shouldShow(poi) {
