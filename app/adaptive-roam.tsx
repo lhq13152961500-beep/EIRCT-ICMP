@@ -187,8 +187,9 @@ export default function AdaptiveRoamScreen() {
         }
       });
 
-      // Pedometer
-      const isPedoAvail = await Pedometer.isAvailableAsync().catch(() => false);
+      // Pedometer — request permission first (Android ACTIVITY_RECOGNITION / iOS Motion)
+      const { status } = await Pedometer.requestPermissionsAsync().catch(() => ({ status: "denied" }));
+      const isPedoAvail = status === "granted" && await Pedometer.isAvailableAsync().catch(() => false);
 
       if (isPedoAvail) {
         pedometerSub = Pedometer.watchStepCount(result => {
