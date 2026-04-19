@@ -20,7 +20,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system";
 import Colors from "@/constants/colors";
 import { setPendingCustomRoute } from "@/lib/itinerary-store";
 import { getApiUrl } from "@/lib/query-client";
@@ -91,6 +90,7 @@ export default function CreateItineraryScreen() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [routeName, setRouteName] = useState("");
   const [routeImageUri, setRouteImageUri] = useState<string | null>(null);
+  const [routeImageBase64, setRouteImageBase64] = useState<string | null>(null);
   const [dragState, setDragState] = useState<{ idx: number; dy: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [miniMapReady, setMiniMapReady] = useState(false);
@@ -142,11 +142,16 @@ export default function CreateItineraryScreen() {
         Alert.alert("需要权限", source === "camera" ? "请在设置中开启相机权限" : "请在设置中开启相册权限");
         return;
       }
+      const opts = { mediaTypes: ["images"] as any, allowsEditing: true, aspect: [1, 1] as [number, number], quality: 0.5, base64: true };
       const result = source === "camera"
-        ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.7 })
-        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+        ? await ImagePicker.launchCameraAsync(opts)
+        : await ImagePicker.launchImageLibraryAsync(opts);
       if (!result.canceled && result.assets.length > 0) {
-        setRouteImageUri(result.assets[0].uri);
+        const asset = result.assets[0];
+        setRouteImageUri(asset.uri);
+        if (asset.base64) {
+          setRouteImageBase64(`data:image/jpeg;base64,${asset.base64}`);
+        }
       }
     };
     if (Platform.OS === "ios") {
@@ -237,18 +242,7 @@ export default function CreateItineraryScreen() {
     const color = "#E88A2E";
     const icon = "⭐";
     let savedId: string | undefined;
-    let imageBase64: string | null = null;
-
-    if (routeImageUri) {
-      try {
-        const base64 = await FileSystem.readAsStringAsync(routeImageUri, {
-          encoding: "base64" as any,
-        });
-        imageBase64 = `data:image/jpeg;base64,${base64}`;
-      } catch (e) {
-        console.warn("[create-itinerary] read image failed:", e);
-      }
-    }
+    const imageBase64 = routeImageBase64 ?? null;
 
     if (user?.id && user.id !== "guest") {
       try {
@@ -270,7 +264,7 @@ export default function CreateItineraryScreen() {
     }
     setPendingCustomRoute({ ids: selectedIds, name, color, icon, imageData: imageBase64, savedId });
     router.back();
-  }, [selectedIds, routeName, routeImageUri, user]);
+  }, [selectedIds, routeName, routeImageBase64, user]);
 
   const formatDuration = (minutes: number) => {
     if (minutes < 60) return `约${minutes}分钟`;
@@ -427,7 +421,7 @@ export default function CreateItineraryScreen() {
                   </View>
                   <Pressable
                     style={styles.imagePickerClear}
-                    onPress={(e) => { e.stopPropagation(); haptic(); setRouteImageUri(null); }}
+                    onPress={(e) => { e.stopPropagation(); haptic(); setRouteImageUri(null); setRouteImageBase64(null); }}
                   >
                     <Ionicons name="close-circle" size={20} color="#BEB4AA" />
                   </Pressable>
