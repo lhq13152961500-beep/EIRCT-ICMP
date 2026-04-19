@@ -1,0 +1,547 @@
+import WebSocket from "ws";
+import { randomUUID } from "crypto";
+import { spawn } from "child_process";
+
+const REALTIME_WS_URL = "wss://openspeech.bytedance.com/api/v3/realtime/dialogue";
+const APP_KEY = "PlgvMymc7f3tQnJ6";
+
+const BYTE0 = 0x11;
+const MT_FULL_CLIENT = 0x1;
+const MT_AUDIO_CLIENT = 0x2;
+const MT_AUDIO_SERVER = 0xb;
+const MT_ERROR = 0xf;
+
+const FL_SEQ_NON_TERM = 0x1;
+const FL_LAST_WITH_SEQ = 0x3;
+const FL_HAS_EVENT    = 0x4;
+
+const EVT_START_CONN    = 1;
+const EVT_FINISH_CONN   = 2;
+const EVT_START_SESSION = 100;
+const EVT_FINISH_SESSION = 102;
+const EVT_TASK_REQUEST  = 200;
+const EVT_CONN_STARTED  = 50;
+const EVT_TTS_ENDED     = 359;
+
+// O2.0 低延迟优选音色
+export const DEFAULT_SPEAKER = "zh_female_xiaohe_jupiter_bigtts";
+
+function int32BE(n: number): Buffer {
+  const b = Buffer.alloc(4);
+  b.writeInt32BE(n, 0);
+  return b;
+}
+
+function lenStr(s: string): Buffer {
+  const sb = Buffer.from(s, "utf-8");
+  return Buffer.concat([int32BE(sb.length), sb]);
+}
+
+function buildConnectEvent(eventId: number, seq: number): Buffer {
+  const flags = FL_HAS_EVENT | FL_SEQ_NON_TERM;
+  const hdr = Buffer.from([BYTE0, (MT_FULL_CLIENT << 4) | flags, 0x10, 0x00]);
+  const pl = Buffer.from("{}");
+  return Buffer.concat([hdr, int32BE(seq), int32BE(eventId), int32BE(pl.length), pl]);
+}
+
+function buildSessionEvent(eventId: number, seq: number, sid: string, payload: object): Buffer {
+  const flags = FL_HAS_EVENT | FL_SEQ_NON_TERM;
+  const hdr = Buffer.from([BYTE0, (MT_FULL_CLIENT << 4) | flags, 0x10, 0x00]);
+  const pl = Buffer.from(JSON.stringify(payload));
+  return Buffer.concat([hdr, int32BE(seq), int32BE(eventId), lenStr(sid), int32BE(pl.length), pl]);
+}
+
+function buildAudioChunk(pcm: Buffer, seq: number, sid: string): Buffer {
+  const flags = FL_HAS_EVENT | FL_SEQ_NON_TERM;
+  const hdr = Buffer.from([BYTE0, (MT_AUDIO_CLIENT << 4) | flags, 0x00, 0x00]);
+  return Buffer.concat([hdr, int32BE(seq), int32BE(EVT_TASK_REQUEST), lenStr(sid), int32BE(pcm.length), pcm]);
+}
+
+function buildLastAudioChunk(seq: number, sid: string): Buffer {
+  const flags = FL_HAS_EVENT | FL_LAST_WITH_SEQ;
+  const hdr = Buffer.from([BYTE0, (MT_AUDIO_CLIENT << 4) | flags, 0x00, 0x00]);
+  return Buffer.concat([hdr, int32BE(-seq), int32BE(EVT_TASK_REQUEST), lenStr(sid), int32BE(0)]);
+}
+
+interface ParsedMsg {
+  msgType: number;
+  eventId: number;
+  payload: Buffer | Record<string, unknown>;
+  errorCode?: number;
+  errorText?: string;
+}
+
+function parseServerMsg(raw: Buffer): ParsedMsg {
+  if (raw.length < 4) return { msgType: 0, eventId: 0, payload: Buffer.alloc(0) };
+
+  const byte1 = raw[1];
+  const msgType = (byte1 >> 4) & 0xf;
+  const flags = byte1 & 0xf;
+  let off = 4;
+
+  if (msgType === MT_ERROR) {
+    let errorCode = 0;
+    if (off + 4 <= raw.length) { errorCode = raw.readInt32BE(off); off += 4; }
+    let plSize = 0;
+    if (off + 4 <= raw.length) { plSize = raw.readUInt32BE(off); off += 4; }
+    let errorText = "";
+    if (plSize > 0 && off + plSize <= raw.length) {
+      errorText = raw.subarray(off, off + plSize).toString("utf-8");
+    }
+    console.error(`[S2S-Conn] ERROR code=${errorCode} msg=${errorText || raw.toString("hex")}`);
+    return { msgType, eventId: 0, payload: Buffer.alloc(0), errorCode, errorText };
+  }
+
+  if ((flags & 0x3) !== 0) {
+    if (off + 4 <= raw.length) off += 4;
+  }
+
+  let eventId = 0;
+  if (flags & FL_HAS_EVENT) {
+    if (off + 4 <= raw.length) { eventId = raw.readInt32BE(off); off += 4; }
+  }
+
+  if (eventId > 52 && eventId < 700 && off + 4 <= raw.length) {
+    const sidLen = raw.readUInt32BE(off);
+    if (sidLen >= 1 && sidLen <= 256 && off + 4 + sidLen <= raw.length) {
+      off += 4 + sidLen;
+    }
+  }
+
+  let payload: Buffer | Record<string, unknown> = Buffer.alloc(0);
+  if (off + 4 <= raw.length) {
+    const plSize = raw.readUInt32BE(off); off += 4;
+    if (plSize > 0 && off + plSize <= raw.length) {
+      const plBuf = raw.subarray(off, off + plSize);
+      if (msgType === MT_AUDIO_SERVER) {
+        payload = plBuf;
+      } else {
+        try { payload = JSON.parse(plBuf.toString("utf-8")) as Record<string, unknown>; }
+        catch { payload = plBuf; }
+      }
+    }
+  }
+
+  return { msgType, eventId, payload };
+}
+
+// 内存转码，无磁盘IO
+async function convertM4aToPcmInMemory(m4aBuffer: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("ffmpeg", [
+      "-y", "-f", "mp4", "-i", "pipe:0",
+      "-ar", "16000", "-ac", "1", "-f", "s16le", "pipe:1",
+    ]);
+    const chunks: Buffer[] = [];
+    proc.stdout.on("data", (d: Buffer) => chunks.push(d));
+    proc.stdout.on("end", () => resolve(Buffer.concat(chunks)));
+    proc.stderr.on("data", () => {});
+    proc.on("error", reject);
+    proc.stdin.write(m4aBuffer);
+    proc.stdin.end();
+  });
+}
+
+async function convertPcmToMp3InMemory(pcmBuffer: Buffer, sampleRate = 24000): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("ffmpeg", [
+      "-y",
+      "-f", "s16le", "-ar", String(sampleRate), "-ac", "1",
+      "-i", "pipe:0",
+      "-f", "mp3", "pipe:1",
+    ]);
+    const chunks: Buffer[] = [];
+    proc.stdout.on("data", (d: Buffer) => chunks.push(d));
+    proc.stdout.on("end", () => resolve(Buffer.concat(chunks)));
+    proc.stderr.on("data", () => {});
+    proc.on("error", reject);
+    proc.stdin.write(pcmBuffer);
+    proc.stdin.end();
+  });
+}
+
+type MsgHandler = (msg: ParsedMsg) => void;
+
+// 持久化长连接
+class PersistentRealtimeConn {
+  private ws: WebSocket | null = null;
+  private seq = 0;
+  private connStarted = false;
+  private connecting: Promise<void> | null = null;
+  private msgHandler: MsgHandler | null = null;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly IDLE_MS = 90_000;
+
+  private nextSeq() { return ++this.seq; }
+
+  private resetIdleTimer() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      console.log("[S2S-Conn] Idle timeout — closing WS");
+      this.close();
+    }, this.IDLE_MS);
+  }
+
+  private isReady(): boolean {
+    return !!(this.ws && this.ws.readyState === 1 && this.connStarted);
+  }
+
+  async ensureConnected(appId: string, token: string): Promise<void> {
+    if (this.isReady()) { this.resetIdleTimer(); return; }
+    if (this.connecting) return this.connecting;
+
+    this.seq = 0;
+    this.connStarted = false;
+
+    this.connecting = new Promise<void>((resolve, reject) => {
+      const ws = new WebSocket(REALTIME_WS_URL, {
+        headers: {
+          "X-Api-App-ID":       appId,
+          "X-Api-Access-Key":   token,
+          "X-Api-Resource-Id":  "volc.speech.dialog",
+          "X-Api-App-Key":      APP_KEY,
+          "X-Api-Connect-Id":   randomUUID(),
+        },
+      });
+
+      const connectTimeout = setTimeout(() => {
+        ws.terminate();
+        reject(new Error("WS connect timeout"));
+      }, 6000);
+
+      ws.on("open", () => {
+        ws.send(buildConnectEvent(EVT_START_CONN, this.nextSeq()));
+      });
+
+      ws.on("message", (raw: Buffer) => {
+        const msg = parseServerMsg(raw);
+
+        if (!this.connStarted) {
+          if (msg.eventId === EVT_CONN_STARTED) {
+            clearTimeout(connectTimeout);
+            this.ws = ws;
+            this.connStarted = true;
+            this.connecting = null;
+            this.resetIdleTimer();
+            resolve();
+          } else if (msg.eventId === 51 || msg.msgType === MT_ERROR) {
+            clearTimeout(connectTimeout);
+            this.connecting = null;
+            reject(new Error("Connect failed"));
+          }
+          return;
+        }
+        this.msgHandler?.(msg);
+      });
+
+      ws.on("error", (err) => {
+        clearTimeout(connectTimeout);
+        this.connecting = null;
+        reject(err);
+      });
+
+      ws.on("close", () => {
+        this.ws = null;
+        this.connStarted = false;
+      });
+    });
+
+    return this.connecting;
+  }
+
+  async runTurn(
+    appId: string,
+    token: string,
+    pcmData: Buffer,
+    sessionPayload: object,
+  ): Promise<S2STurnResult> {
+    await this.ensureConnected(appId, token);
+    const ws = this.ws!;
+    const sessionId = randomUUID();
+    this.resetIdleTimer();
+
+    return new Promise((resolve) => {
+      const audioChunks: Buffer[] = [];
+      let transcript = "";
+      let aiText = "";
+      let settled = false;
+      let ttsKnownFailed = false;
+      let sessionStarted = false;
+
+      const settle = (res: S2STurnResult) => {
+        if (settled) return;
+        settled = true;
+        this.msgHandler = null;
+        clearTimeout(globalTimer);
+        try {
+          ws.send(buildSessionEvent(EVT_FINISH_SESSION, this.nextSeq(), sessionId, {}));
+        } catch {}
+        resolve(res);
+      };
+
+      const globalTimer = setTimeout(() => {
+        settle({ audioChunks, transcript, aiText });
+      }, 6000);
+
+      this.msgHandler = (msg: ParsedMsg) => {
+        if (msg.msgType === MT_ERROR) {
+          const txt = msg.errorText ?? "";
+          if (txt.includes("InvalidSpeaker")) {
+            ttsKnownFailed = true;
+            if (aiText) settle({ audioChunks: [], transcript, aiText });
+            return;
+          }
+          settle({ audioChunks: [], transcript, aiText });
+          return;
+        }
+
+        if (msg.msgType === MT_AUDIO_SERVER && Buffer.isBuffer(msg.payload)) {
+          if (!ttsKnownFailed) audioChunks.push(msg.payload);
+          return;
+        }
+
+        switch (msg.eventId) {
+          case 150:
+            if (!sessionStarted) {
+              sessionStarted = true;
+              streamPcm();
+            }
+            break;
+          case 451: {
+            const pl = msg.payload as any;
+            const final = (pl.results ?? []).find((r: any) => !r.is_interim);
+            if (final?.text) transcript = final.text;
+            break;
+          }
+          case 550: {
+            const pl = msg.payload as any;
+            const c = pl.content ?? pl.delta?.content ?? pl.text ?? pl.reply ?? "";
+            aiText += c;
+            if (ttsKnownFailed && aiText) {
+              settle({ audioChunks: [], transcript, aiText });
+            }
+            break;
+          }
+          case EVT_TTS_ENDED:
+            settle({ audioChunks, transcript, aiText });
+            break;
+          case 153:
+            settle({ audioChunks: [], transcript, aiText });
+            break;
+        }
+      };
+
+      ws.send(buildSessionEvent(EVT_START_SESSION, this.nextSeq(), sessionId, sessionPayload));
+
+      // 实时分片发送，极低延迟
+      const CHUNK_SIZE = 640;
+      function streamPcm() {
+        let offset = 0;
+        function send() {
+          if (settled) return;
+          if (offset >= pcmData.length) {
+            ws.send(buildLastAudioChunk(this.nextSeq(), sessionId));
+            return;
+          }
+          const end = Math.min(offset + CHUNK_SIZE, pcmData.length);
+          ws.send(buildAudioChunk(pcmData.subarray(offset, end), this.nextSeq(), sessionId));
+          offset = end;
+          setImmediate(send);
+        }
+        send();
+      }
+    });
+  }
+
+  close() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    try {
+      if (this.ws?.readyState === 1) {
+        this.ws.send(buildConnectEvent(EVT_FINISH_CONN, this.nextSeq()));
+        this.ws.close();
+      }
+    } catch {}
+    this.ws = null;
+    this.connStarted = false;
+  }
+}
+
+const globalConn = new PersistentRealtimeConn();
+export function closeRealtimeConn() { globalConn.close(); }
+
+interface S2STurnResult {
+  audioChunks: Buffer[];
+  transcript: string;
+  aiText: string;
+}
+
+// LLM 兜底
+export async function callDoubaoLLM(userText: string, systemRole: string): Promise<string> {
+  const key = process.env.ARK_API_KEY;
+  if (!key) return "";
+  try {
+    const r = await fetch("https://ark.cn-beijing.volces.com/api/v3/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: "doubao-seed-2-0-lite-260215",
+        messages: [
+          { role: "system", content: systemRole },
+          { role: "user", content: userText },
+        ],
+        max_tokens: 120,
+        temperature: 0.7,
+      }),
+    });
+    const data = await r.json();
+    return data.choices?.[0]?.message?.content ?? "";
+  } catch {
+    return "";
+  }
+}
+
+// HTTP TTS 兜底
+export async function callDoubaoHttpTts(text: string, appId: string, token: string): Promise<Buffer> {
+  const list = [
+    { cluster: "volcano_mega", voice: "BV700_V2_streaming" },
+    { cluster: "volcano_tts", voice: "BV700_streaming" },
+  ];
+  for (const { cluster, voice } of list) {
+    try {
+      const r = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer;${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSONJSON.stringify({
+          app: { appid: appId, token, cluster },
+          user: { uid: "xiaoxiang" },
+          audio: { voice_type: voice, encoding: "mp3" },
+          request: { reqid: randomUUID(), text, text_type: "plain" },
+        }),
+      });
+      const d = await r.json();
+      if (d.code === 3000 && d.data) {
+        return Buffer.from(d.data, "base64");
+      }
+    } catch {}
+  }
+  throw new Error("TTS failed");
+}
+
+// 系统提示
+export interface DoubaoS2SRequest {
+  audioBase64: string;
+  mimeType?: string;
+  systemRole?: string;
+  emotion?: string;
+  location?: string;
+  activityHint?: string;
+  stepRate?: number;
+  speaker?: string;
+}
+
+export function buildSystemPrompt(emotion?: string, location?: string, activityHint?: string, stepRate?: number): string {
+  const em = emotion || "平静";
+  const loc = location || "新疆吐峪沟";
+  const hint = activityHint || "游览中";
+  const rate = stepRate ?? 0;
+
+  const emotionMap: Record<string, string> = {
+    疲惫: "语气轻柔，话少，建议休息",
+    无聊: "活跃气氛，出小问题或体验推荐",
+    好奇: "详细讲历史典故",
+    开心: "活泼，推荐打卡点",
+    愉快: "热情，多讲景点",
+    平静: "轻松自然聊天",
+  };
+
+  const paceGuide = rate === 0
+    ? "可讲小故事"
+    : rate > 80
+      ? "回答极简短"
+      : "慢慢讲文化知识";
+
+  return `你是「小乡」，新疆吐峪沟AI伴游。口语化，60字内，偶尔加亚克西、热合买提。
+情绪：${em}。位置：${loc}。状态：${hint}。
+要求：${emotionMap[em] || emotionMap.平静}。${paceGuide}。只聊景区，回答简短自然。`;
+}
+
+export interface DoubaoS2SResponse {
+  audioBase64: string;
+  format: string;
+  transcript?: string;
+  aiText?: string;
+}
+
+// 主入口
+export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<DoubaoS2SResponse> {
+  const appId = process.env.VOLCENGINE_APP_ID;
+  const token = process.env.VOLCENGINE_ACCESS_TOKEN;
+  if (!appId || !token) throw new Error("Missing credentials");
+
+  const m4a = Buffer.from(req.audioBase64, "base64");
+  const pcm = await convertM4aToPcmInMemory(m4a);
+
+  const systemRole = req.systemRole || buildSystemPrompt(req.emotion, req.location, req.activityHint, req.stepRate);
+  const speaker = req.speaker || DEFAULT_SPEAKER;
+
+  // O2.0 超低延迟核心配置
+  const payload = {
+    enable_low_latency: true,
+    asr: {
+      audio_config: { format: "pcm_s16le", sample_rate: 16000, channel: 1 },
+      language: "zh-CN",
+      enable_low_latency: true,
+    },
+    vad_config: {
+      mode: "server_vad",
+      silence_duration: 500,
+    },
+    llm: { enable_low_latency: true },
+    tts: {
+      audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24000 },
+      speaker,
+      enable_low_latency: true,
+    },
+    dialog: {
+      bot_name: "小乡",
+      system_role: systemRole,
+      enable_interrupt: true,
+    },
+  };
+
+  const res = await globalConn.runTurn(appId, token, pcm, payload);
+  const pcmOut = Buffer.concat(res.audioChunks);
+
+  if (pcmOut.length > 0) {
+    const mp3 = await convertPcmToMp3InMemory(pcmOut);
+    return {
+      audioBase64: mp3.toString("base64"),
+      format: "mp3",
+      transcript: res.transcript,
+      aiText: res.aiText,
+    };
+  }
+
+  // 兜底
+  let aiText = res.aiText;
+  if (!aiText && res.transcript) {
+    aiText = await callDoubaoLLM(res.transcript, systemRole);
+  }
+  if (!aiText) {
+    return { audioBase64: "", format: "mp3", transcript: res.transcript, aiText: "" };
+  }
+
+  const mp3Fallback = await callDoubaoHttpTts(aiText, appId, token);
+  return {
+    audioBase64: mp3Fallback.toString("base64"),
+    format: "mp3",
+    transcript: res.transcript,
+    aiText,
+  };
+}
