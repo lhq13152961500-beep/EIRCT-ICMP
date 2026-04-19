@@ -90,6 +90,30 @@ interface RouteItem {
   poiIds: string[];
 }
 
+const POI_META: Record<string, { duration: number; distanceKm: number }> = {
+  "1":  { duration: 10, distanceKm: 0 },
+  "2":  { duration: 30, distanceKm: 0.3 },
+  "3":  { duration: 20, distanceKm: 0.2 },
+  "4":  { duration: 40, distanceKm: 0.5 },
+  "5":  { duration: 25, distanceKm: 0.4 },
+  "6":  { duration: 45, distanceKm: 0.2 },
+  "7":  { duration: 35, distanceKm: 0.2 },
+  "8":  { duration: 20, distanceKm: 0.3 },
+  "9":  { duration: 30, distanceKm: 0.2 },
+  "10": { duration: 20, distanceKm: 0.1 },
+  "11": { duration: 25, distanceKm: 0.3 },
+  "12": { duration: 10, distanceKm: 0.1 },
+};
+
+function calcRouteStats(poiIds: string[]) {
+  const totalMin = poiIds.reduce((s, id) => s + (POI_META[id]?.duration ?? 15), 0);
+  const totalKm  = poiIds.reduce((s, id) => s + (POI_META[id]?.distanceKm ?? 0), 0);
+  const durationStr = totalMin >= 60
+    ? `约${(totalMin / 60).toFixed(1).replace(/\.0$/, "")}小时`
+    : `约${totalMin}分钟`;
+  return { totalKm: +totalKm.toFixed(1), durationStr };
+}
+
 const ROUTES: RouteItem[] = [
   {
     id: "1",
@@ -531,7 +555,14 @@ export default function MapGuideScreen() {
               ) : activeCustomRoute ? (
                 <View style={[styles.activeRouteBtn, { shadowColor: activeCustomRoute.color }]}>
                   <View style={[styles.activeRouteBtnMain, { backgroundColor: activeCustomRoute.color }]}>
-                    <Text style={styles.activeRouteBtnIcon}>{activeCustomRoute.icon}</Text>
+                    {activeCustomRoute.imageData ? (
+                      <Image
+                        source={{ uri: activeCustomRoute.imageData }}
+                        style={styles.activeRouteBtnImg}
+                      />
+                    ) : (
+                      <Text style={styles.activeRouteBtnIcon}>{activeCustomRoute.icon}</Text>
+                    )}
                     <Text style={styles.activeRouteBtnText} numberOfLines={1}>{activeCustomRoute.name}</Text>
                   </View>
                   <Pressable
@@ -657,10 +688,27 @@ export default function MapGuideScreen() {
                   </View>
                   <View style={styles.routeCardBottom}>
                     <View style={styles.routeCardStats}>
-                      <View style={styles.routeStat}>
-                        <Ionicons name="location-outline" size={13} color={Colors.light.textSecondary} />
-                        <Text style={styles.routeStatText}>{route.poiIds.length}个景点</Text>
-                      </View>
+                      {(() => {
+                        const { totalKm, durationStr } = calcRouteStats(route.poiIds);
+                        return (
+                          <>
+                            <View style={styles.routeStat}>
+                              <Ionicons name="location-outline" size={13} color={Colors.light.textSecondary} />
+                              <Text style={styles.routeStatText}>{route.poiIds.length}个景点</Text>
+                            </View>
+                            <View style={styles.routeStatDivider} />
+                            <View style={styles.routeStat}>
+                              <Ionicons name="navigate-outline" size={13} color={Colors.light.textSecondary} />
+                              <Text style={styles.routeStatText}>{totalKm}公里</Text>
+                            </View>
+                            <View style={styles.routeStatDivider} />
+                            <View style={styles.routeStat}>
+                              <Ionicons name="time-outline" size={13} color={Colors.light.textSecondary} />
+                              <Text style={styles.routeStatText}>{durationStr}</Text>
+                            </View>
+                          </>
+                        );
+                      })()}
                     </View>
                     <Pressable
                       style={[styles.startBtn, { backgroundColor: route.color }]}
@@ -918,6 +966,7 @@ const styles = StyleSheet.create({
     gap: 8, paddingVertical: 16, paddingHorizontal: 20,
   },
   activeRouteBtnIcon: { fontSize: 18 },
+  activeRouteBtnImg: { width: 28, height: 28, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.25)" },
   activeRouteBtnText: { flex: 1, fontSize: 15, fontWeight: "700", color: "#fff" },
   activeRouteCancelBtn: {
     paddingHorizontal: 18, alignItems: "center", justifyContent: "center",
