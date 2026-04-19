@@ -84,49 +84,10 @@ export default function AdaptiveRoamScreen() {
   const insets = useSafeAreaInsets();
   const savedSession = roamSession.get();
   const { locationStatus } = useLocation();
-  // Latest GPS fix (GCJ-02)
+  // Latest GPS fix (GCJ-02) — stored in ref so effects can read without re-subscribing
   const userLocRef = useRef<{ lng: number; lat: number } | null>(null);
   // Visited POI tracking — Set prevents duplicates
   const visitedPoiIdsRef = useRef<Set<string>>(new Set());
-  const [visitedCount, setVisitedCount] = useState(0);
-
-  // On every GPS update: cache coords + check 50 m proximity for visited detection
-  useEffect(() => {
-    if (locationStatus.state !== "located") return;
-    const { lng: userLng, lat: userLat } = locationStatus;
-    userLocRef.current = { lng: userLng, lat: userLat };
-
-    if (phase !== "roaming" || !mapReady) return;
-
-    // Haversine-lite: 1° lat ≈ 111 320 m; 1° lng × cos(lat) ≈ 81 500 m at 42.86°N
-    const cosLat = Math.cos((userLat * Math.PI) / 180);
-    let newlyVisited = false;
-    Object.entries(POI_COORDS).forEach(([id, coord]) => {
-      if (visitedPoiIdsRef.current.has(id)) return;
-      const dlat = (coord.lat - userLat) * 111320;
-      const dlng = (coord.lng - userLng) * 111320 * cosLat;
-      if (Math.sqrt(dlat * dlat + dlng * dlng) < 50) {
-        visitedPoiIdsRef.current.add(id);
-        injectJs(`window.markPoiVisited && window.markPoiVisited(${JSON.stringify(id)});`);
-        newlyVisited = true;
-      }
-    });
-    if (newlyVisited) {
-      const count = visitedPoiIdsRef.current.size;
-      setVisitedCount(count);
-      // Refresh current route so it excludes newly visited POIs
-      setArpRouteLevel(prev => {
-        const route = ROUTE_LEVELS[prev];
-        const visited = Array.from(visitedPoiIdsRef.current);
-        injectJs(
-          `window.buildDynamicRoute && window.buildDynamicRoute(` +
-          `${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)}, ` +
-          `${userLng}, ${userLat}, ${JSON.stringify(visited)});`
-        );
-        return prev;
-      });
-    }
-  }, [locationStatus, phase, mapReady, injectJs]);
 
   const [phase, setPhase]       = useState<"setup" | "roaming">(savedSession ? "roaming" : "setup");
   const [selectedTime, setTime] = useState<number>(savedSession?.selectedTime ?? 1.5);
@@ -169,6 +130,46 @@ export default function AdaptiveRoamScreen() {
   const injectJs = useCallback((js: string) => {
     webViewRef.current?.injectJavaScript(js + "; true;");
   }, []);
+
+  // ── Visited POI count (for UI badge) ──────────────────────────
+  const [visitedCount, setVisitedCount] = useState(0);
+
+  // ── GPS update: cache coords + 50 m proximity → mark visited ──
+  useEffect(() => {
+    if (locationStatus.state !== "located") return;
+    const { lng: userLng, lat: userLat } = locationStatus;
+    userLocRef.current = { lng: userLng, lat: userLat };
+
+    if (phase !== "roaming" || !mapReady) return;
+
+    // Haversine-lite: 1° lat ≈ 111 320 m; 1° lng × cos(lat) ≈ 81 500 m at 42.86°N
+    const cosLat = Math.cos((userLat * Math.PI) / 180);
+    let newlyVisited = false;
+    Object.entries(POI_COORDS).forEach(([id, coord]) => {
+      if (visitedPoiIdsRef.current.has(id)) return;
+      const dlat = (coord.lat - userLat) * 111320;
+      const dlng = (coord.lng - userLng) * 111320 * cosLat;
+      if (Math.sqrt(dlat * dlat + dlng * dlng) < 50) {
+        visitedPoiIdsRef.current.add(id);
+        injectJs(`window.markPoiVisited && window.markPoiVisited(${JSON.stringify(id)});`);
+        newlyVisited = true;
+      }
+    });
+    if (newlyVisited) {
+      setVisitedCount(visitedPoiIdsRef.current.size);
+      // Refresh current route excluding newly visited POIs
+      setArpRouteLevel(prev => {
+        const route = ROUTE_LEVELS[prev];
+        const visited = Array.from(visitedPoiIdsRef.current);
+        injectJs(
+          `window.buildDynamicRoute && window.buildDynamicRoute(` +
+          `${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)}, ` +
+          `${userLng}, ${userLat}, ${JSON.stringify(visited)});`
+        );
+        return prev;
+      });
+    }
+  }, [locationStatus, phase, mapReady, injectJs]);
 
   // ── Draw route when map ready ─────────────────────────────────
   useEffect(() => {
