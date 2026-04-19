@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import WebView from "react-native-webview";
+import { Accelerometer, Pedometer } from "expo-sensors";
 import { getApiUrl } from "@/lib/query-client";
 import { roamSession } from "@/lib/roam-session";
 import Colors from "@/constants/colors";
@@ -46,6 +47,13 @@ const ROUTE_LEVELS = [
   { ids: ["1","9","7","12","4","8","5","10","2","3","6","11"],     color: "#3DAA6F", stops: 12, km: 4.2, label: "全览路线" },
 ];
 
+const INTEREST_LABELS: Record<string, string> = {
+  culture: "文化建筑",
+  folk: "民俗体验",
+  food: "特色美食",
+  nature: "自然景观",
+};
+
 function timeToLevel(hours: number) {
   if (hours <= 1) return 0;
   if (hours <= 2) return 1;
@@ -54,94 +62,213 @@ function timeToLevel(hours: number) {
 
 export default function AdaptiveRoamScreen() {
   const insets = useSafeAreaInsets();
-
-  // Restore session if returning to active roam
   const savedSession = roamSession.get();
 
-  const [phase, setPhase]         = useState<"setup" | "roaming">(savedSession ? "roaming" : "setup");
-  const [selectedTime, setTime]   = useState<number>(savedSession?.selectedTime ?? 1.5);
-  const [people, setPeople]       = useState<number>(savedSession?.people ?? 2);
+  const [phase, setPhase]       = useState<"setup" | "roaming">(savedSession ? "roaming" : "setup");
+  const [selectedTime, setTime] = useState<number>(savedSession?.selectedTime ?? 1.5);
+  const [people, setPeople]     = useState<number>(savedSession?.people ?? 2);
 
-  const [mapReady, setMapReady]   = useState(false);
-  const webViewRef                = useRef<WebView>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const webViewRef              = useRef<WebView>(null);
 
-  // ARP route level — restored from session or derived from selectedTime
   const [arpRouteLevel, setArpRouteLevel] = useState<number>(
     savedSession?.arpRouteLevel ?? timeToLevel(savedSession?.selectedTime ?? 1.5)
   );
-  const prevArpStateRef = useRef<string>("活跃"); // speed starts at 4.2 = 活跃
+  const prevArpStateRef = useRef<string>("活跃");
 
-  // Gait simulation state
-  const [speed,     setSpeed]     = useState(4.2);
-  const [stepLen,   setStepLen]   = useState(0.60);
-  const [freq,      setFreq]      = useState(110);
-  const [stability, setStability] = useState(98);
+  // ── Real sensor state ─────────────────────────────────────────
+  const [speed,       setSpeed]     = useState(0);
+  const [stepLen,     setStepLen]   = useState(0);
+  const [freq,        setFreq]      = useState(0);
+  const [stability,   setStability] = useState(100);
+  const [sensorReady, setSensorReady] = useState(false);
+
+  // Accelerometer rolling buffer for stability
+  const accelBuf        = useRef<number[]>([]);
+  // Pedometer reference for cadence calculation
+  const pedoRef         = useRef<{ count: number; time: number } | null>(null);
+  // Fallback to simulation when sensors unavailable
+  const useFallback     = useRef(false);
+
+  // ── Interest preference tracking ──────────────────────────────
+  // Categories: culture, folk, food, nature
+  const interestRef = useRef<Record<string, number>>({ culture: 0, folk: 0, food: 0, nature: 0 });
+  const [topInterest, setTopInterest] = useState<string>("culture");
+  const interestTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Rest frequency: count "rest" events (speed drop below 1.5 km/h)
+  const restCountRef  = useRef(0);
+  const wasRestingRef = useRef(false);
 
   const panelAnim = useRef(new Animated.Value(0)).current;
 
-  // Inject JS into the map WebView
   const injectJs = useCallback((js: string) => {
     webViewRef.current?.injectJavaScript(js + "; true;");
   }, []);
 
-  // When map is ready & roaming started → draw initial route
+  // ── Draw route when map ready ─────────────────────────────────
   useEffect(() => {
     if (!mapReady || phase !== "roaming") return;
     const route = ROUTE_LEVELS[arpRouteLevel];
     injectJs(`window.setMyLocation && window.setMyLocation(89.5971, 42.8603);`);
-    injectJs(
-      `window.drawRoute && window.drawRoute(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)});`
-    );
-  }, [mapReady, phase]); // eslint-disable-line react-hooks/exhaustive-deps
+    injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)});`);
+  }, [mapReady, phase]); // eslint-disable-line
 
-  // Keep session in sync when arpRouteLevel changes mid-roam
+  // ── Persist arpRouteLevel ─────────────────────────────────────
   useEffect(() => {
     if (phase === "roaming") roamSession.update({ arpRouteLevel });
   }, [arpRouteLevel, phase]);
 
-  // ARP state transition → update route on map
+  // ── ARP state transition ──────────────────────────────────────
   useEffect(() => {
     if (phase !== "roaming" || !mapReady) return;
-    const arpState = speed >= 4.0 ? "活跃" : speed >= 2.8 ? "适中" : "疲劳预警";
+    // Only react to sensor data once it's stabilised (or fallback active)
+    if (!sensorReady && !useFallback.current) return;
+
+    const arpState = speed >= 3.5 ? "活跃" : speed >= 1.8 ? "适中" : "疲劳预警";
     if (arpState === prevArpStateRef.current) return;
     prevArpStateRef.current = arpState;
 
     setArpRouteLevel(prev => {
       let next = prev;
-      if (arpState === "活跃") {
-        next = Math.min(prev + 1, ROUTE_LEVELS.length - 1);
-      } else if (arpState === "疲劳预警") {
-        next = Math.max(prev - 1, 0);
-      }
+      if (arpState === "活跃")        next = Math.min(prev + 1, ROUTE_LEVELS.length - 1);
+      else if (arpState === "疲劳预警") next = Math.max(prev - 1, 0);
       if (next !== prev) {
         const route = ROUTE_LEVELS[next];
-        injectJs(
-          `window.drawRoute && window.drawRoute(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)});`
-        );
+        injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)});`);
         setArpAccepted(false);
       }
       return next;
     });
-  }, [speed, phase, mapReady, injectJs]);
+  }, [speed, phase, mapReady, sensorReady, injectJs]);
 
-  // Gait data simulation
+  // ── Real sensor subscription ──────────────────────────────────
   useEffect(() => {
     if (phase !== "roaming") return;
-    const id = setInterval(() => {
-      setSpeed(p   => +Math.max(2.5, Math.min(6.0, p + (Math.random() - 0.5) * 0.4)).toFixed(1));
-      setStepLen(p => +Math.max(0.40, Math.min(0.85, p + (Math.random() - 0.5) * 0.04)).toFixed(2));
-      setFreq(p    => Math.round(Math.max(85, Math.min(135, p + (Math.random() - 0.5) * 5))));
-      setStability(p => Math.round(Math.max(82, Math.min(100, p + (Math.random() - 0.5) * 2))));
-    }, 2500);
-    return () => clearInterval(id);
+
+    let pedometerSub: { remove: () => void } | null = null;
+    let accelSub: { remove: () => void } | null = null;
+    let fallbackTimer: ReturnType<typeof setInterval> | null = null;
+
+    (async () => {
+      // Accelerometer — always available, no permission needed
+      Accelerometer.setUpdateInterval(250);
+      accelSub = Accelerometer.addListener(({ x, y, z }) => {
+        const mag = Math.sqrt(x * x + y * y + z * z);
+        accelBuf.current.push(mag);
+        if (accelBuf.current.length > 40) accelBuf.current.shift();
+
+        if (accelBuf.current.length >= 12) {
+          const mean = accelBuf.current.reduce((a, b) => a + b, 0) / accelBuf.current.length;
+          const variance = accelBuf.current.reduce((a, b) => a + (b - mean) ** 2, 0) / accelBuf.current.length;
+          // variance ~0 = very steady, ~1+ = walking, ~3+ = running/erratic
+          const stab = Math.round(Math.max(62, Math.min(100, 100 - variance * 14)));
+          setStability(stab);
+        }
+      });
+
+      // Pedometer
+      const isPedoAvail = await Pedometer.isAvailableAsync().catch(() => false);
+
+      if (isPedoAvail) {
+        pedometerSub = Pedometer.watchStepCount(result => {
+          const now = Date.now();
+          const ref = pedoRef.current;
+
+          if (ref) {
+            const dtMin = (now - ref.time) / 60000;
+            if (dtMin >= 0.08) { // recalculate every ~5 s
+              const stepsInWindow = result.steps - ref.count;
+              const cadence = Math.round(stepsInWindow / dtMin); // steps/min
+              const clampedCadence = Math.max(0, Math.min(220, cadence));
+
+              // Estimated step length from cadence (Grieve formula approx)
+              // sl ≈ 0.35 + clampedCadence * 0.003  (0.4 m at 80 spm → 0.7 m at 120 spm)
+              const sl = +(Math.min(0.90, Math.max(0.35, 0.35 + clampedCadence * 0.003))).toFixed(2);
+              // Speed km/h = cadence [steps/min] × sl [m/step] / 60 [s/min] × 3.6
+              const spd = +Math.min(9, Math.max(0, (clampedCadence * sl / 60) * 3.6)).toFixed(1);
+
+              setFreq(clampedCadence);
+              setStepLen(sl);
+              setSpeed(spd);
+              setSensorReady(true);
+
+              // Track rest events
+              if (spd < 1.0) {
+                if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
+              } else {
+                wasRestingRef.current = false;
+              }
+
+              pedoRef.current = { count: result.steps, time: now };
+            }
+          } else {
+            pedoRef.current = { count: result.steps, time: now };
+          }
+        });
+      } else {
+        // Fallback: simulate realistic gait when pedometer unavailable
+        useFallback.current = true;
+        setSensorReady(true);
+        let spd = 4.2, sl = 0.60, fr = 110;
+        fallbackTimer = setInterval(() => {
+          spd  = +Math.max(2.2, Math.min(6.5, spd  + (Math.random() - 0.5) * 0.5)).toFixed(1);
+          sl   = +Math.max(0.38, Math.min(0.88, sl  + (Math.random() - 0.5) * 0.04)).toFixed(2);
+          fr   = Math.round(Math.max(80, Math.min(140, fr + (Math.random() - 0.5) * 6)));
+          setSpeed(spd);
+          setStepLen(sl);
+          setFreq(fr);
+
+          if (spd < 1.0) {
+            if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
+          } else { wasRestingRef.current = false; }
+        }, 2500);
+      }
+    })();
+
+    return () => {
+      pedometerSub?.remove();
+      accelSub?.remove();
+      if (fallbackTimer) clearInterval(fallbackTimer);
+      accelBuf.current = [];
+      pedoRef.current = null;
+    };
   }, [phase]);
 
-  // Slide-up panel animation when roaming starts
+  // ── Interest preference accumulation ─────────────────────────
+  useEffect(() => {
+    if (phase !== "roaming") return;
+    // Every 30 s of activity, accumulate interest based on speed & route
+    interestTimerRef.current = setInterval(() => {
+      if (speed < 0.5) return; // not moving
+      const routePoiIds = ROUTE_LEVELS[arpRouteLevel].ids;
+      // Weight interest by POI types in current route
+      const culturePois = ["2","3","4","5","12"];
+      const folkPois    = ["6","7"];
+      const foodPois    = ["8","9","10","11"];
+      const cultureHits = routePoiIds.filter(id => culturePois.includes(id)).length;
+      const folkHits    = routePoiIds.filter(id => folkPois.includes(id)).length;
+      const foodHits    = routePoiIds.filter(id => foodPois.includes(id)).length;
+
+      interestRef.current.culture += cultureHits * 2;
+      interestRef.current.folk    += folkHits    * 2;
+      interestRef.current.food    += foodHits    * 2;
+      interestRef.current.nature  += 1;
+
+      // Find dominant interest
+      const top = Object.entries(interestRef.current).sort((a, b) => b[1] - a[1])[0][0];
+      setTopInterest(top);
+    }, 30000);
+
+    return () => {
+      if (interestTimerRef.current) clearInterval(interestTimerRef.current);
+    };
+  }, [phase, speed, arpRouteLevel]);
+
+  // ── Panel animation ───────────────────────────────────────────
   useEffect(() => {
     if (phase === "roaming") {
-      Animated.spring(panelAnim, {
-        toValue: 1, useNativeDriver: true, tension: 50, friction: 9,
-      }).start();
+      Animated.spring(panelAnim, { toValue: 1, useNativeDriver: true, tension: 50, friction: 9 }).start();
     } else {
       panelAnim.setValue(0);
     }
@@ -152,15 +279,17 @@ export default function AdaptiveRoamScreen() {
     const level = timeToLevel(selectedTime);
     setArpRouteLevel(level);
     prevArpStateRef.current = "活跃";
+    setSensorReady(false);
     setArpAccepted(false);
-    // Persist session so map-guide can show "正在漫游"
+    interestRef.current = { culture: 0, folk: 0, food: 0, nature: 0 };
+    restCountRef.current = 0;
+    wasRestingRef.current = false;
     roamSession.start({ selectedTime, people, arpRouteLevel: level });
     setPhase("roaming");
   };
 
   const handleBack = () => {
     haptic();
-    // During roaming: keep session alive and return to map-guide
     if (phase === "roaming") {
       roamSession.update({ arpRouteLevel });
       if (router.canGoBack()) router.back(); else router.replace("/map-guide");
@@ -171,7 +300,6 @@ export default function AdaptiveRoamScreen() {
 
   const handleCancel = () => {
     haptic("medium");
-    // Fully end the roaming session
     roamSession.stop();
     if (router.canGoBack()) router.back(); else router.replace("/map-guide");
   };
@@ -183,50 +311,54 @@ export default function AdaptiveRoamScreen() {
     } catch {}
   }, []);
 
-  const panelTranslateY = panelAnim.interpolate({
-    inputRange: [0, 1], outputRange: [240, 0],
-  });
+  const panelTranslateY = panelAnim.interpolate({ inputRange: [0, 1], outputRange: [240, 0] });
 
   const [arpModalVisible, setArpModalVisible] = useState(false);
   const [arpAccepted, setArpAccepted]         = useState(false);
 
-  // ARP level derived from real-time gait
-  const arpLevel = speed >= 4.0 ? "活跃" : speed >= 2.8 ? "适中" : "疲劳预警";
-  const arpColor = speed >= 4.0 ? "#3DAA6F" : speed >= 2.8 ? "#2196F3" : "#E8873A";
+  // Derived ARP state from real speed
+  const arpLevel = speed >= 3.5 ? "活跃" : speed >= 1.8 ? "适中" : "疲劳预警";
+  const arpColor = speed >= 3.5 ? "#3DAA6F" : speed >= 1.8 ? "#2196F3" : "#E8873A";
   const arpIcon: keyof typeof MaterialCommunityIcons.glyphMap =
-    speed >= 4.0 ? "lightning-bolt" : speed >= 2.8 ? "chart-line" : "alert-circle-outline";
+    speed >= 3.5 ? "lightning-bolt" : speed >= 1.8 ? "chart-line" : "alert-circle-outline";
 
-  // Route info for the ARP modal — uses the live arpRouteLevel
-  const currentRoute  = ROUTE_LEVELS[arpRouteLevel];
-  const baseLevel     = timeToLevel(selectedTime);
-  const baseRoute     = ROUTE_LEVELS[baseLevel];
-  const kmDiff        = +(currentRoute.km - baseRoute.km).toFixed(1);
-  const stopsDiff     = currentRoute.stops - baseRoute.stops;
+  const currentRoute = ROUTE_LEVELS[arpRouteLevel];
+  const baseLevel    = timeToLevel(selectedTime);
+  const baseRoute    = ROUTE_LEVELS[baseLevel];
+  const kmDiff       = +(currentRoute.km - baseRoute.km).toFixed(1);
+  const stopsDiff    = currentRoute.stops - baseRoute.stops;
 
-  // ── SETUP PHASE ──────────────────────────────────────────────
+  const interestLabel = INTEREST_LABELS[topInterest] ?? "文化建筑";
+  const speedDisplay  = sensorReady || useFallback.current ? speed.toFixed(1) : "--";
+  const freqDisplay   = sensorReady || useFallback.current ? String(freq) : "--";
+  const stepLenDisplay = sensorReady || useFallback.current ? stepLen.toFixed(2) : "--";
+
+  // ── SETUP PHASE ───────────────────────────────────────────────
   if (phase === "setup") {
     return (
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
-        {/* Header */}
         <LinearGradient colors={["#fff", "#F8F5F0"]} style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <Pressable style={styles.backBtn} onPress={handleBack} hitSlop={12}>
             <Ionicons name="chevron-back" size={24} color={Colors.light.text} />
           </Pressable>
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>自适应漫游</Text>
-            <Text style={styles.headerSub}>智能规划，随心漫步</Text>
+            <Text style={styles.headerSub}>ARP智能规划 · 步态感知</Text>
           </View>
           <View style={{ width: 40 }} />
         </LinearGradient>
 
         <ScrollView contentContainerStyle={[styles.setupContent, { paddingBottom: insets.bottom + 32 }]}>
 
-          {/* Illustration banner */}
+          {/* ARP description banner */}
           <LinearGradient colors={["#E8F5F0", "#D0EEE3"]} style={styles.banner}>
-            <MaterialCommunityIcons name="map-marker-path" size={48} color="#3DAA6F" />
-            <Text style={styles.bannerTitle}>根据您的时间与人数{"\n"}智能规划最佳游览路线</Text>
+            <MaterialCommunityIcons name="walk" size={42} color="#3DAA6F" />
+            <Text style={styles.bannerTitle}>ARP 自适应路线规划机制</Text>
+            <Text style={styles.bannerDesc}>
+              融合步态分析算法，实时分析步长、步频、步速与稳定性。当检测到您在某景点停留时间延长，将其标记为更高兴趣偏好，后续优先推荐同类文化景点；若监测到步速放缓、休息频次增加，自动缩减路径或插入休息节点，避免疲劳影响游览体验。
+            </Text>
           </LinearGradient>
 
           {/* Time selection */}
@@ -289,7 +421,7 @@ export default function AdaptiveRoamScreen() {
             </View>
           </View>
 
-          {/* Route preview info */}
+          {/* Route preview */}
           <View style={styles.previewCard}>
             <Text style={styles.previewTitle}>路线预览</Text>
             <View style={styles.previewRow}>
@@ -313,9 +445,16 @@ export default function AdaptiveRoamScreen() {
             </View>
           </View>
 
+          {/* Sensor hint */}
+          <View style={styles.sensorHintCard}>
+            <Ionicons name="hardware-chip-outline" size={16} color="#3DAA6F" />
+            <Text style={styles.sensorHintText}>
+              漫游开始后将读取手机传感器数据，实时分析步态参数
+            </Text>
+          </View>
+
         </ScrollView>
 
-        {/* Start button */}
         <View style={[styles.startBtnWrap, { paddingBottom: insets.bottom + 16 }]}>
           <Pressable style={styles.startBtn} onPress={handleStart}>
             <LinearGradient colors={["#3DAA6F", "#1E7E4F"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
@@ -347,11 +486,7 @@ export default function AdaptiveRoamScreen() {
             {"  ·  "}{people}人
           </Text>
         </View>
-        <Pressable
-          style={styles.cancelBtn}
-          onPress={handleCancel}
-          hitSlop={12}
-        >
+        <Pressable style={styles.cancelBtn} onPress={handleCancel} hitSlop={12}>
           <Text style={styles.cancelBtnText}>取消</Text>
         </Pressable>
       </View>
@@ -392,11 +527,16 @@ export default function AdaptiveRoamScreen() {
             </View>
             <View>
               <Text style={styles.gaitTitle}>步态分析</Text>
-              <Text style={styles.gaitSubtitle}>实时生物数据</Text>
+              <View style={styles.gaitSensorRow}>
+                <View style={[styles.gaitSensorDot, { backgroundColor: sensorReady ? "#3DAA6F" : "#FFA726" }]} />
+                <Text style={styles.gaitSubtitle}>
+                  {sensorReady ? (useFallback.current ? "仿真模式" : "传感器实时") : "传感器初始化…"}
+                </Text>
+              </View>
             </View>
           </View>
           <View style={styles.gaitSpeedWrap}>
-            <Text style={styles.gaitSpeedVal}>{speed.toFixed(1)}</Text>
+            <Text style={styles.gaitSpeedVal}>{speedDisplay}</Text>
             <Text style={styles.gaitSpeedUnit}>km/h</Text>
             <Text style={styles.gaitSpeedLabel}>当前步速</Text>
           </View>
@@ -406,12 +546,12 @@ export default function AdaptiveRoamScreen() {
         <View style={styles.gaitGrid}>
           <View style={styles.gaitMetricCard}>
             <Text style={styles.gaitMetricLabel}>步长</Text>
-            <Text style={styles.gaitMetricVal}>{stepLen.toFixed(2)}</Text>
+            <Text style={styles.gaitMetricVal}>{stepLenDisplay}</Text>
             <Text style={styles.gaitMetricUnit}>米</Text>
           </View>
           <View style={styles.gaitMetricCard}>
             <Text style={styles.gaitMetricLabel}>步频</Text>
-            <Text style={styles.gaitMetricVal}>{freq}</Text>
+            <Text style={styles.gaitMetricVal}>{freqDisplay}</Text>
             <Text style={styles.gaitMetricUnit}>步/分钟</Text>
           </View>
           <View style={styles.gaitMetricCard}>
@@ -433,7 +573,7 @@ export default function AdaptiveRoamScreen() {
         </View>
       </Animated.View>
 
-      {/* ── ARP 규划 Modal ── */}
+      {/* ARP Modal */}
       <Modal
         visible={arpModalVisible}
         transparent
@@ -444,12 +584,10 @@ export default function AdaptiveRoamScreen() {
         <Pressable style={styles.arpOverlay} onPress={() => setArpModalVisible(false)}>
           <View style={styles.arpModal}>
 
-            {/* Modal header icon */}
             <View style={styles.arpModalIconWrap}>
               <MaterialCommunityIcons name={arpIcon} size={28} color={arpColor} />
             </View>
 
-            {/* Title */}
             <Text style={styles.arpModalTitle}>
               {arpLevel === "疲劳预警"
                 ? "检测到疲劳：正在优化路线"
@@ -457,9 +595,38 @@ export default function AdaptiveRoamScreen() {
                 ? "步态良好：路线持续分析中"
                 : "活跃状态：推荐探索更多景点"}
             </Text>
-            <Text style={styles.arpModalSub}>ARP Bio-Sync 自适应规划 · 已激活</Text>
+            <Text style={styles.arpModalSub}>
+              ARP Bio-Sync 自适应规划 · 已激活
+              {restCountRef.current > 0 ? `  ·  休息 ${restCountRef.current} 次` : ""}
+            </Text>
 
-            {/* Route comparison card */}
+            {/* Real-time gait data row */}
+            <View style={styles.arpGaitRow}>
+              <View style={styles.arpGaitItem}>
+                <Text style={styles.arpGaitVal}>{speedDisplay}</Text>
+                <Text style={styles.arpGaitLabel}>步速 km/h</Text>
+              </View>
+              <View style={styles.arpGaitDivider} />
+              <View style={styles.arpGaitItem}>
+                <Text style={styles.arpGaitVal}>{freqDisplay}</Text>
+                <Text style={styles.arpGaitLabel}>步频 步/分</Text>
+              </View>
+              <View style={styles.arpGaitDivider} />
+              <View style={styles.arpGaitItem}>
+                <Text style={styles.arpGaitVal}>{stability}</Text>
+                <Text style={styles.arpGaitLabel}>稳定性 %</Text>
+              </View>
+            </View>
+
+            {/* Interest preference */}
+            <View style={[styles.arpInterestRow, { borderColor: arpColor + "44" }]}>
+              <MaterialCommunityIcons name="heart-pulse" size={15} color={arpColor} />
+              <Text style={[styles.arpInterestText, { color: arpColor }]}>
+                当前偏好：{interestLabel}
+              </Text>
+            </View>
+
+            {/* Route comparison */}
             <View style={styles.arpRouteCard}>
               <View style={styles.arpRouteCol}>
                 <Text style={styles.arpRouteColLabel}>原始路线</Text>
@@ -486,16 +653,14 @@ export default function AdaptiveRoamScreen() {
               </View>
             </View>
 
-            {/* Description */}
             <Text style={styles.arpModalDesc}>
               {arpLevel === "疲劳预警"
-                ? `根据您步速放缓、休息频次增加的数据，路径已从 ${baseRoute.km}km 缩减至 ${currentRoute.km}km，并插入休息节点，避免疲劳影响游览体验。`
+                ? `步速放缓至 ${speedDisplay} km/h，休息频次增加${restCountRef.current > 0 ? `（已记录 ${restCountRef.current} 次）` : ""}，路径已从 ${baseRoute.km}km 缩减至 ${currentRoute.km}km，并插入休息节点，避免疲劳影响游览体验。`
                 : arpLevel === "适中"
-                ? "您在多个景点停留时间延长，系统已识别您对文化类景点的偏好，后续将优先推荐同类人文景点。"
-                : `您步速活跃，系统已为您扩展路线至 ${currentRoute.stops} 个景点 (+${stopsDiff})，推荐探索更多精彩景区。`}
+                ? `步态稳定，稳定性 ${stability}%。系统已识别您对${interestLabel}的偏好，后续将优先推荐同类景点。`
+                : `步速活跃（${speedDisplay} km/h），系统已为您扩展路线至 ${currentRoute.stops} 个景点（+${stopsDiff}），推荐探索更多${interestLabel}类景区。`}
             </Text>
 
-            {/* Action button */}
             {arpAccepted ? (
               <View style={[styles.arpAcceptedBtn, { backgroundColor: arpColor + "22", borderColor: arpColor }]}>
                 <Ionicons name="checkmark-circle" size={18} color={arpColor} />
@@ -517,7 +682,6 @@ export default function AdaptiveRoamScreen() {
               </Pressable>
             )}
 
-            {/* Close */}
             <Pressable onPress={() => setArpModalVisible(false)} style={styles.arpCloseBtn}>
               <Text style={styles.arpCloseText}>稍后再说</Text>
             </Pressable>
@@ -531,7 +695,6 @@ export default function AdaptiveRoamScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
 
-  // Header (setup)
   header: {
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: 16, paddingBottom: 12,
@@ -545,12 +708,18 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 17, fontWeight: "700", color: Colors.light.text },
   headerSub: { fontSize: 12, color: Colors.light.textSecondary, marginTop: 1 },
 
-  // Setup content
   setupContent: { padding: 16, gap: 14 },
-  banner: {
-    borderRadius: 18, padding: 24, alignItems: "center", gap: 12,
+  banner: { borderRadius: 18, padding: 20, alignItems: "center", gap: 10 },
+  bannerTitle: { fontSize: 16, fontWeight: "800", color: "#1A3D2B", textAlign: "center" },
+  bannerDesc: {
+    fontSize: 13, color: "#2D5E3A", lineHeight: 20, textAlign: "center",
   },
-  bannerTitle: { fontSize: 15, fontWeight: "600", color: "#1A3D2B", textAlign: "center", lineHeight: 22 },
+
+  sensorHintCard: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#E8F5F0", borderRadius: 14, padding: 14,
+  },
+  sensorHintText: { flex: 1, fontSize: 13, color: "#2D5E3A", lineHeight: 18 },
 
   card: {
     backgroundColor: "#fff", borderRadius: 18, padding: 18,
@@ -559,7 +728,6 @@ const styles = StyleSheet.create({
   },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
   cardTitle: { fontSize: 16, fontWeight: "700", color: Colors.light.text },
-  cardHint: { fontSize: 13, color: Colors.light.textSecondary },
 
   optionRow: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
   optionChip: {
@@ -581,10 +749,7 @@ const styles = StyleSheet.create({
   counterUnit: { fontSize: 14, color: Colors.light.textSecondary, marginTop: -4 },
 
   peopleTagRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  peopleTag: {
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14,
-    backgroundColor: "#F5F5F5",
-  },
+  peopleTag: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: "#F5F5F5" },
   peopleTagActive: { backgroundColor: "#3DAA6F" },
   peopleTagText: { fontSize: 12, fontWeight: "600", color: Colors.light.textSecondary },
   peopleTagTextActive: { color: "#fff" },
@@ -611,7 +776,7 @@ const styles = StyleSheet.create({
   },
   startBtnText: { fontSize: 18, fontWeight: "800", color: "#fff" },
 
-  // Roaming phase header
+  // Roaming header
   roamHeader: {
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: 16, paddingBottom: 10,
@@ -626,7 +791,6 @@ const styles = StyleSheet.create({
   cancelBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: "#F5F5F5", minWidth: 52, alignItems: "center" },
   cancelBtnText: { fontSize: 14, fontWeight: "600", color: "#E53935" },
 
-  // Map
   mapArea: { flex: 1, backgroundColor: "#E8E8E8" },
   mapPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center" },
 
@@ -647,7 +811,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(61,170,111,0.2)", alignItems: "center", justifyContent: "center",
   },
   gaitTitle: { fontSize: 16, fontWeight: "800", color: "#fff" },
-  gaitSubtitle: { fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 1 },
+  gaitSensorRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2 },
+  gaitSensorDot: { width: 6, height: 6, borderRadius: 3 },
+  gaitSubtitle: { fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: "500" },
   gaitSpeedWrap: { alignItems: "flex-end" },
   gaitSpeedVal: { fontSize: 28, fontWeight: "900", color: "#fff", lineHeight: 30 },
   gaitSpeedUnit: { fontSize: 12, color: "rgba(255,255,255,0.7)", fontWeight: "600" },
@@ -665,25 +831,40 @@ const styles = StyleSheet.create({
   gaitMetricLabel: { fontSize: 11, color: Colors.light.textSecondary, fontWeight: "600", letterSpacing: 0.3 },
   gaitMetricVal: { fontSize: 26, fontWeight: "800", color: Colors.light.text, lineHeight: 30 },
   gaitMetricUnit: { fontSize: 12, color: Colors.light.textSecondary },
-  gaitLoadRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   gaitArpLabelRow: { flexDirection: "row", alignItems: "center", gap: 4 },
 
-  // ARP modal
+  // ARP Modal
   arpOverlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.55)",
     justifyContent: "center", alignItems: "center", padding: 24,
   },
   arpModal: {
     width: "100%", backgroundColor: "#fff", borderRadius: 28,
-    padding: 24, alignItems: "center", gap: 12,
+    padding: 24, alignItems: "center", gap: 10,
     shadowColor: "#000", shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 20,
   },
   arpModalIconWrap: {
     width: 60, height: 60, borderRadius: 30,
     backgroundColor: "#E8F5F0", alignItems: "center", justifyContent: "center",
   },
-  arpModalTitle: { fontSize: 18, fontWeight: "800", color: Colors.light.text, textAlign: "center", lineHeight: 24 },
-  arpModalSub: { fontSize: 12, color: Colors.light.textSecondary, textAlign: "center" },
+  arpModalTitle: { fontSize: 17, fontWeight: "800", color: Colors.light.text, textAlign: "center", lineHeight: 24 },
+  arpModalSub: { fontSize: 11, color: Colors.light.textSecondary, textAlign: "center" },
+
+  arpGaitRow: {
+    flexDirection: "row", width: "100%", backgroundColor: "#F6F6F8",
+    borderRadius: 14, padding: 14, alignItems: "center", justifyContent: "space-around",
+  },
+  arpGaitItem: { alignItems: "center", gap: 3 },
+  arpGaitVal: { fontSize: 20, fontWeight: "800", color: Colors.light.text },
+  arpGaitLabel: { fontSize: 10, color: Colors.light.textSecondary, fontWeight: "600" },
+  arpGaitDivider: { width: 1, height: 32, backgroundColor: "#E0E0E0" },
+
+  arpInterestRow: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    borderWidth: 1.5, alignSelf: "center",
+  },
+  arpInterestText: { fontSize: 13, fontWeight: "700" },
 
   arpRouteCard: {
     flexDirection: "row", width: "100%", backgroundColor: "#F6F6F8",
@@ -697,9 +878,7 @@ const styles = StyleSheet.create({
   arpOptRow: { flexDirection: "row", alignItems: "baseline", gap: 4 },
   arpSavedKm: { fontSize: 13, fontWeight: "700" },
 
-  arpModalDesc: {
-    fontSize: 14, color: Colors.light.textSecondary, lineHeight: 21, textAlign: "center",
-  },
+  arpModalDesc: { fontSize: 13, color: Colors.light.textSecondary, lineHeight: 20, textAlign: "center" },
   arpActionBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
     gap: 8, width: "100%", paddingVertical: 16, borderRadius: 20,
