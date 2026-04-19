@@ -388,7 +388,9 @@ export default function AdaptiveRoamScreen() {
 
   const interestLabel  = INTEREST_LABELS[topInterest] ?? "文化建筑";
   // Show real values (including 0) once sensor is confirmed; "--" only during init
-  const speedDisplay   = sensorReady ? speed.toFixed(1) : "--";
+  // Convert km/h → m/min for display (1 km/h = 16.67 m/min)
+  const speedMpm       = Math.round(speed * 1000 / 60);
+  const speedDisplay   = sensorReady ? String(speedMpm) : "--";
   const freqDisplay    = sensorReady ? String(freq) : "--";
   const stepLenDisplay = sensorReady ? stepLen.toFixed(2) : "--";
 
@@ -596,7 +598,7 @@ export default function AdaptiveRoamScreen() {
           </View>
           <View style={styles.gaitSpeedWrap}>
             <Text style={styles.gaitSpeedVal}>{speedDisplay}</Text>
-            <Text style={styles.gaitSpeedUnit}>km/h</Text>
+            <Text style={styles.gaitSpeedUnit}>米/分</Text>
             <Text style={styles.gaitSpeedLabel}>当前步速</Text>
           </View>
         </LinearGradient>
@@ -665,7 +667,7 @@ export default function AdaptiveRoamScreen() {
             <View style={styles.arpGaitRow}>
               <View style={styles.arpGaitItem}>
                 <Text style={styles.arpGaitVal}>{speedDisplay}</Text>
-                <Text style={styles.arpGaitLabel}>步速 km/h</Text>
+                <Text style={styles.arpGaitLabel}>步速 米/分</Text>
               </View>
               <View style={styles.arpGaitDivider} />
               <View style={styles.arpGaitItem}>
@@ -718,10 +720,10 @@ export default function AdaptiveRoamScreen() {
               {arpLevel === "等待步行"
                 ? `手机计步器已就绪，正在监听步态数据。请开始行走，系统将实时分析您的步频、步速与稳定性，并自动调整路线方案。`
                 : arpLevel === "疲劳预警"
-                ? `步速放缓至 ${speedDisplay} km/h，休息频次增加${restCountRef.current > 0 ? `（已记录 ${restCountRef.current} 次）` : ""}，路径已从 ${baseRoute.km}km 缩减至 ${currentRoute.km}km，并插入休息节点，避免疲劳影响游览体验。`
+                ? `步速放缓至 ${speedDisplay} 米/分，休息频次增加${restCountRef.current > 0 ? `（已记录 ${restCountRef.current} 次）` : ""}，路径已从 ${baseRoute.km}km 缩减至 ${currentRoute.km}km，并插入休息节点，避免疲劳影响游览体验。`
                 : arpLevel === "适中"
                 ? `步态稳定，稳定性 ${stability}%。系统已识别您对${interestLabel}的偏好，后续将优先推荐同类景点。`
-                : `步速活跃（${speedDisplay} km/h），系统已为您扩展路线至 ${currentRoute.stops} 个景点（+${stopsDiff}），推荐探索更多${interestLabel}类景区。`}
+                : `步速活跃（${speedDisplay} 米/分），系统已为您扩展路线至 ${currentRoute.stops} 个景点（+${stopsDiff}），推荐探索更多${interestLabel}类景区。`}
             </Text>
 
             {arpAccepted ? (
