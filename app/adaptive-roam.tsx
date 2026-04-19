@@ -150,6 +150,27 @@ export default function AdaptiveRoamScreen() {
     let accelSub: { remove: () => void } | null = null;
     let fallbackTimer: ReturnType<typeof setInterval> | null = null;
 
+    const activateFallback = () => {
+      if (useFallback.current) return;
+      useFallback.current = true;
+      setSensorReady(true);
+      let spd = 4.2, sl = 0.60, fr = 110;
+      fallbackTimer = setInterval(() => {
+        spd = +Math.max(2.2, Math.min(6.5, spd + (Math.random() - 0.5) * 0.5)).toFixed(1);
+        sl  = +Math.max(0.38, Math.min(0.88, sl  + (Math.random() - 0.5) * 0.04)).toFixed(2);
+        fr  = Math.round(Math.max(80, Math.min(140, fr + (Math.random() - 0.5) * 6)));
+        setSpeed(spd);
+        setStepLen(sl);
+        setFreq(fr);
+        if (spd < 1.0) {
+          if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
+        } else { wasRestingRef.current = false; }
+      }, 2500);
+    };
+
+    // Safety timeout: if no pedometer data within 8 s, fall back to simulation
+    const fallbackTimeout = setTimeout(activateFallback, 8000);
+
     (async () => {
       // Accelerometer — always available, no permission needed
       Accelerometer.setUpdateInterval(250);
@@ -161,7 +182,6 @@ export default function AdaptiveRoamScreen() {
         if (accelBuf.current.length >= 12) {
           const mean = accelBuf.current.reduce((a, b) => a + b, 0) / accelBuf.current.length;
           const variance = accelBuf.current.reduce((a, b) => a + (b - mean) ** 2, 0) / accelBuf.current.length;
-          // variance ~0 = very steady, ~1+ = walking, ~3+ = running/erratic
           const stab = Math.round(Math.max(62, Math.min(100, 100 - variance * 14)));
           setStability(stab);
         }
@@ -172,34 +192,31 @@ export default function AdaptiveRoamScreen() {
 
       if (isPedoAvail) {
         pedometerSub = Pedometer.watchStepCount(result => {
+          // First callback: cancel fallback timeout, mark ready
+          clearTimeout(fallbackTimeout);
+          setSensorReady(true);
+
           const now = Date.now();
           const ref = pedoRef.current;
 
           if (ref) {
             const dtMin = (now - ref.time) / 60000;
-            if (dtMin >= 0.08) { // recalculate every ~5 s
+            if (dtMin >= 0.08) {
               const stepsInWindow = result.steps - ref.count;
-              const cadence = Math.round(stepsInWindow / dtMin); // steps/min
+              const cadence = Math.round(stepsInWindow / dtMin);
               const clampedCadence = Math.max(0, Math.min(220, cadence));
-
-              // Estimated step length from cadence (Grieve formula approx)
-              // sl ≈ 0.35 + clampedCadence * 0.003  (0.4 m at 80 spm → 0.7 m at 120 spm)
               const sl = +(Math.min(0.90, Math.max(0.35, 0.35 + clampedCadence * 0.003))).toFixed(2);
-              // Speed km/h = cadence [steps/min] × sl [m/step] / 60 [s/min] × 3.6
               const spd = +Math.min(9, Math.max(0, (clampedCadence * sl / 60) * 3.6)).toFixed(1);
 
               setFreq(clampedCadence);
               setStepLen(sl);
               setSpeed(spd);
-              setSensorReady(true);
 
-              // Track rest events
               if (spd < 1.0) {
                 if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
               } else {
                 wasRestingRef.current = false;
               }
-
               pedoRef.current = { count: result.steps, time: now };
             }
           } else {
@@ -207,26 +224,13 @@ export default function AdaptiveRoamScreen() {
           }
         });
       } else {
-        // Fallback: simulate realistic gait when pedometer unavailable
-        useFallback.current = true;
-        setSensorReady(true);
-        let spd = 4.2, sl = 0.60, fr = 110;
-        fallbackTimer = setInterval(() => {
-          spd  = +Math.max(2.2, Math.min(6.5, spd  + (Math.random() - 0.5) * 0.5)).toFixed(1);
-          sl   = +Math.max(0.38, Math.min(0.88, sl  + (Math.random() - 0.5) * 0.04)).toFixed(2);
-          fr   = Math.round(Math.max(80, Math.min(140, fr + (Math.random() - 0.5) * 6)));
-          setSpeed(spd);
-          setStepLen(sl);
-          setFreq(fr);
-
-          if (spd < 1.0) {
-            if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
-          } else { wasRestingRef.current = false; }
-        }, 2500);
+        clearTimeout(fallbackTimeout);
+        activateFallback();
       }
     })();
 
     return () => {
+      clearTimeout(fallbackTimeout);
       pedometerSub?.remove();
       accelSub?.remove();
       if (fallbackTimer) clearInterval(fallbackTimer);
