@@ -125,7 +125,7 @@ export default function AdaptiveRoamScreen() {
     // Don't trigger route changes while user hasn't started walking yet
     if (!useFallback.current && speed === 0) return;
 
-    const arpState = speed >= 3.5 ? "活跃" : speed >= 1.8 ? "适中" : "疲劳预警";
+    const arpState = speed >= 3.0 ? "活跃" : speed >= 1.2 ? "适中" : "疲劳预警";
     if (arpState === prevArpStateRef.current) return;
     prevArpStateRef.current = arpState;
 
@@ -151,23 +151,27 @@ export default function AdaptiveRoamScreen() {
     let pedometerSub: { remove: () => void } | null = null;
     let accelSub: { remove: () => void } | null = null;
 
-    // Step detection state (accelerometer-based, unit-agnostic zero-crossing)
-    let smoothMag = -1;            // -1 = not yet initialized
-    let prevDev   = 0;
+    // Step detection — dual-EMA band-pass approach
+    // fastMag (τ≈110ms): smooths noise, preserves step rhythm (~1-2 Hz)
+    // slowMag (τ≈1300ms): tracks gravity/orientation drift only
+    // dev = fastMag - slowMag isolates the walking signal
+    let fastMag = -1;
+    let slowMag = -1;
+    let prevDev  = 0;
     let lastStepTime = 0;
     const stepTimes: number[] = [];
-    let pedoActive = false;         // true once pedometer fires at least one step
+    let pedoActive = false;
 
-    // Mark sensor ready immediately — accel always works
+    // Mark sensor ready immediately
     setSensorReady(true);
     useFallback.current = false;
 
-    // Accelerometer: 40ms interval (25 Hz) for reliable step detection
+    // 40ms = 25 Hz — good resolution for walking (~1-2 Hz steps)
     Accelerometer.setUpdateInterval(40);
     accelSub = Accelerometer.addListener(({ x, y, z }) => {
       const mag = Math.sqrt(x * x + y * y + z * z);
 
-      // ── Stability (rolling variance over 50 samples ≈ 2 s) ───────
+      // ── Stability (rolling variance, 50 samples ≈ 2 s) ──────────
       accelBuf.current.push(mag);
       if (accelBuf.current.length > 50) accelBuf.current.shift();
       if (accelBuf.current.length >= 15) {
@@ -176,52 +180,53 @@ export default function AdaptiveRoamScreen() {
         setStability(Math.round(Math.max(62, Math.min(100, 100 - variance * 14))));
       }
 
-      // ── Step detection (only when pedometer unavailable/blocked) ──
+      // ── Step detection (skipped when pedometer provides data) ────
       if (pedoActive) return;
 
-      // Initialize smooth baseline on first sample
-      if (smoothMag < 0) { smoothMag = mag; return; }
+      if (fastMag < 0) { fastMag = mag; slowMag = mag; return; }
 
-      // EMA: alpha=0.85 — fast enough to track step oscillations (~1-2 Hz)
-      // expo-sensors returns g units on both Android and iOS (mag ≈ 1.0 at rest)
-      smoothMag = 0.85 * smoothMag + 0.15 * mag;
-      const dev = mag - smoothMag;
+      // Dual EMA: τ_fast≈110ms (α=0.70), τ_slow≈1300ms (α=0.97)
+      fastMag = 0.70 * fastMag + 0.30 * mag;
+      slowMag = 0.97 * slowMag + 0.03 * mag;
+      const dev = fastMag - slowMag;  // band-pass walking signal
 
       const now = Date.now();
-      // Debug: log every ~2s so we can verify threshold live
       if (now % 2000 < 40) {
-        console.log(`[Accel] mag=${mag.toFixed(3)} smooth=${smoothMag.toFixed(3)} dev=${dev.toFixed(3)} steps=${stepTimes.length}`);
+        console.log(`[Accel] mag=${mag.toFixed(3)} fast=${fastMag.toFixed(3)} slow=${slowMag.toFixed(3)} dev=${dev.toFixed(3)} steps=${stepTimes.length}`);
       }
 
-      // Positive zero-crossing = upswing of a step impact
-      // Normal walking produces dev peaks of 0.10-0.25g; large motion goes 0.4+
-      // Threshold 0.10g catches normal walking while ignoring phone vibration noise
-      if (prevDev < 0 && dev >= 0.10 && (now - lastStepTime) > 250) {
+      // Positive zero-crossing with threshold ≥0.08g
+      // fast-slow band-pass reliably oscillates ±0.15-0.30g during normal walking
+      if (prevDev < 0 && dev >= 0.08 && (now - lastStepTime) > 250) {
         lastStepTime = now;
 
-        // Keep only steps within last 6 seconds
+        // Rolling 8-second window (more stable cadence average)
         stepTimes.push(now);
-        const cutoff = now - 6000;
+        const cutoff = now - 8000;
         let i = 0;
         while (i < stepTimes.length && stepTimes[i] < cutoff) i++;
         if (i > 0) stepTimes.splice(0, i);
 
-        if (stepTimes.length >= 2) {
-          // cadence from rolling 6-second window
-          const cadence = Math.round((stepTimes.length / 6) * 60);
+        if (stepTimes.length >= 3) {
+          // cadence derived from average interval between detected steps
+          const intervals: number[] = [];
+          for (let j = 1; j < stepTimes.length; j++) {
+            intervals.push(stepTimes[j] - stepTimes[j - 1]);
+          }
+          const avgIntervalMs = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+          const cadence = Math.round(60000 / avgIntervalMs);
           const clamped = Math.max(0, Math.min(200, cadence));
           const sl  = +(Math.min(0.90, Math.max(0.35, 0.35 + clamped * 0.003))).toFixed(2);
           const spd = +Math.min(8, Math.max(0, (clamped * sl / 60) * 3.6)).toFixed(1);
 
+          console.log(`[Accel] cadence=${clamped} sl=${sl} spd=${spd}`);
           setFreq(clamped);
           setStepLen(sl);
           setSpeed(spd);
 
           if (spd < 1.0) {
             if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
-          } else {
-            wasRestingRef.current = false;
-          }
+          } else { wasRestingRef.current = false; }
         }
       }
       prevDev = dev;
@@ -360,11 +365,11 @@ export default function AdaptiveRoamScreen() {
   // "等待步行" when real sensor is active but user not moving yet (speed=0, not fallback)
   const isWaiting = sensorReady && !useFallback.current && speed === 0;
   const arpLevel: string = isWaiting ? "等待步行"
-    : speed >= 3.5 ? "活跃" : speed >= 1.8 ? "适中" : "疲劳预警";
+    : speed >= 3.0 ? "活跃" : speed >= 1.2 ? "适中" : "疲劳预警";
   const arpColor = isWaiting ? "#78909C"
-    : speed >= 3.5 ? "#3DAA6F" : speed >= 1.8 ? "#2196F3" : "#E8873A";
+    : speed >= 3.0 ? "#3DAA6F" : speed >= 1.2 ? "#2196F3" : "#E8873A";
   const arpIcon: keyof typeof MaterialCommunityIcons.glyphMap = isWaiting ? "walk"
-    : speed >= 3.5 ? "lightning-bolt" : speed >= 1.8 ? "chart-line" : "alert-circle-outline";
+    : speed >= 3.0 ? "lightning-bolt" : speed >= 1.2 ? "chart-line" : "alert-circle-outline";
 
   const currentRoute = ROUTE_LEVELS[arpRouteLevel];
   const baseLevel    = timeToLevel(selectedTime);
