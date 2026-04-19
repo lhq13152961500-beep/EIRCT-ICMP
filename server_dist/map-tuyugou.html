@@ -296,6 +296,75 @@ window.drawRouteFromPosition = function(poiIds, color, userLng, userLat) {
   window.drawRoute(remaining, color);
 };
 
+// ── Rest spot markers ────────────────────────────────────────────────────────
+
+var _restMarkers = [];
+
+// Place a rest-spot marker at GCJ-02 coords. restCount is the ordinal (1, 2, …).
+window.addRestMarker = function(gcjLng, gcjLat, restCount) {
+  var w = gcj2wgs(gcjLng, gcjLat);
+  var label = restCount === 1 ? '休息点' : '第' + restCount + '次休息';
+  var icon = L.divIcon({
+    html: '<div style="display:flex;flex-direction:column;align-items:center">'
+        + '<div style="width:36px;height:36px;border-radius:50%;background:#FF7043;display:flex;align-items:center;'
+        +   'justify-content:center;border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);font-size:17px">🪑</div>'
+        + '<div style="margin-top:2px;background:rgba(255,112,67,0.9);color:#fff;font-size:9px;font-weight:700;'
+        +   'padding:1px 5px;border-radius:6px;white-space:nowrap">' + label + '</div>'
+        + '</div>',
+    className: '',
+    iconSize: null,
+    iconAnchor: [18, 38],
+  });
+  var m = L.marker([w[1], w[0]], { icon: icon, zIndexOffset: 400 }).addTo(map);
+  _restMarkers.push(m);
+};
+
+// Internal: WGS84 [lat,lng] array of rest waypoints for polyline insertion
+var _restWaypoints = [];
+
+// Squared 2D distance between two [lat,lng] arrays (no need for Haversine at this scale)
+function _dist2(a, b) {
+  var dlat = a[0] - b[0], dlng = a[1] - b[1];
+  return dlat * dlat + dlng * dlng;
+}
+
+// Insert rest position into the current route polyline as an intermediate waypoint.
+// Finds the segment [i, i+1] where insertion minimises total detour, then splices it in.
+window.insertRestIntoRoute = function(gcjLng, gcjLat) {
+  if (!_routePolyline) return;
+  var w = gcj2wgs(gcjLng, gcjLat);
+  var wpt = [w[1], w[0]]; // [lat, lng] in WGS84
+
+  var pts = _routePolyline.getLatLngs().map(function(ll) { return [ll.lat, ll.lng]; });
+  if (pts.length < 2) return;
+
+  // Find the best insertion index (minimise added distance)
+  var bestIdx = 1;
+  var minDetour = Infinity;
+  for (var i = 0; i < pts.length - 1; i++) {
+    var detour = Math.sqrt(_dist2(pts[i], wpt)) + Math.sqrt(_dist2(wpt, pts[i + 1]))
+               - Math.sqrt(_dist2(pts[i], pts[i + 1]));
+    if (detour < minDetour) { minDetour = detour; bestIdx = i + 1; }
+  }
+
+  pts.splice(bestIdx, 0, wpt);
+  _restWaypoints.push(wpt);
+
+  // Redraw polyline with inserted waypoint, keep same style
+  var color = _routePolyline.options.color;
+  _routePolyline.remove();
+  _routePolyline = L.polyline(pts, {
+    color: color, weight: 5, opacity: 0.88, lineJoin: 'round', lineCap: 'round',
+  }).addTo(map);
+};
+
+// Remove all rest markers (call on session reset)
+window.clearRestMarkers = function() {
+  _restMarkers.forEach(function(m) { m.remove(); });
+  _restMarkers = [];
+  _restWaypoints = [];
+};
+
 // ── Visited POI tracking ──────────────────────────────────────────────────────
 
 var _visitedIds = [];

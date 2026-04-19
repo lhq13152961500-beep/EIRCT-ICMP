@@ -318,7 +318,18 @@ export default function AdaptiveRoamScreen() {
           setSpeed(spd);
 
           if (spd < 1.0) {
-            if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
+            if (!wasRestingRef.current) {
+              restCountRef.current += 1;
+              wasRestingRef.current = true;
+              const loc = userLocRef.current;
+              if (loc) {
+                // Place marker + insert as polyline waypoint
+                injectJs(
+                  `window.addRestMarker && window.addRestMarker(${loc.lng}, ${loc.lat}, ${restCountRef.current});` +
+                  `window.insertRestIntoRoute && window.insertRestIntoRoute(${loc.lng}, ${loc.lat});`
+                );
+              }
+            }
           } else { wasRestingRef.current = false; }
         }
       } else if (!stepArmed && dev < STEP_LOW) {
@@ -355,7 +366,17 @@ export default function AdaptiveRoamScreen() {
               const spd = +Math.min(9, Math.max(0, (clamped * sl / 60) * 3.6)).toFixed(1);
               setFreq(clamped); setStepLen(sl); setSpeed(spd);
               if (spd < 1.0) {
-                if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
+                if (!wasRestingRef.current) {
+                  restCountRef.current += 1;
+                  wasRestingRef.current = true;
+                  const loc = userLocRef.current;
+                  if (loc) {
+                    injectJs(
+                      `window.addRestMarker && window.addRestMarker(${loc.lng}, ${loc.lat}, ${restCountRef.current});` +
+                      `window.insertRestIntoRoute && window.insertRestIntoRoute(${loc.lng}, ${loc.lat});`
+                    );
+                  }
+                }
               } else { wasRestingRef.current = false; }
               pedoRef.current = { count: result.steps, time: now };
             }
