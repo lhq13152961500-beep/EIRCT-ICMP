@@ -121,9 +121,9 @@ export default function AdaptiveRoamScreen() {
 
   // ── ARP state transition ──────────────────────────────────────
   useEffect(() => {
-    if (phase !== "roaming" || !mapReady) return;
-    // Only react to sensor data once it's stabilised (or fallback active)
-    if (!sensorReady && !useFallback.current) return;
+    if (phase !== "roaming" || !mapReady || !sensorReady) return;
+    // Don't trigger route changes while user hasn't started walking yet
+    if (!useFallback.current && speed === 0) return;
 
     const arpState = speed >= 3.5 ? "活跃" : speed >= 1.8 ? "适中" : "疲劳预警";
     if (arpState === prevArpStateRef.current) return;
@@ -168,11 +168,8 @@ export default function AdaptiveRoamScreen() {
       }, 2500);
     };
 
-    // Safety timeout: if no pedometer data within 8 s, fall back to simulation
-    const fallbackTimeout = setTimeout(activateFallback, 8000);
-
     (async () => {
-      // Accelerometer — always available, no permission needed
+      // Accelerometer — no permission needed, start immediately
       Accelerometer.setUpdateInterval(250);
       accelSub = Accelerometer.addListener(({ x, y, z }) => {
         const mag = Math.sqrt(x * x + y * y + z * z);
@@ -187,16 +184,16 @@ export default function AdaptiveRoamScreen() {
         }
       });
 
-      // Pedometer — request permission first (Android ACTIVITY_RECOGNITION / iOS Motion)
+      // Pedometer — request permission, then check hardware availability
       const { status } = await Pedometer.requestPermissionsAsync().catch(() => ({ status: "denied" }));
       const isPedoAvail = status === "granted" && await Pedometer.isAvailableAsync().catch(() => false);
 
       if (isPedoAvail) {
-        pedometerSub = Pedometer.watchStepCount(result => {
-          // First callback: cancel fallback timeout, mark ready
-          clearTimeout(fallbackTimeout);
-          setSensorReady(true);
+        // Sensor confirmed: mark ready immediately with 0 values.
+        // Data will update as soon as the user takes steps — no timeout needed.
+        setSensorReady(true);
 
+        pedometerSub = Pedometer.watchStepCount(result => {
           const now = Date.now();
           const ref = pedoRef.current;
 
@@ -225,13 +222,12 @@ export default function AdaptiveRoamScreen() {
           }
         });
       } else {
-        clearTimeout(fallbackTimeout);
+        // Permission denied or hardware unavailable — use simulation
         activateFallback();
       }
     })();
 
     return () => {
-      clearTimeout(fallbackTimeout);
       pedometerSub?.remove();
       accelSub?.remove();
       if (fallbackTimer) clearInterval(fallbackTimer);
@@ -321,11 +317,15 @@ export default function AdaptiveRoamScreen() {
   const [arpModalVisible, setArpModalVisible] = useState(false);
   const [arpAccepted, setArpAccepted]         = useState(false);
 
-  // Derived ARP state from real speed
-  const arpLevel = speed >= 3.5 ? "活跃" : speed >= 1.8 ? "适中" : "疲劳预警";
-  const arpColor = speed >= 3.5 ? "#3DAA6F" : speed >= 1.8 ? "#2196F3" : "#E8873A";
-  const arpIcon: keyof typeof MaterialCommunityIcons.glyphMap =
-    speed >= 3.5 ? "lightning-bolt" : speed >= 1.8 ? "chart-line" : "alert-circle-outline";
+  // Derived ARP state
+  // "等待步行" when real sensor is active but user not moving yet (speed=0, not fallback)
+  const isWaiting = sensorReady && !useFallback.current && speed === 0;
+  const arpLevel: string = isWaiting ? "等待步行"
+    : speed >= 3.5 ? "活跃" : speed >= 1.8 ? "适中" : "疲劳预警";
+  const arpColor = isWaiting ? "#78909C"
+    : speed >= 3.5 ? "#3DAA6F" : speed >= 1.8 ? "#2196F3" : "#E8873A";
+  const arpIcon: keyof typeof MaterialCommunityIcons.glyphMap = isWaiting ? "walk"
+    : speed >= 3.5 ? "lightning-bolt" : speed >= 1.8 ? "chart-line" : "alert-circle-outline";
 
   const currentRoute = ROUTE_LEVELS[arpRouteLevel];
   const baseLevel    = timeToLevel(selectedTime);
@@ -333,10 +333,11 @@ export default function AdaptiveRoamScreen() {
   const kmDiff       = +(currentRoute.km - baseRoute.km).toFixed(1);
   const stopsDiff    = currentRoute.stops - baseRoute.stops;
 
-  const interestLabel = INTEREST_LABELS[topInterest] ?? "文化建筑";
-  const speedDisplay  = sensorReady || useFallback.current ? speed.toFixed(1) : "--";
-  const freqDisplay   = sensorReady || useFallback.current ? String(freq) : "--";
-  const stepLenDisplay = sensorReady || useFallback.current ? stepLen.toFixed(2) : "--";
+  const interestLabel  = INTEREST_LABELS[topInterest] ?? "文化建筑";
+  // Show real values (including 0) once sensor is confirmed; "--" only during init
+  const speedDisplay   = sensorReady ? speed.toFixed(1) : "--";
+  const freqDisplay    = sensorReady ? String(freq) : "--";
+  const stepLenDisplay = sensorReady ? stepLen.toFixed(2) : "--";
 
   // ── SETUP PHASE ───────────────────────────────────────────────
   if (phase === "setup") {
@@ -594,7 +595,9 @@ export default function AdaptiveRoamScreen() {
             </View>
 
             <Text style={styles.arpModalTitle}>
-              {arpLevel === "疲劳预警"
+              {arpLevel === "等待步行"
+                ? "传感器就绪：等待步行开始"
+                : arpLevel === "疲劳预警"
                 ? "检测到疲劳：正在优化路线"
                 : arpLevel === "适中"
                 ? "步态良好：路线持续分析中"
@@ -659,7 +662,9 @@ export default function AdaptiveRoamScreen() {
             </View>
 
             <Text style={styles.arpModalDesc}>
-              {arpLevel === "疲劳预警"
+              {arpLevel === "等待步行"
+                ? `手机计步器已就绪，正在监听步态数据。请开始行走，系统将实时分析您的步频、步速与稳定性，并自动调整路线方案。`
+                : arpLevel === "疲劳预警"
                 ? `步速放缓至 ${speedDisplay} km/h，休息频次增加${restCountRef.current > 0 ? `（已记录 ${restCountRef.current} 次）` : ""}，路径已从 ${baseRoute.km}km 缩减至 ${currentRoute.km}km，并插入休息节点，避免疲劳影响游览体验。`
                 : arpLevel === "适中"
                 ? `步态稳定，稳定性 ${stability}%。系统已识别您对${interestLabel}的偏好，后续将优先推荐同类景点。`
@@ -681,7 +686,10 @@ export default function AdaptiveRoamScreen() {
                 }}
               >
                 <Text style={styles.arpActionBtnText}>
-                  {arpLevel === "疲劳预警" ? "接受优化路线" : arpLevel === "适中" ? "应用偏好推荐" : "探索延伸景点"}
+                  {arpLevel === "等待步行" ? "知道了，开始行走"
+                    : arpLevel === "疲劳预警" ? "接受优化路线"
+                    : arpLevel === "适中" ? "应用偏好推荐"
+                    : "探索延伸景点"}
                 </Text>
                 <Ionicons name="navigate" size={16} color="#fff" />
               </Pressable>
