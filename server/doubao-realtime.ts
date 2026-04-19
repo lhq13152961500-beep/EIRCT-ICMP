@@ -1,9 +1,6 @@
 import WebSocket from "ws";
 import { randomUUID } from "crypto";
-import { execFile } from "child_process";
-import { writeFile, readFile, unlink } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
+import { spawn } from "child_process";
 
 const REALTIME_WS_URL = "wss://openspeech.bytedance.com/api/v3/realtime/dialogue";
 const APP_KEY = "PlgvMymc7f3tQnJ6";
@@ -26,8 +23,6 @@ const EVT_TASK_REQUEST  = 200;
 const EVT_CONN_STARTED  = 50;
 const EVT_TTS_ENDED     = 359;
 
-// O2.0 model built-in voices: zh_female_vv_jupiter_bigtts (活泼女声, default)
-// zh_female_xiaohe_jupiter_bigtts / zh_male_yunzhou_jupiter_bigtts / zh_male_xiaotian_jupiter_bigtts
 export const DEFAULT_SPEAKER = "zh_female_vv_jupiter_bigtts";
 
 function int32BE(n: number): Buffer {
@@ -92,7 +87,7 @@ function parseServerMsg(raw: Buffer): ParsedMsg {
     if (plSize > 0 && off + plSize <= raw.length) {
       errorText = raw.subarray(off, off + plSize).toString("utf-8");
     }
-    console.error(`[DoubaoS2S] ERROR code=${errorCode} msg=${errorText || raw.toString("hex")}`);
+    console.error(`[S2S-Conn] ERROR code=${errorCode} msg=${errorText || raw.toString("hex")}`);
     return { msgType, eventId: 0, payload: Buffer.alloc(0), errorCode, errorText };
   }
 
@@ -129,17 +124,316 @@ function parseServerMsg(raw: Buffer): ParsedMsg {
   return { msgType, eventId, payload };
 }
 
-async function convertM4aToPcm(m4aPath: string, pcmPath: string): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    execFile(
-      "ffmpeg",
-      ["-y", "-i", m4aPath, "-ar", "16000", "-ac", "1", "-f", "s16le", "-acodec", "pcm_s16le", pcmPath],
-      (err) => (err ? reject(err) : resolve())
-    );
+// ── In-memory PCM conversion — no temp files, no disk I/O ───────────────────
+async function convertM4aToPcmInMemory(m4aBuffer: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("ffmpeg", [
+      "-y", "-f", "mp4", "-i", "pipe:0",
+      "-ar", "16000", "-ac", "1", "-f", "s16le", "pipe:1",
+    ]);
+    const chunks: Buffer[] = [];
+    proc.stdout.on("data", (d: Buffer) => chunks.push(d));
+    proc.stdout.on("end", () => resolve(Buffer.concat(chunks)));
+    proc.stderr.on("data", () => {});
+    proc.on("error", reject);
+    proc.stdin.write(m4aBuffer);
+    proc.stdin.end();
   });
 }
 
-// Doubao ARK LLM — used for HTTP TTS path when S2S LLM response is needed
+async function convertPcmToMp3InMemory(pcmBuffer: Buffer, sampleRate = 24000): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("ffmpeg", [
+      "-y",
+      "-f", "s16le", "-ar", String(sampleRate), "-ac", "1",
+      "-i", "pipe:0",
+      "-f", "mp3", "pipe:1",
+    ]);
+    const chunks: Buffer[] = [];
+    proc.stdout.on("data", (d: Buffer) => chunks.push(d));
+    proc.stdout.on("end", () => resolve(Buffer.concat(chunks)));
+    proc.stderr.on("data", () => {});
+    proc.on("error", reject);
+    proc.stdin.write(pcmBuffer);
+    proc.stdin.end();
+  });
+}
+
+// ── Persistent WebSocket connection (reused across turns) ────────────────────
+type MsgHandler = (msg: ParsedMsg) => void;
+
+class PersistentRealtimeConn {
+  private ws: WebSocket | null = null;
+  private seq = 0;
+  private connStarted = false;
+  private connecting: Promise<void> | null = null;
+  private msgHandler: MsgHandler | null = null;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly IDLE_MS = 90_000; // close after 90s idle
+
+  private nextSeq() { return ++this.seq; }
+
+  private resetIdleTimer() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      console.log("[S2S-Conn] Idle timeout — closing persistent WS");
+      this.close();
+    }, this.IDLE_MS);
+  }
+
+  private isReady(): boolean {
+    return !!(this.ws && this.ws.readyState === 1 && this.connStarted);
+  }
+
+  async ensureConnected(appId: string, token: string): Promise<void> {
+    if (this.isReady()) { this.resetIdleTimer(); return; }
+    if (this.connecting) return this.connecting;
+
+    this.seq = 0;
+    this.connStarted = false;
+
+    this.connecting = new Promise<void>((resolve, reject) => {
+      const ws = new WebSocket(REALTIME_WS_URL, {
+        headers: {
+          "X-Api-App-ID":       appId,
+          "X-Api-Access-Key":   token,
+          "X-Api-Resource-Id":  "volc.speech.dialog",
+          "X-Api-App-Key":      APP_KEY,
+          "X-Api-Connect-Id":   randomUUID(),
+        },
+      });
+
+      const onConnectTimeout = setTimeout(() => {
+        ws.terminate();
+        reject(new Error("WS connect timeout"));
+      }, 8000);
+
+      ws.on("open", () => {
+        console.log("[S2S-Conn] WS open → StartConnection");
+        ws.send(buildConnectEvent(EVT_START_CONN, this.nextSeq()));
+      });
+
+      ws.on("message", (raw: Buffer) => {
+        const msg = parseServerMsg(raw);
+
+        if (!this.connStarted) {
+          if (msg.eventId === EVT_CONN_STARTED) {
+            clearTimeout(onConnectTimeout);
+            console.log("[S2S-Conn] Connected ✓ (persistent)");
+            this.ws = ws;
+            this.connStarted = true;
+            this.connecting = null;
+            this.resetIdleTimer();
+            resolve();
+          } else if (msg.eventId === 51 || msg.msgType === MT_ERROR) {
+            clearTimeout(onConnectTimeout);
+            this.connecting = null;
+            reject(new Error(`ConnectFailed evt=${msg.eventId} err=${msg.errorText || ""}`));
+          }
+          return;
+        }
+        this.msgHandler?.(msg);
+      });
+
+      ws.on("error", (err) => {
+        clearTimeout(onConnectTimeout);
+        this.connecting = null;
+        this.connStarted = false;
+        reject(err);
+      });
+
+      ws.on("close", (code) => {
+        console.log(`[S2S-Conn] WS closed code=${code}`);
+        this.ws = null;
+        this.connStarted = false;
+        if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
+      });
+    });
+
+    return this.connecting;
+  }
+
+  async runTurn(
+    appId: string,
+    token: string,
+    pcmData: Buffer,
+    sessionPayload: object,
+    systemRole: string,
+  ): Promise<S2STurnResult> {
+    // Reconnect if needed
+    try {
+      await this.ensureConnected(appId, token);
+    } catch (e: any) {
+      throw new Error(`S2S connection failed: ${e.message}`);
+    }
+
+    const conn = this; // capture for nested functions
+    const ws = this.ws!;
+    const sessionId = randomUUID();
+    this.resetIdleTimer();
+
+    return new Promise<S2STurnResult>((resolve) => {
+      const audioChunks: Buffer[] = [];
+      let transcript = "";
+      let aiText = "";
+      let settled = false;
+      let ttsKnownFailed = false;
+      let sessionStarted = false;
+      let textWaitTimer: ReturnType<typeof setTimeout> | null = null;
+      let postAudioTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const settle = (result: S2STurnResult) => {
+        if (settled) return;
+        settled = true;
+        this.msgHandler = null;
+        if (textWaitTimer) { clearTimeout(textWaitTimer); textWaitTimer = null; }
+        if (postAudioTimer) { clearTimeout(postAudioTimer); postAudioTimer = null; }
+        clearTimeout(globalTimer);
+        try { ws.send(buildSessionEvent(EVT_FINISH_SESSION, this.nextSeq(), sessionId, {})); } catch {}
+        this.resetIdleTimer();
+        resolve(result);
+      };
+
+      // Global safety timeout — 12s is enough (PCM stream + ASR + LLM + TTS)
+      const globalTimer = setTimeout(() => {
+        console.warn(`[S2S-Turn] Global timeout — chunks=${audioChunks.length} transcript="${transcript}" aiText="${aiText.slice(0, 40)}"`);
+        settle({ audioChunks, transcript, aiText });
+      }, 12000);
+
+      const startTextWaitTimer = () => {
+        if (textWaitTimer) return;
+        textWaitTimer = setTimeout(() => {
+          textWaitTimer = null;
+          settle({ audioChunks: [], transcript, aiText });
+        }, 3000);
+      };
+
+      this.msgHandler = (msg: ParsedMsg) => {
+        // Error frame
+        if (msg.msgType === MT_ERROR) {
+          const errText = msg.errorText || "";
+          if (errText.includes("InvalidSpeaker")) {
+            ttsKnownFailed = true;
+            if (aiText) { settle({ audioChunks: [], transcript, aiText }); }
+            else { startTextWaitTimer(); }
+            return;
+          }
+          console.error(`[S2S-Turn] fatal error: ${errText}`);
+          settle({ audioChunks: [], transcript, aiText });
+          return;
+        }
+
+        // Audio frame
+        if (msg.msgType === MT_AUDIO_SERVER && Buffer.isBuffer(msg.payload) && (msg.payload as Buffer).length > 0) {
+          if (!ttsKnownFailed) audioChunks.push(msg.payload as Buffer);
+          return;
+        }
+
+        if (msg.eventId !== 0) console.log(`[S2S-Turn] evt=${msg.eventId}`);
+
+        switch (msg.eventId) {
+          case 150: // SessionStarted
+            if (sessionStarted) break;
+            sessionStarted = true;
+            console.log("[S2S-Turn] Session started → streaming PCM");
+            streamPcm();
+            break;
+
+          case 451: { // ASR
+            const pl = msg.payload as Record<string, unknown>;
+            const results = (pl?.results as Array<{ text: string; is_interim: boolean }>) ?? [];
+            const final = results.find((r) => !r.is_interim);
+            if (final?.text) { transcript = final.text; console.log("[S2S-Turn] ASR:", transcript); }
+            break;
+          }
+
+          case 550: { // LLM streaming text
+            const pl = msg.payload as Record<string, unknown>;
+            let chunk = "";
+            if (typeof pl?.content === "string") chunk = pl.content;
+            else if (typeof (pl?.delta as Record<string, unknown>)?.content === "string")
+              chunk = (pl.delta as Record<string, unknown>).content as string;
+            else if (typeof pl?.text === "string") chunk = pl.text;
+            else if (typeof pl?.reply === "string") chunk = pl.reply;
+            if (chunk) {
+              aiText += chunk;
+              if (ttsKnownFailed && aiText) {
+                if (textWaitTimer) { clearTimeout(textWaitTimer); textWaitTimer = null; }
+                settle({ audioChunks: [], transcript, aiText });
+              }
+            }
+            break;
+          }
+
+          case EVT_TTS_ENDED: // 359
+            console.log(`[S2S-Turn] TTSEnded chunks=${audioChunks.length}`);
+            settle({ audioChunks, transcript, aiText });
+            break;
+
+          case 153: // SessionFailed
+            console.error("[S2S-Turn] SessionFailed:", JSON.stringify(msg.payload));
+            settle({ audioChunks: [], transcript, aiText });
+            break;
+
+          default:
+            break;
+        }
+      };
+
+      // Start the session
+      ws.send(buildSessionEvent(EVT_START_SESSION, conn.nextSeq(), sessionId, sessionPayload));
+
+      // Stream PCM with setImmediate (no setTimeout delay between chunks)
+      const CHUNK_SIZE = 1280; // 40ms chunks of 16kHz int16 PCM
+      const streamPcm = () => {
+        let offset = 0;
+        const sendNext = () => {
+          if (settled) return;
+          if (offset >= pcmData.length) {
+            console.log("[S2S-Turn] PCM done → last chunk");
+            ws.send(buildLastAudioChunk(conn.nextSeq(), sessionId));
+            postAudioTimer = setTimeout(() => {
+              postAudioTimer = null;
+              if (!settled && audioChunks.length === 0) {
+                console.warn(`[S2S-Turn] Post-audio timeout — transcript="${transcript}"`);
+                settle({ audioChunks: [], transcript, aiText });
+              }
+            }, 6000);
+            return;
+          }
+          const end = Math.min(offset + CHUNK_SIZE, pcmData.length);
+          ws.send(buildAudioChunk(pcmData.subarray(offset, end), conn.nextSeq(), sessionId));
+          offset = end;
+          setImmediate(sendNext);
+        };
+        sendNext();
+      };
+
+      // streamPcm is called from msgHandler when evt 150 (SessionStarted) arrives
+    });
+  }
+
+  close() {
+    if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
+    if (this.ws && this.ws.readyState === 1) {
+      try {
+        this.ws.send(buildConnectEvent(EVT_FINISH_CONN, this.nextSeq()));
+        this.ws.close();
+      } catch {}
+    }
+    this.ws = null;
+    this.connStarted = false;
+  }
+}
+
+// Module-level singleton
+const globalConn = new PersistentRealtimeConn();
+
+export function closeRealtimeConn() {
+  globalConn.close();
+}
+
+// ── ARK LLM (text chat fallback) ─────────────────────────────────────────────
 export async function callDoubaoLLM(userText: string, systemRole: string): Promise<string> {
   const apiKey = process.env.ARK_API_KEY;
   if (!apiKey) return "";
@@ -155,16 +449,14 @@ export async function callDoubaoLLM(userText: string, systemRole: string): Promi
       }),
     });
     const data = await resp.json() as { choices?: { message?: { content?: string } }[] };
-    const text = data.choices?.[0]?.message?.content || "";
-    console.log(`[DoubaoLLM] response="${text.slice(0, 60)}"`);
-    return text;
+    return data.choices?.[0]?.message?.content || "";
   } catch (e: any) {
     console.error("[DoubaoLLM] error:", e.message);
     return "";
   }
 }
 
-// HTTP TTS — produces MP3 audio from text; two cluster fallbacks
+// ── HTTP TTS (fallback when S2S TTS fails) ───────────────────────────────────
 export async function callDoubaoHttpTts(text: string, appId: string, token: string): Promise<Buffer> {
   const attempts = [
     { cluster: "volcano_mega", voice_type: "BV700_V2_streaming" },
@@ -195,26 +487,7 @@ export async function callDoubaoHttpTts(text: string, appId: string, token: stri
   throw new Error("HTTP TTS failed all clusters");
 }
 
-async function convertPcmToMp3(pcmBuffer: Buffer, sampleRate = 24000): Promise<Buffer> {
-  const id = randomUUID();
-  const tmpIn  = join(tmpdir(), `dbs_pcm_${id}.pcm`);
-  const tmpOut = join(tmpdir(), `dbs_mp3_${id}.mp3`);
-  try {
-    await writeFile(tmpIn, pcmBuffer);
-    await new Promise<void>((resolve, reject) => {
-      execFile(
-        "ffmpeg",
-        ["-y", "-f", "s16le", "-ar", String(sampleRate), "-ac", "1", "-i", tmpIn, tmpOut],
-        (err) => (err ? reject(err) : resolve())
-      );
-    });
-    return await readFile(tmpOut);
-  } finally {
-    unlink(tmpIn).catch(() => {});
-    unlink(tmpOut).catch(() => {});
-  }
-}
-
+// ── System prompt builder ────────────────────────────────────────────────────
 export interface DoubaoS2SRequest {
   audioBase64: string;
   mimeType?: string;
@@ -279,321 +552,68 @@ export interface DoubaoS2SResponse {
   aiText?: string;
 }
 
-export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<DoubaoS2SResponse> {
-  const appId       = process.env.VOLCENGINE_APP_ID;
-  const accessToken = process.env.VOLCENGINE_ACCESS_TOKEN;
-  if (!appId || !accessToken) throw new Error("Doubao credentials not configured");
-
-  const tmpId  = randomUUID();
-  const tmpM4a = join(tmpdir(), `dbs_in_${tmpId}.m4a`);
-  const tmpPcm = join(tmpdir(), `dbs_in_${tmpId}.pcm`);
-
-  try {
-    await writeFile(tmpM4a, Buffer.from(req.audioBase64, "base64"));
-    await convertM4aToPcm(tmpM4a, tmpPcm);
-    const pcmData = await readFile(tmpPcm);
-    console.log(`[DoubaoS2S] PCM: ${pcmData.length}B (~${(pcmData.length / 32000).toFixed(1)}s)`);
-
-    const sessionId  = randomUUID();
-    const systemRole = req.systemRole || buildSystemPrompt(req.emotion, req.location, req.activityHint, req.stepRate);
-
-    const speakerToUse = req.speaker || DEFAULT_SPEAKER;
-    const ttsConfig: Record<string, unknown> = {
-      audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24000 },
-    };
-    if (speakerToUse) ttsConfig.speaker = speakerToUse;
-
-    const sessionPayload = {
-      asr: {
-        audio_config: { format: "pcm_s16le", sample_rate: 16000, channel: 1 },
-        language: "zh-CN",
-      },
-      tts: ttsConfig,
-      dialog: {
-        bot_name: "小乡",
-        system_role: systemRole,
-        speaking_style: "说话活泼可爱，像熟悉新疆文化的年轻导游朋友。",
-      },
-    };
-
-    console.log(`[DoubaoS2S] speaker="${speakerToUse || "(default)"}"`);
-    const result = await attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPayload, systemRole);
-
-    if (result === null) throw new Error("Doubao S2S failed — check credentials and API access");
-
-    const allPcm = Buffer.concat(result.audioChunks);
-    console.log(`[DoubaoS2S] Done: ${allPcm.length}B PCM transcript="${result.transcript}" aiText="${result.aiText.slice(0, 40)}"`);
-
-    // Path 1: S2S TTS worked — convert PCM to MP3
-    if (allPcm.length > 0) {
-      const mp3 = await convertPcmToMp3(allPcm, 24000);
-      return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: result.aiText };
-    }
-
-    // Path 2: S2S TTS failed (InvalidSpeaker / no audio) — use HTTP TTS
-    let aiResponseText = result.aiText;
-
-    if (!aiResponseText && result.transcript) {
-      console.log(`[DoubaoS2S] No aiText, calling Doubao LLM for: "${result.transcript}"`);
-      aiResponseText = await callDoubaoLLM(result.transcript, systemRole);
-    }
-
-    if (!aiResponseText) {
-      // Silence — user said nothing recognisable
-      return { audioBase64: "", format: "mp3", transcript: result.transcript, aiText: "" };
-    }
-
-    console.log(`[DoubaoS2S] HTTP TTS for: "${aiResponseText.slice(0, 60)}"`);
-    const mp3 = await callDoubaoHttpTts(aiResponseText, appId, accessToken);
-    return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: aiResponseText };
-  } finally {
-    unlink(tmpM4a).catch(() => {});
-    unlink(tmpPcm).catch(() => {});
-  }
-}
-
 interface S2STurnResult {
   audioChunks: Buffer[];
   transcript: string;
   aiText: string;
 }
 
-async function attemptS2STurn(
-  appId: string,
-  accessToken: string,
-  sessionId: string,
-  pcmData: Buffer,
-  sessionPayload: object,
-  systemRole: string,
-): Promise<S2STurnResult | null> {
-  return new Promise<S2STurnResult | null>((resolve) => {
-    const ws = new WebSocket(REALTIME_WS_URL, {
-      headers: {
-        "X-Api-App-ID":       appId,
-        "X-Api-Access-Key":   accessToken,
-        "X-Api-Resource-Id":  "volc.speech.dialog",
-        "X-Api-App-Key":      APP_KEY,
-        "X-Api-Connect-Id":   randomUUID(),
+export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<DoubaoS2SResponse> {
+  const appId       = process.env.VOLCENGINE_APP_ID;
+  const accessToken = process.env.VOLCENGINE_ACCESS_TOKEN;
+  if (!appId || !accessToken) throw new Error("Doubao credentials not configured");
+
+  // ── In-memory PCM conversion (no disk I/O) ──
+  const m4aBuffer = Buffer.from(req.audioBase64, "base64");
+  const pcmData = await convertM4aToPcmInMemory(m4aBuffer);
+  console.log(`[S2S-Turn] PCM: ${pcmData.length}B (~${(pcmData.length / 32000).toFixed(1)}s)`);
+
+  const sessionId = randomUUID();
+  const systemRole = req.systemRole || buildSystemPrompt(req.emotion, req.location, req.activityHint, req.stepRate);
+  const speakerToUse = req.speaker || DEFAULT_SPEAKER;
+
+  // ── Session payload with low-latency + audio_file mode ──
+  const sessionPayload = {
+    asr: {
+      audio_config: { format: "pcm_s16le", sample_rate: 16000, channel: 1 },
+      language: "zh-CN",
+    },
+    tts: {
+      audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24000 },
+      speaker: speakerToUse,
+    },
+    dialog: {
+      bot_name: "小乡",
+      system_role: systemRole,
+      speaking_style: "活泼温暖，口语化，简短自然，像朋友聊天",
+      extra: {
+        input_mod: "audio_file",  // critical: tells server audio is from file, not live mic
       },
-    });
+    },
+  };
 
-    const audioChunks: Buffer[] = [];
-    let transcript = "";
-    let aiText     = "";
-    let sessionStarted  = false;
-    let settled         = false;
-    let sendActive      = false;
-    // Tracks whether TTS has failed so we stop waiting for audio and focus on text
-    let ttsKnownFailed  = false;
-    // Timer used after InvalidSpeaker: wait for LLM text (event 550) up to 5s
-    let textWaitTimer: ReturnType<typeof setTimeout> | null = null;
-    let postAudioTimer: ReturnType<typeof setTimeout> | null = null;
+  console.log(`[S2S-Turn] speaker="${speakerToUse}" pcm=${pcmData.length}B`);
 
-    let seq = 0;
-    const nextSeq = () => ++seq;
+  const result = await globalConn.runTurn(appId, accessToken, pcmData, sessionPayload, systemRole);
 
-    function settle(result: S2STurnResult | null) {
-      if (settled) return;
-      settled  = true;
-      sendActive = false;
-      if (textWaitTimer) { clearTimeout(textWaitTimer); textWaitTimer = null; }
-      if (postAudioTimer) { clearTimeout(postAudioTimer); postAudioTimer = null; }
-      clearTimeout(globalTimer);
-      resolve(result);
-    }
+  const allPcm = Buffer.concat(result.audioChunks);
+  console.log(`[S2S-Turn] Done: ${allPcm.length}B PCM transcript="${result.transcript}" aiText="${result.aiText.slice(0, 40)}"`);
 
-    // ── After InvalidSpeaker we keep the WS alive to receive LLM text (event 550).
-    // This timer fires if LLM text still hasn't arrived after 5s — we then settle.
-    function startTextWaitTimer() {
-      if (textWaitTimer) return;
-      textWaitTimer = setTimeout(() => {
-        textWaitTimer = null;
-        console.log(`[DoubaoS2S] textWait timeout — transcript="${transcript}" aiText="${aiText.slice(0, 40)}"`);
-        try { ws.terminate(); } catch {}
-        settle({ audioChunks: [], transcript, aiText });
-      }, 5000);
-    }
+  if (allPcm.length > 0) {
+    const mp3 = await convertPcmToMp3InMemory(allPcm, 24000);
+    return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: result.aiText };
+  }
 
-    const CHUNK_SIZE = 640;
-    const CHUNK_MS   = 20;
-
-    // Global safety timeout — covers connection failures, stuck sessions etc.
-    // 28s: ~5s PCM stream + ~3s ASR + ~5s LLM + ~10s TTS + 5s buffer
-    const globalTimer = setTimeout(() => {
-      console.warn(`[DoubaoS2S] Global timeout — chunks=${audioChunks.length} transcript="${transcript}" aiText="${aiText.slice(0,40)}"`);
-      try { ws.terminate(); } catch {}
-      if (audioChunks.length > 0) {
-        settle({ audioChunks, transcript, aiText });
-      } else {
-        settle({ audioChunks: [], transcript, aiText });
-      }
-    }, 28000);
-
-    ws.on("open", () => {
-      console.log("[DoubaoS2S] WS open → StartConnection");
-      ws.send(buildConnectEvent(EVT_START_CONN, nextSeq()));
-    });
-
-    ws.on("message", (raw: Buffer) => {
-      const msg = parseServerMsg(raw);
-
-      // ── Error frame ──
-      if (msg.msgType === MT_ERROR) {
-        const errText = msg.errorText || "";
-
-        if (errText.includes("InvalidSpeaker")) {
-          // TTS voice unavailable — mark TTS as failed but KEEP WS alive for LLM text
-          ttsKnownFailed = true;
-          console.log(`[DoubaoS2S] InvalidSpeaker — keeping WS for LLM text. transcript="${transcript}" aiText="${aiText.slice(0,40)}"`);
-
-          if (aiText) {
-            // LLM already responded before the error — settle immediately
-            try { ws.terminate(); } catch {}
-            settle({ audioChunks: [], transcript, aiText });
-          } else {
-            // LLM hasn't responded yet — wait for event 550 (up to 5s)
-            startTextWaitTimer();
-          }
-          return;
-        }
-
-        // Any other fatal error
-        console.error(`[DoubaoS2S] fatal error, settling`);
-        try { ws.terminate(); } catch {}
-        settle({ audioChunks: [], transcript, aiText });
-        return;
-      }
-
-      // ── Audio frame ──
-      if (msg.msgType === MT_AUDIO_SERVER && Buffer.isBuffer(msg.payload) && (msg.payload as Buffer).length > 0) {
-        if (!ttsKnownFailed) audioChunks.push(msg.payload as Buffer);
-        return;
-      }
-
-      if (msg.eventId !== 0) console.log(`[DoubaoS2S] evt=${msg.eventId} type=${msg.msgType}`);
-
-      switch (msg.eventId) {
-        // ── Connection established ──
-        case EVT_CONN_STARTED:
-          console.log("[DoubaoS2S] Connected → StartSession");
-          ws.send(buildSessionEvent(EVT_START_SESSION, nextSeq(), sessionId, sessionPayload));
-          break;
-
-        // ── Session started → stream PCM ──
-        case 150:
-          if (sessionStarted) break;
-          sessionStarted = true;
-          sendActive     = true;
-          console.log("[DoubaoS2S] Session started → streaming PCM");
-          streamPcm();
-          break;
-
-        // ── ASR result ──
-        case 451: {
-          const pl = msg.payload as Record<string, unknown>;
-          const results = (pl?.results as Array<{ text: string; is_interim: boolean }>) ?? [];
-          const final = results.find((r) => !r.is_interim);
-          if (final?.text) { transcript = final.text; console.log("[DoubaoS2S] ASR:", transcript); }
-          break;
-        }
-
-        // ── LLM streaming text ──
-        case 550: {
-          const pl = msg.payload as Record<string, unknown>;
-          // Log raw payload to understand the actual structure
-          console.log(`[DoubaoS2S] evt550 payload=${JSON.stringify(pl).slice(0, 200)}`);
-          // Try multiple field paths: content / delta.content / text / reply
-          let chunk = "";
-          if (typeof pl?.content === "string") chunk = pl.content;
-          else if (typeof (pl?.delta as Record<string, unknown>)?.content === "string")
-            chunk = (pl.delta as Record<string, unknown>).content as string;
-          else if (typeof pl?.text === "string") chunk = pl.text;
-          else if (typeof pl?.reply === "string") chunk = pl.reply;
-
-          if (chunk) {
-            aiText += chunk;
-            console.log(`[DoubaoS2S] LLM chunk="${chunk.slice(0, 60)}" total="${aiText.slice(0, 80)}"`);
-            // If TTS already failed and we now have text → settle immediately
-            if (ttsKnownFailed && aiText) {
-              console.log(`[DoubaoS2S] Got LLM text after InvalidSpeaker → settling: "${aiText.slice(0, 60)}"`);
-              if (textWaitTimer) { clearTimeout(textWaitTimer); textWaitTimer = null; }
-              try { ws.terminate(); } catch {}
-              settle({ audioChunks: [], transcript, aiText });
-            }
-          }
-          break;
-        }
-
-        // ── TTS ended (success path) ──
-        case EVT_TTS_ENDED:
-          console.log(`[DoubaoS2S] TTSEnded — chunks=${audioChunks.length} transcript="${transcript}" aiText="${aiText}"`);
-          sendActive = false;
-          try {
-            ws.send(buildSessionEvent(EVT_FINISH_SESSION, nextSeq(), sessionId, {}));
-            ws.send(buildConnectEvent(EVT_FINISH_CONN, nextSeq()));
-            ws.close();
-          } catch {}
-          settle({ audioChunks, transcript, aiText });
-          break;
-
-        // ── Session failed ──
-        case 153:
-          console.error("[DoubaoS2S] SessionFailed:", JSON.stringify(msg.payload));
-          try { ws.terminate(); } catch {}
-          settle({ audioChunks: [], transcript, aiText });
-          break;
-
-        // ── Connection failed ──
-        case 51:
-          console.error("[DoubaoS2S] ConnectFailed:", JSON.stringify(msg.payload));
-          try { ws.terminate(); } catch {}
-          settle(null);
-          break;
-
-        default:
-          break;
-      }
-    });
-
-    ws.on("error", (err) => {
-      console.error("[DoubaoS2S] WS error:", err.message);
-      if (!settled) settle({ audioChunks, transcript, aiText });
-    });
-
-    ws.on("close", (code) => {
-      console.log(`[DoubaoS2S] WS closed code=${code}`);
-      if (!settled) {
-        settle(audioChunks.length > 0
-          ? { audioChunks, transcript, aiText }
-          : { audioChunks: [], transcript, aiText });
-      }
-    });
-
-    function streamPcm() {
-      let offset = 0;
-      function send() {
-        if (!sendActive || settled) return;
-        if (offset >= pcmData.length) {
-          console.log(`[DoubaoS2S] PCM done → last chunk`);
-          ws.send(buildLastAudioChunk(nextSeq(), sessionId));
-          // Post-audio safety timeout: if S2S returns nothing 12s after we finish
-          // sending audio, give up rather than waiting the full global timeout.
-          postAudioTimer = setTimeout(() => {
-            postAudioTimer = null;
-            if (!settled && audioChunks.length === 0) {
-              console.warn(`[DoubaoS2S] Post-audio timeout (12s) — no TTS received, settling empty. transcript="${transcript}"`);
-              try { ws.terminate(); } catch {}
-              settle({ audioChunks: [], transcript, aiText });
-            }
-          }, 12000);
-          return;
-        }
-        const end = Math.min(offset + CHUNK_SIZE, pcmData.length);
-        ws.send(buildAudioChunk(pcmData.subarray(offset, end), nextSeq(), sessionId));
-        offset = end;
-        setTimeout(send, CHUNK_MS);
-      }
-      send();
-    }
-  });
+  // Fallback path: use HTTP TTS with LLM text
+  let aiResponseText = result.aiText;
+  if (!aiResponseText && result.transcript) {
+    console.log(`[S2S-Turn] No aiText, calling LLM for: "${result.transcript}"`);
+    aiResponseText = await callDoubaoLLM(result.transcript, systemRole);
+  }
+  if (!aiResponseText) {
+    return { audioBase64: "", format: "mp3", transcript: result.transcript, aiText: "" };
+  }
+  console.log(`[S2S-Turn] HTTP TTS for: "${aiResponseText.slice(0, 60)}"`);
+  const mp3 = await callDoubaoHttpTts(aiResponseText, appId, accessToken);
+  return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: aiResponseText };
 }

@@ -304,21 +304,31 @@ export default function XiaoxiangAiScreen() {
     FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => {});
   }, []);
 
-  // Speak a reply using Doubao TTS only — no device speech fallback to avoid mechanical voice
   const speakReply = useCallback(async (text: string) => {
     if (!text.trim()) return;
     try {
       const ttsResp = await apiRequest("POST", "/api/doubao/tts", { text });
       const ttsData = await (ttsResp as any).json();
       if (ttsData.audio) {
-        console.log("[speakReply] 豆包TTS成功");
+        console.log("[speakReply] TTS成功");
         await playDoubaoAudio(ttsData.audio);
-      } else {
-        console.log("[speakReply] 豆包TTS无音频，仅显示文字");
+        return;
       }
     } catch (e: any) {
-      console.log("[speakReply] 豆包TTS失败，仅显示文字:", e?.message);
+      console.log("[speakReply] TTS失败，使用设备语音:", e?.message);
     }
+    // Device TTS fallback — always available, no credentials needed
+    try {
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      await new Promise<void>((resolve) => {
+        Speech.speak(text, {
+          language: "zh-CN",
+          rate: 0.95,
+          onDone: resolve,
+          onError: () => resolve(),
+        });
+      });
+    } catch {}
   }, [playDoubaoAudio]);
 
   const runCompanionLoop = useCallback(async (
@@ -333,7 +343,7 @@ export default function XiaoxiangAiScreen() {
     }
 
     let silenceCount = 0;
-    let s2sFailCount = 0;  // consecutive empty S2S responses → skip S2S after threshold
+    let s2sFailCount = 0;  // consecutive empty S2S responses → skip S2S after threshold (3)
 
     while (companionActiveRef.current) {
       let recording: Audio.Recording | null = null;
@@ -372,7 +382,7 @@ export default function XiaoxiangAiScreen() {
         }
         if (!recording) throw new Error("Failed to create recording after retries");
         companionRecordingRef.current = recording;
-        await new Promise<void>((resolve) => setTimeout(resolve, 3000));
+        await new Promise<void>((resolve) => setTimeout(resolve, 1500));
         if (!companionActiveRef.current) break; // finally will stop recording
 
         uri = recording.getURI();
@@ -392,7 +402,7 @@ export default function XiaoxiangAiScreen() {
         const liveActivityHint = activityHintRef.current;
         const liveStepRate = stepRateRef.current;
         // Skip S2S after 2 consecutive empty responses to avoid 14s timeout per turn
-        const tryS2S = useDoubao && s2sFailCount < 2;
+        const tryS2S = useDoubao && s2sFailCount < 3;
         console.log("[Companion] tryS2S=", tryS2S, "s2sFailCount=", s2sFailCount, "emotion=", liveEmotion);
         if (tryS2S) {
           try {
@@ -798,6 +808,7 @@ export default function XiaoxiangAiScreen() {
       setCompanionStatus("idle");
       setCompanionResponse("");
       Speech.stop();
+      apiRequest("POST", "/api/doubao/s2s/close", {}).catch(() => {});
     } else {
       if (!doubaoReady && voiceAvailable === false) {
         Alert.alert("语音功能未配置", "伴游模式需要配置豆包语音或 GROQ_API_KEY。");

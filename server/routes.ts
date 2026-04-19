@@ -6,7 +6,7 @@ import { join } from "node:path";
 import https from "node:https";
 import OpenAI, { toFile } from "openai";
 import { storage, type InsertRecording, initSoundArchivesTable, getSoundArchiveStats, getSoundArchives, createSoundArchive, getSoundArchiveAudio, incrementArchivePlay } from "./storage";
-import { doublaoRealtimeTurn } from "./doubao-realtime";
+import { doublaoRealtimeTurn, closeRealtimeConn } from "./doubao-realtime";
 const uuidv4 = () => randomUUID();
 
 const PW_SALT = "xiangyin_banlu_2026";
@@ -472,43 +472,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Doubao TTS – text → base64 MP3
+  // Priority: Volcengine HTTP TTS → ARK TTS (doubao-tts-hd) → 500
   app.post("/api/doubao/tts", async (req, res) => {
     const { text, voice } = req.body as { text?: string; voice?: string };
-    const appId = process.env.VOLCENGINE_APP_ID;
-    const token = process.env.VOLCENGINE_ACCESS_TOKEN;
-    if (!appId || !token) return res.status(503).json({ error: "doubao_not_configured" });
     if (!text?.trim()) return res.status(400).json({ error: "text required" });
 
-    // Try BigTTS (volcano_mega) first for better quality, fall back to standard (volcano_tts)
-    const attempts = [
-      { cluster: "volcano_mega", voice_type: voice || "BV700_V2_streaming" },
-      { cluster: "volcano_tts",  voice_type: "BV700_streaming" },
-    ];
+    const appId = process.env.VOLCENGINE_APP_ID;
+    const token = process.env.VOLCENGINE_ACCESS_TOKEN;
+    const arkKey = process.env.ARK_API_KEY;
 
-    for (const { cluster, voice_type } of attempts) {
-      const payload = {
-        app: { appid: appId, token, cluster },
-        user: { uid: "xiaoxiang_companion" },
-        audio: { voice_type, encoding: "mp3", speed_ratio: 1.0, volume_ratio: 1.0, pitch_ratio: 1.0 },
-        request: { reqid: uuidv4(), text: text.slice(0, 2000), text_type: "plain", operation: "query" },
-      };
-      try {
-        const resp = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
-          method: "POST",
-          headers: { Authorization: `Bearer;${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = (await resp.json()) as { code?: number; message?: string; data?: string };
-        console.log(`[DoubaoTTS] cluster=${cluster} voice=${voice_type} code=${data.code} msg=${data.message}`);
-        if (data.code === 3000 && data.data) {
-          return res.json({ audio: data.data, encoding: "mp3" });
+    // 1. Try Volcengine HTTP TTS (needs VOLCENGINE credentials)
+    if (appId && token) {
+      const attempts = [
+        { cluster: "volcano_mega", voice_type: voice || "BV700_V2_streaming" },
+        { cluster: "volcano_tts",  voice_type: "BV700_streaming" },
+      ];
+      for (const { cluster, voice_type } of attempts) {
+        const payload = {
+          app: { appid: appId, token, cluster },
+          user: { uid: "xiaoxiang_companion" },
+          audio: { voice_type, encoding: "mp3", speed_ratio: 1.0, volume_ratio: 1.0, pitch_ratio: 1.0 },
+          request: { reqid: uuidv4(), text: text.slice(0, 2000), text_type: "plain", operation: "query" },
+        };
+        try {
+          const resp = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
+            method: "POST",
+            headers: { Authorization: `Bearer;${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = (await resp.json()) as { code?: number; message?: string; data?: string };
+          console.log(`[DoubaoTTS] cluster=${cluster} voice=${voice_type} code=${data.code}`);
+          if (data.code === 3000 && data.data) {
+            return res.json({ audio: data.data, encoding: "mp3" });
+          }
+          console.warn(`[DoubaoTTS] cluster=${cluster} code=${data.code} — trying next`);
+        } catch (err: any) {
+          console.error("[DoubaoTTS] fetch error:", err?.message);
         }
-        // code 4000-4999: auth/access error → try next
-        console.warn(`[DoubaoTTS] cluster=${cluster} failed, trying next…`);
-      } catch (err: any) {
-        console.error("[DoubaoTTS] fetch error:", err?.message);
       }
     }
+
     return res.status(500).json({ error: "tts_failed_all_clusters" });
   });
 
@@ -549,6 +552,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("[DoubaoASR] error:", err?.message);
       return res.status(500).json({ error: "asr_request_failed", text: "" });
     }
+  });
+
+  // Close persistent WS connection when companion mode ends
+  app.post("/api/doubao/s2s/close", (_req, res) => {
+    closeRealtimeConn();
+    res.json({ ok: true });
   });
 
   // Doubao S2S RealtimeAPI – audio → AI response audio (end-to-end)

@@ -528,17 +528,14 @@ init_storage();
 import { createServer } from "node:http";
 import { createHash, randomUUID as randomUUID3 } from "crypto";
 import { readFileSync, existsSync } from "node:fs";
-import { join as join2 } from "node:path";
+import { join } from "node:path";
 import https from "node:https";
 import OpenAI, { toFile } from "openai";
 
 // server/doubao-realtime.ts
 import WebSocket from "ws";
 import { randomUUID as randomUUID2 } from "crypto";
-import { execFile } from "child_process";
-import { writeFile, readFile, unlink } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
+import { spawn } from "child_process";
 var REALTIME_WS_URL = "wss://openspeech.bytedance.com/api/v3/realtime/dialogue";
 var APP_KEY = "PlgvMymc7f3tQnJ6";
 var BYTE0 = 17;
@@ -609,7 +606,7 @@ function parseServerMsg(raw) {
     if (plSize > 0 && off + plSize <= raw.length) {
       errorText = raw.subarray(off, off + plSize).toString("utf-8");
     }
-    console.error(`[DoubaoS2S] ERROR code=${errorCode} msg=${errorText || raw.toString("hex")}`);
+    console.error(`[S2S-Conn] ERROR code=${errorCode} msg=${errorText || raw.toString("hex")}`);
     return { msgType, eventId: 0, payload: Buffer.alloc(0), errorCode, errorText };
   }
   if ((flags & 3) !== 0) {
@@ -647,14 +644,310 @@ function parseServerMsg(raw) {
   }
   return { msgType, eventId, payload };
 }
-async function convertM4aToPcm(m4aPath, pcmPath) {
-  await new Promise((resolve2, reject) => {
-    execFile(
-      "ffmpeg",
-      ["-y", "-i", m4aPath, "-ar", "16000", "-ac", "1", "-f", "s16le", "-acodec", "pcm_s16le", pcmPath],
-      (err) => err ? reject(err) : resolve2()
-    );
+async function convertM4aToPcmInMemory(m4aBuffer) {
+  return new Promise((resolve2, reject) => {
+    const proc = spawn("ffmpeg", [
+      "-y",
+      "-f",
+      "mp4",
+      "-i",
+      "pipe:0",
+      "-ar",
+      "16000",
+      "-ac",
+      "1",
+      "-f",
+      "s16le",
+      "pipe:1"
+    ]);
+    const chunks = [];
+    proc.stdout.on("data", (d) => chunks.push(d));
+    proc.stdout.on("end", () => resolve2(Buffer.concat(chunks)));
+    proc.stderr.on("data", () => {
+    });
+    proc.on("error", reject);
+    proc.stdin.write(m4aBuffer);
+    proc.stdin.end();
   });
+}
+async function convertPcmToMp3InMemory(pcmBuffer, sampleRate = 24e3) {
+  return new Promise((resolve2, reject) => {
+    const proc = spawn("ffmpeg", [
+      "-y",
+      "-f",
+      "s16le",
+      "-ar",
+      String(sampleRate),
+      "-ac",
+      "1",
+      "-i",
+      "pipe:0",
+      "-f",
+      "mp3",
+      "pipe:1"
+    ]);
+    const chunks = [];
+    proc.stdout.on("data", (d) => chunks.push(d));
+    proc.stdout.on("end", () => resolve2(Buffer.concat(chunks)));
+    proc.stderr.on("data", () => {
+    });
+    proc.on("error", reject);
+    proc.stdin.write(pcmBuffer);
+    proc.stdin.end();
+  });
+}
+var PersistentRealtimeConn = class {
+  ws = null;
+  seq = 0;
+  connStarted = false;
+  connecting = null;
+  msgHandler = null;
+  idleTimer = null;
+  IDLE_MS = 9e4;
+  // close after 90s idle
+  nextSeq() {
+    return ++this.seq;
+  }
+  resetIdleTimer() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      console.log("[S2S-Conn] Idle timeout \u2014 closing persistent WS");
+      this.close();
+    }, this.IDLE_MS);
+  }
+  isReady() {
+    return !!(this.ws && this.ws.readyState === 1 && this.connStarted);
+  }
+  async ensureConnected(appId, token) {
+    if (this.isReady()) {
+      this.resetIdleTimer();
+      return;
+    }
+    if (this.connecting) return this.connecting;
+    this.seq = 0;
+    this.connStarted = false;
+    this.connecting = new Promise((resolve2, reject) => {
+      const ws = new WebSocket(REALTIME_WS_URL, {
+        headers: {
+          "X-Api-App-ID": appId,
+          "X-Api-Access-Key": token,
+          "X-Api-Resource-Id": "volc.speech.dialog",
+          "X-Api-App-Key": APP_KEY,
+          "X-Api-Connect-Id": randomUUID2()
+        }
+      });
+      const onConnectTimeout = setTimeout(() => {
+        ws.terminate();
+        reject(new Error("WS connect timeout"));
+      }, 8e3);
+      ws.on("open", () => {
+        console.log("[S2S-Conn] WS open \u2192 StartConnection");
+        ws.send(buildConnectEvent(EVT_START_CONN, this.nextSeq()));
+      });
+      ws.on("message", (raw) => {
+        const msg = parseServerMsg(raw);
+        if (!this.connStarted) {
+          if (msg.eventId === EVT_CONN_STARTED) {
+            clearTimeout(onConnectTimeout);
+            console.log("[S2S-Conn] Connected \u2713 (persistent)");
+            this.ws = ws;
+            this.connStarted = true;
+            this.connecting = null;
+            this.resetIdleTimer();
+            resolve2();
+          } else if (msg.eventId === 51 || msg.msgType === MT_ERROR) {
+            clearTimeout(onConnectTimeout);
+            this.connecting = null;
+            reject(new Error(`ConnectFailed evt=${msg.eventId} err=${msg.errorText || ""}`));
+          }
+          return;
+        }
+        this.msgHandler?.(msg);
+      });
+      ws.on("error", (err) => {
+        clearTimeout(onConnectTimeout);
+        this.connecting = null;
+        this.connStarted = false;
+        reject(err);
+      });
+      ws.on("close", (code) => {
+        console.log(`[S2S-Conn] WS closed code=${code}`);
+        this.ws = null;
+        this.connStarted = false;
+        if (this.idleTimer) {
+          clearTimeout(this.idleTimer);
+          this.idleTimer = null;
+        }
+      });
+    });
+    return this.connecting;
+  }
+  async runTurn(appId, token, pcmData, sessionPayload, systemRole) {
+    try {
+      await this.ensureConnected(appId, token);
+    } catch (e) {
+      throw new Error(`S2S connection failed: ${e.message}`);
+    }
+    const conn = this;
+    const ws = this.ws;
+    const sessionId = randomUUID2();
+    this.resetIdleTimer();
+    return new Promise((resolve2) => {
+      const audioChunks = [];
+      let transcript = "";
+      let aiText = "";
+      let settled = false;
+      let ttsKnownFailed = false;
+      let sessionStarted = false;
+      let textWaitTimer = null;
+      let postAudioTimer = null;
+      const settle = (result) => {
+        if (settled) return;
+        settled = true;
+        this.msgHandler = null;
+        if (textWaitTimer) {
+          clearTimeout(textWaitTimer);
+          textWaitTimer = null;
+        }
+        if (postAudioTimer) {
+          clearTimeout(postAudioTimer);
+          postAudioTimer = null;
+        }
+        clearTimeout(globalTimer);
+        try {
+          ws.send(buildSessionEvent(EVT_FINISH_SESSION, this.nextSeq(), sessionId, {}));
+        } catch {
+        }
+        this.resetIdleTimer();
+        resolve2(result);
+      };
+      const globalTimer = setTimeout(() => {
+        console.warn(`[S2S-Turn] Global timeout \u2014 chunks=${audioChunks.length} transcript="${transcript}" aiText="${aiText.slice(0, 40)}"`);
+        settle({ audioChunks, transcript, aiText });
+      }, 12e3);
+      const startTextWaitTimer = () => {
+        if (textWaitTimer) return;
+        textWaitTimer = setTimeout(() => {
+          textWaitTimer = null;
+          settle({ audioChunks: [], transcript, aiText });
+        }, 3e3);
+      };
+      this.msgHandler = (msg) => {
+        if (msg.msgType === MT_ERROR) {
+          const errText = msg.errorText || "";
+          if (errText.includes("InvalidSpeaker")) {
+            ttsKnownFailed = true;
+            if (aiText) {
+              settle({ audioChunks: [], transcript, aiText });
+            } else {
+              startTextWaitTimer();
+            }
+            return;
+          }
+          console.error(`[S2S-Turn] fatal error: ${errText}`);
+          settle({ audioChunks: [], transcript, aiText });
+          return;
+        }
+        if (msg.msgType === MT_AUDIO_SERVER && Buffer.isBuffer(msg.payload) && msg.payload.length > 0) {
+          if (!ttsKnownFailed) audioChunks.push(msg.payload);
+          return;
+        }
+        if (msg.eventId !== 0) console.log(`[S2S-Turn] evt=${msg.eventId}`);
+        switch (msg.eventId) {
+          case 150:
+            if (sessionStarted) break;
+            sessionStarted = true;
+            console.log("[S2S-Turn] Session started \u2192 streaming PCM");
+            streamPcm();
+            break;
+          case 451: {
+            const pl = msg.payload;
+            const results = pl?.results ?? [];
+            const final = results.find((r) => !r.is_interim);
+            if (final?.text) {
+              transcript = final.text;
+              console.log("[S2S-Turn] ASR:", transcript);
+            }
+            break;
+          }
+          case 550: {
+            const pl = msg.payload;
+            let chunk = "";
+            if (typeof pl?.content === "string") chunk = pl.content;
+            else if (typeof pl?.delta?.content === "string")
+              chunk = pl.delta.content;
+            else if (typeof pl?.text === "string") chunk = pl.text;
+            else if (typeof pl?.reply === "string") chunk = pl.reply;
+            if (chunk) {
+              aiText += chunk;
+              if (ttsKnownFailed && aiText) {
+                if (textWaitTimer) {
+                  clearTimeout(textWaitTimer);
+                  textWaitTimer = null;
+                }
+                settle({ audioChunks: [], transcript, aiText });
+              }
+            }
+            break;
+          }
+          case EVT_TTS_ENDED:
+            console.log(`[S2S-Turn] TTSEnded chunks=${audioChunks.length}`);
+            settle({ audioChunks, transcript, aiText });
+            break;
+          case 153:
+            console.error("[S2S-Turn] SessionFailed:", JSON.stringify(msg.payload));
+            settle({ audioChunks: [], transcript, aiText });
+            break;
+          default:
+            break;
+        }
+      };
+      ws.send(buildSessionEvent(EVT_START_SESSION, conn.nextSeq(), sessionId, sessionPayload));
+      const CHUNK_SIZE = 1280;
+      const streamPcm = () => {
+        let offset = 0;
+        const sendNext = () => {
+          if (settled) return;
+          if (offset >= pcmData.length) {
+            console.log("[S2S-Turn] PCM done \u2192 last chunk");
+            ws.send(buildLastAudioChunk(conn.nextSeq(), sessionId));
+            postAudioTimer = setTimeout(() => {
+              postAudioTimer = null;
+              if (!settled && audioChunks.length === 0) {
+                console.warn(`[S2S-Turn] Post-audio timeout \u2014 transcript="${transcript}"`);
+                settle({ audioChunks: [], transcript, aiText });
+              }
+            }, 6e3);
+            return;
+          }
+          const end = Math.min(offset + CHUNK_SIZE, pcmData.length);
+          ws.send(buildAudioChunk(pcmData.subarray(offset, end), conn.nextSeq(), sessionId));
+          offset = end;
+          setImmediate(sendNext);
+        };
+        sendNext();
+      };
+    });
+  }
+  close() {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+    if (this.ws && this.ws.readyState === 1) {
+      try {
+        this.ws.send(buildConnectEvent(EVT_FINISH_CONN, this.nextSeq()));
+        this.ws.close();
+      } catch {
+      }
+    }
+    this.ws = null;
+    this.connStarted = false;
+  }
+};
+var globalConn = new PersistentRealtimeConn();
+function closeRealtimeConn() {
+  globalConn.close();
 }
 async function callDoubaoLLM(userText, systemRole) {
   const apiKey = process.env.ARK_API_KEY;
@@ -671,9 +964,7 @@ async function callDoubaoLLM(userText, systemRole) {
       })
     });
     const data = await resp.json();
-    const text = data.choices?.[0]?.message?.content || "";
-    console.log(`[DoubaoLLM] response="${text.slice(0, 60)}"`);
-    return text;
+    return data.choices?.[0]?.message?.content || "";
   } catch (e) {
     console.error("[DoubaoLLM] error:", e.message);
     return "";
@@ -707,27 +998,6 @@ async function callDoubaoHttpTts(text, appId, token) {
     }
   }
   throw new Error("HTTP TTS failed all clusters");
-}
-async function convertPcmToMp3(pcmBuffer, sampleRate = 24e3) {
-  const id = randomUUID2();
-  const tmpIn = join(tmpdir(), `dbs_pcm_${id}.pcm`);
-  const tmpOut = join(tmpdir(), `dbs_mp3_${id}.mp3`);
-  try {
-    await writeFile(tmpIn, pcmBuffer);
-    await new Promise((resolve2, reject) => {
-      execFile(
-        "ffmpeg",
-        ["-y", "-f", "s16le", "-ar", String(sampleRate), "-ac", "1", "-i", tmpIn, tmpOut],
-        (err) => err ? reject(err) : resolve2()
-      );
-    });
-    return await readFile(tmpOut);
-  } finally {
-    unlink(tmpIn).catch(() => {
-    });
-    unlink(tmpOut).catch(() => {
-    });
-  }
 }
 function buildSystemPrompt(emotion, location, activityHint, stepRate) {
   const em = emotion || "\u5E73\u9759";
@@ -771,283 +1041,50 @@ async function doublaoRealtimeTurn(req) {
   const appId = process.env.VOLCENGINE_APP_ID;
   const accessToken = process.env.VOLCENGINE_ACCESS_TOKEN;
   if (!appId || !accessToken) throw new Error("Doubao credentials not configured");
-  const tmpId = randomUUID2();
-  const tmpM4a = join(tmpdir(), `dbs_in_${tmpId}.m4a`);
-  const tmpPcm = join(tmpdir(), `dbs_in_${tmpId}.pcm`);
-  try {
-    await writeFile(tmpM4a, Buffer.from(req.audioBase64, "base64"));
-    await convertM4aToPcm(tmpM4a, tmpPcm);
-    const pcmData = await readFile(tmpPcm);
-    console.log(`[DoubaoS2S] PCM: ${pcmData.length}B (~${(pcmData.length / 32e3).toFixed(1)}s)`);
-    const sessionId = randomUUID2();
-    const systemRole = req.systemRole || buildSystemPrompt(req.emotion, req.location, req.activityHint, req.stepRate);
-    const speakerToUse = req.speaker || DEFAULT_SPEAKER;
-    const ttsConfig = {
-      audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24e3 }
-    };
-    if (speakerToUse) ttsConfig.speaker = speakerToUse;
-    const sessionPayload = {
-      asr: {
-        audio_config: { format: "pcm_s16le", sample_rate: 16e3, channel: 1 },
-        language: "zh-CN"
-      },
-      tts: ttsConfig,
-      dialog: {
-        bot_name: "\u5C0F\u4E61",
-        system_role: systemRole,
-        speaking_style: "\u8BF4\u8BDD\u6D3B\u6CFC\u53EF\u7231\uFF0C\u50CF\u719F\u6089\u65B0\u7586\u6587\u5316\u7684\u5E74\u8F7B\u5BFC\u6E38\u670B\u53CB\u3002"
+  const m4aBuffer = Buffer.from(req.audioBase64, "base64");
+  const pcmData = await convertM4aToPcmInMemory(m4aBuffer);
+  console.log(`[S2S-Turn] PCM: ${pcmData.length}B (~${(pcmData.length / 32e3).toFixed(1)}s)`);
+  const sessionId = randomUUID2();
+  const systemRole = req.systemRole || buildSystemPrompt(req.emotion, req.location, req.activityHint, req.stepRate);
+  const speakerToUse = req.speaker || DEFAULT_SPEAKER;
+  const sessionPayload = {
+    asr: {
+      audio_config: { format: "pcm_s16le", sample_rate: 16e3, channel: 1 },
+      language: "zh-CN"
+    },
+    tts: {
+      audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24e3 },
+      speaker: speakerToUse
+    },
+    dialog: {
+      bot_name: "\u5C0F\u4E61",
+      system_role: systemRole,
+      speaking_style: "\u6D3B\u6CFC\u6E29\u6696\uFF0C\u53E3\u8BED\u5316\uFF0C\u7B80\u77ED\u81EA\u7136\uFF0C\u50CF\u670B\u53CB\u804A\u5929",
+      extra: {
+        input_mod: "audio_file"
+        // critical: tells server audio is from file, not live mic
       }
-    };
-    console.log(`[DoubaoS2S] speaker="${speakerToUse || "(default)"}"`);
-    const result = await attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPayload, systemRole);
-    if (result === null) throw new Error("Doubao S2S failed \u2014 check credentials and API access");
-    const allPcm = Buffer.concat(result.audioChunks);
-    console.log(`[DoubaoS2S] Done: ${allPcm.length}B PCM transcript="${result.transcript}" aiText="${result.aiText.slice(0, 40)}"`);
-    if (allPcm.length > 0) {
-      const mp32 = await convertPcmToMp3(allPcm, 24e3);
-      return { audioBase64: mp32.toString("base64"), format: "mp3", transcript: result.transcript, aiText: result.aiText };
     }
-    let aiResponseText = result.aiText;
-    if (!aiResponseText && result.transcript) {
-      console.log(`[DoubaoS2S] No aiText, calling Doubao LLM for: "${result.transcript}"`);
-      aiResponseText = await callDoubaoLLM(result.transcript, systemRole);
-    }
-    if (!aiResponseText) {
-      return { audioBase64: "", format: "mp3", transcript: result.transcript, aiText: "" };
-    }
-    console.log(`[DoubaoS2S] HTTP TTS for: "${aiResponseText.slice(0, 60)}"`);
-    const mp3 = await callDoubaoHttpTts(aiResponseText, appId, accessToken);
-    return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: aiResponseText };
-  } finally {
-    unlink(tmpM4a).catch(() => {
-    });
-    unlink(tmpPcm).catch(() => {
-    });
+  };
+  console.log(`[S2S-Turn] speaker="${speakerToUse}" pcm=${pcmData.length}B`);
+  const result = await globalConn.runTurn(appId, accessToken, pcmData, sessionPayload, systemRole);
+  const allPcm = Buffer.concat(result.audioChunks);
+  console.log(`[S2S-Turn] Done: ${allPcm.length}B PCM transcript="${result.transcript}" aiText="${result.aiText.slice(0, 40)}"`);
+  if (allPcm.length > 0) {
+    const mp32 = await convertPcmToMp3InMemory(allPcm, 24e3);
+    return { audioBase64: mp32.toString("base64"), format: "mp3", transcript: result.transcript, aiText: result.aiText };
   }
-}
-async function attemptS2STurn(appId, accessToken, sessionId, pcmData, sessionPayload, systemRole) {
-  return new Promise((resolve2) => {
-    const ws = new WebSocket(REALTIME_WS_URL, {
-      headers: {
-        "X-Api-App-ID": appId,
-        "X-Api-Access-Key": accessToken,
-        "X-Api-Resource-Id": "volc.speech.dialog",
-        "X-Api-App-Key": APP_KEY,
-        "X-Api-Connect-Id": randomUUID2()
-      }
-    });
-    const audioChunks = [];
-    let transcript = "";
-    let aiText = "";
-    let sessionStarted = false;
-    let settled = false;
-    let sendActive = false;
-    let ttsKnownFailed = false;
-    let textWaitTimer = null;
-    let postAudioTimer = null;
-    let seq = 0;
-    const nextSeq = () => ++seq;
-    function settle(result) {
-      if (settled) return;
-      settled = true;
-      sendActive = false;
-      if (textWaitTimer) {
-        clearTimeout(textWaitTimer);
-        textWaitTimer = null;
-      }
-      if (postAudioTimer) {
-        clearTimeout(postAudioTimer);
-        postAudioTimer = null;
-      }
-      clearTimeout(globalTimer);
-      resolve2(result);
-    }
-    function startTextWaitTimer() {
-      if (textWaitTimer) return;
-      textWaitTimer = setTimeout(() => {
-        textWaitTimer = null;
-        console.log(`[DoubaoS2S] textWait timeout \u2014 transcript="${transcript}" aiText="${aiText.slice(0, 40)}"`);
-        try {
-          ws.terminate();
-        } catch {
-        }
-        settle({ audioChunks: [], transcript, aiText });
-      }, 5e3);
-    }
-    const CHUNK_SIZE = 640;
-    const CHUNK_MS = 20;
-    const globalTimer = setTimeout(() => {
-      console.warn(`[DoubaoS2S] Global timeout \u2014 chunks=${audioChunks.length} transcript="${transcript}" aiText="${aiText.slice(0, 40)}"`);
-      try {
-        ws.terminate();
-      } catch {
-      }
-      if (audioChunks.length > 0) {
-        settle({ audioChunks, transcript, aiText });
-      } else {
-        settle({ audioChunks: [], transcript, aiText });
-      }
-    }, 28e3);
-    ws.on("open", () => {
-      console.log("[DoubaoS2S] WS open \u2192 StartConnection");
-      ws.send(buildConnectEvent(EVT_START_CONN, nextSeq()));
-    });
-    ws.on("message", (raw) => {
-      const msg = parseServerMsg(raw);
-      if (msg.msgType === MT_ERROR) {
-        const errText = msg.errorText || "";
-        if (errText.includes("InvalidSpeaker")) {
-          ttsKnownFailed = true;
-          console.log(`[DoubaoS2S] InvalidSpeaker \u2014 keeping WS for LLM text. transcript="${transcript}" aiText="${aiText.slice(0, 40)}"`);
-          if (aiText) {
-            try {
-              ws.terminate();
-            } catch {
-            }
-            settle({ audioChunks: [], transcript, aiText });
-          } else {
-            startTextWaitTimer();
-          }
-          return;
-        }
-        console.error(`[DoubaoS2S] fatal error, settling`);
-        try {
-          ws.terminate();
-        } catch {
-        }
-        settle({ audioChunks: [], transcript, aiText });
-        return;
-      }
-      if (msg.msgType === MT_AUDIO_SERVER && Buffer.isBuffer(msg.payload) && msg.payload.length > 0) {
-        if (!ttsKnownFailed) audioChunks.push(msg.payload);
-        return;
-      }
-      if (msg.eventId !== 0) console.log(`[DoubaoS2S] evt=${msg.eventId} type=${msg.msgType}`);
-      switch (msg.eventId) {
-        // ── Connection established ──
-        case EVT_CONN_STARTED:
-          console.log("[DoubaoS2S] Connected \u2192 StartSession");
-          ws.send(buildSessionEvent(EVT_START_SESSION, nextSeq(), sessionId, sessionPayload));
-          break;
-        // ── Session started → stream PCM ──
-        case 150:
-          if (sessionStarted) break;
-          sessionStarted = true;
-          sendActive = true;
-          console.log("[DoubaoS2S] Session started \u2192 streaming PCM");
-          streamPcm();
-          break;
-        // ── ASR result ──
-        case 451: {
-          const pl = msg.payload;
-          const results = pl?.results ?? [];
-          const final = results.find((r) => !r.is_interim);
-          if (final?.text) {
-            transcript = final.text;
-            console.log("[DoubaoS2S] ASR:", transcript);
-          }
-          break;
-        }
-        // ── LLM streaming text ──
-        case 550: {
-          const pl = msg.payload;
-          console.log(`[DoubaoS2S] evt550 payload=${JSON.stringify(pl).slice(0, 200)}`);
-          let chunk = "";
-          if (typeof pl?.content === "string") chunk = pl.content;
-          else if (typeof pl?.delta?.content === "string")
-            chunk = pl.delta.content;
-          else if (typeof pl?.text === "string") chunk = pl.text;
-          else if (typeof pl?.reply === "string") chunk = pl.reply;
-          if (chunk) {
-            aiText += chunk;
-            console.log(`[DoubaoS2S] LLM chunk="${chunk.slice(0, 60)}" total="${aiText.slice(0, 80)}"`);
-            if (ttsKnownFailed && aiText) {
-              console.log(`[DoubaoS2S] Got LLM text after InvalidSpeaker \u2192 settling: "${aiText.slice(0, 60)}"`);
-              if (textWaitTimer) {
-                clearTimeout(textWaitTimer);
-                textWaitTimer = null;
-              }
-              try {
-                ws.terminate();
-              } catch {
-              }
-              settle({ audioChunks: [], transcript, aiText });
-            }
-          }
-          break;
-        }
-        // ── TTS ended (success path) ──
-        case EVT_TTS_ENDED:
-          console.log(`[DoubaoS2S] TTSEnded \u2014 chunks=${audioChunks.length} transcript="${transcript}" aiText="${aiText}"`);
-          sendActive = false;
-          try {
-            ws.send(buildSessionEvent(EVT_FINISH_SESSION, nextSeq(), sessionId, {}));
-            ws.send(buildConnectEvent(EVT_FINISH_CONN, nextSeq()));
-            ws.close();
-          } catch {
-          }
-          settle({ audioChunks, transcript, aiText });
-          break;
-        // ── Session failed ──
-        case 153:
-          console.error("[DoubaoS2S] SessionFailed:", JSON.stringify(msg.payload));
-          try {
-            ws.terminate();
-          } catch {
-          }
-          settle({ audioChunks: [], transcript, aiText });
-          break;
-        // ── Connection failed ──
-        case 51:
-          console.error("[DoubaoS2S] ConnectFailed:", JSON.stringify(msg.payload));
-          try {
-            ws.terminate();
-          } catch {
-          }
-          settle(null);
-          break;
-        default:
-          break;
-      }
-    });
-    ws.on("error", (err) => {
-      console.error("[DoubaoS2S] WS error:", err.message);
-      if (!settled) settle({ audioChunks, transcript, aiText });
-    });
-    ws.on("close", (code) => {
-      console.log(`[DoubaoS2S] WS closed code=${code}`);
-      if (!settled) {
-        settle(audioChunks.length > 0 ? { audioChunks, transcript, aiText } : { audioChunks: [], transcript, aiText });
-      }
-    });
-    function streamPcm() {
-      let offset = 0;
-      function send() {
-        if (!sendActive || settled) return;
-        if (offset >= pcmData.length) {
-          console.log(`[DoubaoS2S] PCM done \u2192 last chunk`);
-          ws.send(buildLastAudioChunk(nextSeq(), sessionId));
-          postAudioTimer = setTimeout(() => {
-            postAudioTimer = null;
-            if (!settled && audioChunks.length === 0) {
-              console.warn(`[DoubaoS2S] Post-audio timeout (12s) \u2014 no TTS received, settling empty. transcript="${transcript}"`);
-              try {
-                ws.terminate();
-              } catch {
-              }
-              settle({ audioChunks: [], transcript, aiText });
-            }
-          }, 12e3);
-          return;
-        }
-        const end = Math.min(offset + CHUNK_SIZE, pcmData.length);
-        ws.send(buildAudioChunk(pcmData.subarray(offset, end), nextSeq(), sessionId));
-        offset = end;
-        setTimeout(send, CHUNK_MS);
-      }
-      send();
-    }
-  });
+  let aiResponseText = result.aiText;
+  if (!aiResponseText && result.transcript) {
+    console.log(`[S2S-Turn] No aiText, calling LLM for: "${result.transcript}"`);
+    aiResponseText = await callDoubaoLLM(result.transcript, systemRole);
+  }
+  if (!aiResponseText) {
+    return { audioBase64: "", format: "mp3", transcript: result.transcript, aiText: "" };
+  }
+  console.log(`[S2S-Turn] HTTP TTS for: "${aiResponseText.slice(0, 60)}"`);
+  const mp3 = await callDoubaoHttpTts(aiResponseText, appId, accessToken);
+  return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: aiResponseText };
 }
 
 // server/routes.ts
@@ -1281,8 +1318,8 @@ async function registerRoutes(app2) {
     if (!key) return res.status(500).send("AMAP_API_KEY not configured");
     try {
       const candidates = [
-        join2(process.cwd(), "server_dist", "amap-locate.html"),
-        join2(process.cwd(), "server", "amap-locate.html")
+        join(process.cwd(), "server_dist", "amap-locate.html"),
+        join(process.cwd(), "server", "amap-locate.html")
       ];
       const htmlPath = candidates.find((p) => existsSync(p));
       if (!htmlPath) return res.status(500).send("amap-locate.html not found");
@@ -1299,8 +1336,8 @@ async function registerRoutes(app2) {
   app2.get("/api/speech-recognition", (_req, res) => {
     try {
       const candidates = [
-        join2(process.cwd(), "server_dist", "speech-recognition.html"),
-        join2(process.cwd(), "server", "speech-recognition.html")
+        join(process.cwd(), "server_dist", "speech-recognition.html"),
+        join(process.cwd(), "server", "speech-recognition.html")
       ];
       const htmlPath = candidates.find((p) => existsSync(p));
       if (!htmlPath) return res.status(500).send("speech-recognition.html not found");
@@ -1337,8 +1374,8 @@ async function registerRoutes(app2) {
   app2.get("/api/map-voice-guide", (_req, res) => {
     try {
       const candidates = [
-        join2(process.cwd(), "server_dist", "map-voice-guide.html"),
-        join2(process.cwd(), "server", "map-voice-guide.html")
+        join(process.cwd(), "server_dist", "map-voice-guide.html"),
+        join(process.cwd(), "server", "map-voice-guide.html")
       ];
       const htmlPath = candidates.find((p) => existsSync(p));
       if (!htmlPath) return res.status(500).send("map-voice-guide.html not found");
@@ -1356,8 +1393,8 @@ async function registerRoutes(app2) {
     if (!key) return res.status(500).send("AMAP_API_KEY not configured");
     try {
       const candidates = [
-        join2(process.cwd(), "server_dist", "map-tuyugou.html"),
-        join2(process.cwd(), "server", "map-tuyugou.html")
+        join(process.cwd(), "server_dist", "map-tuyugou.html"),
+        join(process.cwd(), "server", "map-tuyugou.html")
       ];
       const htmlPath = candidates.find((p) => existsSync(p));
       if (!htmlPath) return res.status(500).send("map-tuyugou.html not found");
@@ -1474,35 +1511,37 @@ async function registerRoutes(app2) {
   });
   app2.post("/api/doubao/tts", async (req, res) => {
     const { text, voice } = req.body;
+    if (!text?.trim()) return res.status(400).json({ error: "text required" });
     const appId = process.env.VOLCENGINE_APP_ID;
     const token = process.env.VOLCENGINE_ACCESS_TOKEN;
-    if (!appId || !token) return res.status(503).json({ error: "doubao_not_configured" });
-    if (!text?.trim()) return res.status(400).json({ error: "text required" });
-    const attempts = [
-      { cluster: "volcano_mega", voice_type: voice || "BV700_V2_streaming" },
-      { cluster: "volcano_tts", voice_type: "BV700_streaming" }
-    ];
-    for (const { cluster, voice_type } of attempts) {
-      const payload = {
-        app: { appid: appId, token, cluster },
-        user: { uid: "xiaoxiang_companion" },
-        audio: { voice_type, encoding: "mp3", speed_ratio: 1, volume_ratio: 1, pitch_ratio: 1 },
-        request: { reqid: uuidv4(), text: text.slice(0, 2e3), text_type: "plain", operation: "query" }
-      };
-      try {
-        const resp = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
-          method: "POST",
-          headers: { Authorization: `Bearer;${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        const data = await resp.json();
-        console.log(`[DoubaoTTS] cluster=${cluster} voice=${voice_type} code=${data.code} msg=${data.message}`);
-        if (data.code === 3e3 && data.data) {
-          return res.json({ audio: data.data, encoding: "mp3" });
+    const arkKey = process.env.ARK_API_KEY;
+    if (appId && token) {
+      const attempts = [
+        { cluster: "volcano_mega", voice_type: voice || "BV700_V2_streaming" },
+        { cluster: "volcano_tts", voice_type: "BV700_streaming" }
+      ];
+      for (const { cluster, voice_type } of attempts) {
+        const payload = {
+          app: { appid: appId, token, cluster },
+          user: { uid: "xiaoxiang_companion" },
+          audio: { voice_type, encoding: "mp3", speed_ratio: 1, volume_ratio: 1, pitch_ratio: 1 },
+          request: { reqid: uuidv4(), text: text.slice(0, 2e3), text_type: "plain", operation: "query" }
+        };
+        try {
+          const resp = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
+            method: "POST",
+            headers: { Authorization: `Bearer;${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const data = await resp.json();
+          console.log(`[DoubaoTTS] cluster=${cluster} voice=${voice_type} code=${data.code}`);
+          if (data.code === 3e3 && data.data) {
+            return res.json({ audio: data.data, encoding: "mp3" });
+          }
+          console.warn(`[DoubaoTTS] cluster=${cluster} code=${data.code} \u2014 trying next`);
+        } catch (err) {
+          console.error("[DoubaoTTS] fetch error:", err?.message);
         }
-        console.warn(`[DoubaoTTS] cluster=${cluster} failed, trying next\u2026`);
-      } catch (err) {
-        console.error("[DoubaoTTS] fetch error:", err?.message);
       }
     }
     return res.status(500).json({ error: "tts_failed_all_clusters" });
@@ -1541,6 +1580,10 @@ async function registerRoutes(app2) {
       console.error("[DoubaoASR] error:", err?.message);
       return res.status(500).json({ error: "asr_request_failed", text: "" });
     }
+  });
+  app2.post("/api/doubao/s2s/close", (_req, res) => {
+    closeRealtimeConn();
+    res.json({ ok: true });
   });
   app2.post("/api/doubao/s2s", async (req, res) => {
     const { audioBase64, mimeType, systemRole, emotion, location, activityHint, stepRate } = req.body;
