@@ -143,104 +143,132 @@ export default function AdaptiveRoamScreen() {
   }, [speed, phase, mapReady, sensorReady, injectJs]);
 
   // ── Real sensor subscription ──────────────────────────────────
+  // Strategy: Accelerometer (no permission) handles BOTH stability AND step detection.
+  // Pedometer is tried as an enhancement; if denied/blocked at OS level, accel takes over.
   useEffect(() => {
     if (phase !== "roaming") return;
 
     let pedometerSub: { remove: () => void } | null = null;
     let accelSub: { remove: () => void } | null = null;
-    let fallbackTimer: ReturnType<typeof setInterval> | null = null;
 
-    const activateFallback = () => {
-      if (useFallback.current) return;
-      useFallback.current = true;
-      setSensorReady(true);
-      let spd = 4.2, sl = 0.60, fr = 110;
-      fallbackTimer = setInterval(() => {
-        spd = +Math.max(2.2, Math.min(6.5, spd + (Math.random() - 0.5) * 0.5)).toFixed(1);
-        sl  = +Math.max(0.38, Math.min(0.88, sl  + (Math.random() - 0.5) * 0.04)).toFixed(2);
-        fr  = Math.round(Math.max(80, Math.min(140, fr + (Math.random() - 0.5) * 6)));
-        setSpeed(spd);
-        setStepLen(sl);
-        setFreq(fr);
-        if (spd < 1.0) {
-          if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
-        } else { wasRestingRef.current = false; }
-      }, 2500);
-    };
+    // Step detection state (accelerometer-based, unit-agnostic zero-crossing)
+    let smoothMag = -1;            // -1 = not yet initialized
+    let prevDev   = 0;
+    let lastStepTime = 0;
+    const stepTimes: number[] = [];
+    let pedoActive = false;         // true once pedometer fires at least one step
 
-    (async () => {
-      // Accelerometer — no permission needed, start immediately
-      Accelerometer.setUpdateInterval(250);
-      accelSub = Accelerometer.addListener(({ x, y, z }) => {
-        const mag = Math.sqrt(x * x + y * y + z * z);
-        accelBuf.current.push(mag);
-        if (accelBuf.current.length > 40) accelBuf.current.shift();
+    // Mark sensor ready immediately — accel always works
+    setSensorReady(true);
+    useFallback.current = false;
 
-        if (accelBuf.current.length >= 12) {
-          const mean = accelBuf.current.reduce((a, b) => a + b, 0) / accelBuf.current.length;
-          const variance = accelBuf.current.reduce((a, b) => a + (b - mean) ** 2, 0) / accelBuf.current.length;
-          const stab = Math.round(Math.max(62, Math.min(100, 100 - variance * 14)));
-          setStability(stab);
+    // Accelerometer: 40ms interval (25 Hz) for reliable step detection
+    Accelerometer.setUpdateInterval(40);
+    accelSub = Accelerometer.addListener(({ x, y, z }) => {
+      const mag = Math.sqrt(x * x + y * y + z * z);
+
+      // ── Stability (rolling variance over 50 samples ≈ 2 s) ───────
+      accelBuf.current.push(mag);
+      if (accelBuf.current.length > 50) accelBuf.current.shift();
+      if (accelBuf.current.length >= 15) {
+        const mean = accelBuf.current.reduce((a, b) => a + b, 0) / accelBuf.current.length;
+        const variance = accelBuf.current.reduce((a, b) => a + (b - mean) ** 2, 0) / accelBuf.current.length;
+        setStability(Math.round(Math.max(62, Math.min(100, 100 - variance * 14))));
+      }
+
+      // ── Step detection (only when pedometer unavailable/blocked) ──
+      if (pedoActive) return;
+
+      // Initialize smooth baseline on first sample
+      if (smoothMag < 0) { smoothMag = mag; return; }
+
+      // Exponential moving average — slow enough to track gravity, fast enough for steps
+      smoothMag = 0.92 * smoothMag + 0.08 * mag;
+      const dev = mag - smoothMag;
+
+      const now = Date.now();
+      // Debug: log mag/dev every ~2s so threshold can be tuned
+      if (stepTimes.length === 0 && now % 2000 < 40) {
+        console.log(`[Accel] mag=${mag.toFixed(3)} smooth=${smoothMag.toFixed(3)} dev=${dev.toFixed(3)}`);
+      }
+
+      // Positive zero-crossing = upswing of a step impact
+      // threshold 0.5 works for m/s² units (Android); also handles g units (iOS ~0.05g ≈ same relative)
+      if (prevDev < 0 && dev >= 0.5 && (now - lastStepTime) > 280) {
+        console.log(`[Accel] STEP detected dev=${dev.toFixed(3)}`);
+        lastStepTime = now;
+
+        // Keep only steps within last 6 seconds
+        stepTimes.push(now);
+        const cutoff = now - 6000;
+        let i = 0;
+        while (i < stepTimes.length && stepTimes[i] < cutoff) i++;
+        if (i > 0) stepTimes.splice(0, i);
+
+        if (stepTimes.length >= 2) {
+          // cadence from rolling 6-second window
+          const cadence = Math.round((stepTimes.length / 6) * 60);
+          const clamped = Math.max(0, Math.min(200, cadence));
+          const sl  = +(Math.min(0.90, Math.max(0.35, 0.35 + clamped * 0.003))).toFixed(2);
+          const spd = +Math.min(8, Math.max(0, (clamped * sl / 60) * 3.6)).toFixed(1);
+
+          setFreq(clamped);
+          setStepLen(sl);
+          setSpeed(spd);
+
+          if (spd < 1.0) {
+            if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
+          } else {
+            wasRestingRef.current = false;
+          }
         }
-      });
+      }
+      prevDev = dev;
+    });
 
-      // Pedometer — attempt to request permission (best-effort; some devices report
-      // "denied" incorrectly in Expo Go even though the hardware is available).
+    // Decay timer: if no step for 3 s, reset speed/cadence to 0
+    const decayTimer = setInterval(() => {
+      if (!pedoActive && Date.now() - lastStepTime > 3000) {
+        setSpeed(0); setFreq(0); setStepLen(0);
+      }
+    }, 1000);
+
+    // Also try pedometer — if it works, prefer it over accel-based step detection
+    (async () => {
       await Pedometer.requestPermissionsAsync().catch(() => {});
-
-      // Base availability solely on hardware, not on the (sometimes wrong) permission status.
       const isAvail = await Pedometer.isAvailableAsync().catch(() => false);
-      console.log("[Pedo] isAvailable:", isAvail);
 
-      if (isAvail) {
-        // Sensor hardware confirmed. Mark ready immediately so the UI shows
-        // real data (0 values until user walks). No need to wait for first step.
-        setSensorReady(true);
-
-        try {
-          pedometerSub = Pedometer.watchStepCount(result => {
-            const now = Date.now();
-            const ref = pedoRef.current;
-
-            if (ref) {
-              const dtMin = (now - ref.time) / 60000;
-              if (dtMin >= 0.08) {
-                const stepsInWindow = result.steps - ref.count;
-                const cadence = Math.round(stepsInWindow / dtMin);
-                const clampedCadence = Math.max(0, Math.min(220, cadence));
-                const sl = +(Math.min(0.90, Math.max(0.35, 0.35 + clampedCadence * 0.003))).toFixed(2);
-                const spd = +Math.min(9, Math.max(0, (clampedCadence * sl / 60) * 3.6)).toFixed(1);
-
-                setFreq(clampedCadence);
-                setStepLen(sl);
-                setSpeed(spd);
-
-                if (spd < 1.0) {
-                  if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
-                } else {
-                  wasRestingRef.current = false;
-                }
-                pedoRef.current = { count: result.steps, time: now };
-              }
-            } else {
+      if (!isAvail) return;
+      try {
+        pedometerSub = Pedometer.watchStepCount(result => {
+          pedoActive = true; // suppress accel step detection
+          const now = Date.now();
+          const ref = pedoRef.current;
+          if (ref) {
+            const dtMin = (now - ref.time) / 60000;
+            if (dtMin >= 0.08) {
+              const stepsInWindow = result.steps - ref.count;
+              const cadence = Math.round(stepsInWindow / dtMin);
+              const clamped = Math.max(0, Math.min(220, cadence));
+              const sl  = +(Math.min(0.90, Math.max(0.35, 0.35 + clamped * 0.003))).toFixed(2);
+              const spd = +Math.min(9, Math.max(0, (clamped * sl / 60) * 3.6)).toFixed(1);
+              setFreq(clamped); setStepLen(sl); setSpeed(spd);
+              if (spd < 1.0) {
+                if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
+              } else { wasRestingRef.current = false; }
               pedoRef.current = { count: result.steps, time: now };
             }
-          });
-        } catch (e) {
-          console.log("[Pedo] watchStepCount error:", e);
-          // stays in real-sensor mode (sensorReady=true) with 0 values
-        }
-      } else {
-        // Hardware unavailable — use simulation
-        console.log("[Pedo] hardware unavailable, activating fallback simulation");
-        activateFallback();
-      }
+          } else {
+            pedoRef.current = { count: result.steps, time: now };
+          }
+        });
+      } catch { /* pedometer blocked — accelerometer handles it */ }
     })();
 
     return () => {
       pedometerSub?.remove();
       accelSub?.remove();
-      if (fallbackTimer) clearInterval(fallbackTimer);
+      clearInterval(decayTimer);
       accelBuf.current = [];
       pedoRef.current = null;
     };
