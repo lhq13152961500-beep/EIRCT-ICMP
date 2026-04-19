@@ -744,12 +744,12 @@ export default function MapGuideScreen() {
                         return (
                           <>
                             <View style={styles.routeStat}>
-                              <Ionicons name="location-outline" size={13} color={Colors.light.textSecondary} />
+                              <Ionicons name="business-outline" size={13} color={Colors.light.textSecondary} />
                               <Text style={styles.routeStatText}>{route.poiIds.length}个景点</Text>
                             </View>
                             <View style={styles.routeStatDivider} />
                             <View style={styles.routeStat}>
-                              <Ionicons name="navigate-outline" size={13} color={Colors.light.textSecondary} />
+                              <Ionicons name="footsteps-outline" size={13} color={Colors.light.textSecondary} />
                               <Text style={styles.routeStatText}>{totalKm}公里</Text>
                             </View>
                             <View style={styles.routeStatDivider} />
