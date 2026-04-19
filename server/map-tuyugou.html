@@ -296,6 +296,85 @@ window.drawRouteFromPosition = function(poiIds, color, userLng, userLat) {
   window.drawRoute(remaining, color);
 };
 
+// ── Visited POI tracking ──────────────────────────────────────────────────────
+
+var _visitedIds = [];
+
+// Gray-out a visited POI marker with a checkmark
+window.markPoiVisited = function(id) {
+  if (_visitedIds.indexOf(id) === -1) _visitedIds.push(id);
+  var marker = leafletMarkers[id];
+  if (!marker) return;
+  var poi = POIS.find(function(p) { return p.id === id; });
+  if (!poi) return;
+  var icon = L.divIcon({
+    html: '<div style="position:relative;display:flex;flex-direction:column;align-items:center">'
+        + '<div style="width:52px;height:52px;border-radius:50%;background:#999;display:flex;align-items:center;justify-content:center;border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.2);font-size:24px;opacity:0.75">✓</div>'
+        + '<div style="margin-top:3px;background:rgba(0,0,0,0.4);color:#ddd;font-size:10px;padding:2px 7px;border-radius:8px;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis">'
+        + poi.name + '</div></div>',
+    className: '',
+    iconSize: null,
+    iconAnchor: [26, 54],
+  });
+  marker.setIcon(icon);
+};
+
+// Build dynamic route: excludes visited POIs, then orders remaining by greedy nearest-neighbor from user position.
+// Falls back gracefully when coords are missing or all stops are visited.
+window.buildDynamicRoute = function(candidateIds, color, userLng, userLat, visitedIds) {
+  var visited = visitedIds || [];
+
+  // Filter out visited stops
+  var remaining = candidateIds.filter(function(id) { return visited.indexOf(id) === -1; });
+
+  // Edge cases: need at least 2 stops to draw a polyline
+  if (remaining.length === 0) {
+    // All visited — show last 2 of original route for orientation
+    remaining = candidateIds.slice(-2);
+    window.drawRoute(remaining, color);
+    return;
+  }
+  if (remaining.length === 1) {
+    // One stop left — prepend the previous stop for a 2-point route
+    var soloIdx = candidateIds.indexOf(remaining[0]);
+    var prevId = soloIdx > 0 ? candidateIds[soloIdx - 1] : candidateIds[0];
+    remaining = [prevId, remaining[0]];
+    window.drawRoute(remaining, color);
+    return;
+  }
+
+  // No GPS fix — draw remaining stops in original order
+  if (!userLng || !userLat) {
+    window.drawRoute(remaining, color);
+    return;
+  }
+
+  // Greedy nearest-neighbor TSP: at each step pick the closest unvisited stop
+  var pool = remaining.map(function(id) {
+    return POIS.find(function(p) { return p.id === id; });
+  }).filter(Boolean);
+
+  var ordered = [];
+  var curLng = userLng, curLat = userLat;
+  while (pool.length > 0) {
+    var minD = Infinity, bestIdx = 0;
+    for (var i = 0; i < pool.length; i++) {
+      var p = pool[i];
+      var dlng = p.pos[0] - curLng;
+      var dlat = p.pos[1] - curLat;
+      var d = dlng * dlng + dlat * dlat;
+      if (d < minD) { minD = d; bestIdx = i; }
+    }
+    var best = pool[bestIdx];
+    ordered.push(best.id);
+    curLng = best.pos[0];
+    curLat = best.pos[1];
+    pool.splice(bestIdx, 1);
+  }
+
+  window.drawRoute(ordered, color);
+};
+
 window.selectPoi = function(id) {
   if (id === null) {
     activeMarkerId = null;

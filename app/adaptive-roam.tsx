@@ -48,6 +48,25 @@ const ROUTE_LEVELS = [
   { ids: ["1","9","7","12","4","8","5","10","2","3","6","11"],     color: "#3DAA6F", stops: 12, km: 4.2, label: "全览路线" },
 ];
 
+// GCJ-02 coordinates mirrored from map-tuyugou.html POIS array.
+// Used in React Native for 50 m proximity detection (no WebView round-trip needed).
+const POI_COORDS: Record<string, { lng: number; lat: number }> = {
+  "1":  { lng: 89.5971, lat: 42.8603 },
+  "2":  { lng: 89.5998, lat: 42.8588 },
+  "3":  { lng: 89.6012, lat: 42.8572 },
+  "4":  { lng: 89.6078, lat: 42.8641 },
+  "5":  { lng: 89.6045, lat: 42.8615 },
+  "6":  { lng: 89.6035, lat: 42.8560 },
+  "7":  { lng: 89.5985, lat: 42.8625 },
+  "8":  { lng: 89.6058, lat: 42.8625 },
+  "9":  { lng: 89.5972, lat: 42.8638 },
+  "10": { lng: 89.6020, lat: 42.8605 },
+  "11": { lng: 89.6048, lat: 42.8583 },
+  "12": { lng: 89.6010, lat: 42.8640 },
+  "13": { lng: 89.6030, lat: 42.8600 },
+  "14": { lng: 89.6072, lat: 42.8558 },
+};
+
 const INTEREST_LABELS: Record<string, string> = {
   culture: "文化建筑",
   folk: "民俗体验",
@@ -65,13 +84,49 @@ export default function AdaptiveRoamScreen() {
   const insets = useSafeAreaInsets();
   const savedSession = roamSession.get();
   const { locationStatus } = useLocation();
-  // Keep latest GPS coords (GCJ-02) for GPS-aware route switching
+  // Latest GPS fix (GCJ-02)
   const userLocRef = useRef<{ lng: number; lat: number } | null>(null);
+  // Visited POI tracking — Set prevents duplicates
+  const visitedPoiIdsRef = useRef<Set<string>>(new Set());
+  const [visitedCount, setVisitedCount] = useState(0);
+
+  // On every GPS update: cache coords + check 50 m proximity for visited detection
   useEffect(() => {
-    if (locationStatus.state === "located") {
-      userLocRef.current = { lng: locationStatus.lng, lat: locationStatus.lat };
+    if (locationStatus.state !== "located") return;
+    const { lng: userLng, lat: userLat } = locationStatus;
+    userLocRef.current = { lng: userLng, lat: userLat };
+
+    if (phase !== "roaming" || !mapReady) return;
+
+    // Haversine-lite: 1° lat ≈ 111 320 m; 1° lng × cos(lat) ≈ 81 500 m at 42.86°N
+    const cosLat = Math.cos((userLat * Math.PI) / 180);
+    let newlyVisited = false;
+    Object.entries(POI_COORDS).forEach(([id, coord]) => {
+      if (visitedPoiIdsRef.current.has(id)) return;
+      const dlat = (coord.lat - userLat) * 111320;
+      const dlng = (coord.lng - userLng) * 111320 * cosLat;
+      if (Math.sqrt(dlat * dlat + dlng * dlng) < 50) {
+        visitedPoiIdsRef.current.add(id);
+        injectJs(`window.markPoiVisited && window.markPoiVisited(${JSON.stringify(id)});`);
+        newlyVisited = true;
+      }
+    });
+    if (newlyVisited) {
+      const count = visitedPoiIdsRef.current.size;
+      setVisitedCount(count);
+      // Refresh current route so it excludes newly visited POIs
+      setArpRouteLevel(prev => {
+        const route = ROUTE_LEVELS[prev];
+        const visited = Array.from(visitedPoiIdsRef.current);
+        injectJs(
+          `window.buildDynamicRoute && window.buildDynamicRoute(` +
+          `${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)}, ` +
+          `${userLng}, ${userLat}, ${JSON.stringify(visited)});`
+        );
+        return prev;
+      });
     }
-  }, [locationStatus]);
+  }, [locationStatus, phase, mapReady, injectJs]);
 
   const [phase, setPhase]       = useState<"setup" | "roaming">(savedSession ? "roaming" : "setup");
   const [selectedTime, setTime] = useState<number>(savedSession?.selectedTime ?? 1.5);
@@ -120,7 +175,17 @@ export default function AdaptiveRoamScreen() {
     if (!mapReady || phase !== "roaming") return;
     const route = ROUTE_LEVELS[arpRouteLevel];
     injectJs(`window.setMyLocation && window.setMyLocation(89.5971, 42.8603);`);
-    injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)});`);
+    const loc = userLocRef.current;
+    const visited = Array.from(visitedPoiIdsRef.current);
+    if (loc) {
+      injectJs(
+        `window.buildDynamicRoute && window.buildDynamicRoute(` +
+        `${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)}, ` +
+        `${loc.lng}, ${loc.lat}, ${JSON.stringify(visited)});`
+      );
+    } else {
+      injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)});`);
+    }
   }, [mapReady, phase]); // eslint-disable-line
 
   // ── Persist arpRouteLevel ─────────────────────────────────────
@@ -145,11 +210,15 @@ export default function AdaptiveRoamScreen() {
       if (next !== prev) {
         const route = ROUTE_LEVELS[next];
         const loc = userLocRef.current;
+        const visited = Array.from(visitedPoiIdsRef.current);
         if (loc) {
-          // GPS-aware: draw remaining route from user's current nearest POI onward
-          injectJs(`window.drawRouteFromPosition && window.drawRouteFromPosition(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)}, ${loc.lng}, ${loc.lat});`);
+          // GPS + visited-aware: order remaining unvisited POIs by nearest-neighbor
+          injectJs(
+            `window.buildDynamicRoute && window.buildDynamicRoute(` +
+            `${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)}, ` +
+            `${loc.lng}, ${loc.lat}, ${JSON.stringify(visited)});`
+          );
         } else {
-          // No GPS fix yet — draw full new route
           injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)});`);
         }
         setArpAccepted(false);
@@ -648,6 +717,16 @@ export default function AdaptiveRoamScreen() {
             <Text style={[styles.gaitMetricUnit, { color: arpColor }]}>点击查看详情</Text>
           </Pressable>
         </View>
+
+        {/* Visited POI progress — appears once first POI is entered */}
+        {visitedCount > 0 && (
+          <View style={styles.visitedBadge}>
+            <MaterialCommunityIcons name="map-marker-check" size={14} color="#3DAA6F" />
+            <Text style={styles.visitedBadgeText}>
+              已游览 {visitedCount} / {ROUTE_LEVELS[arpRouteLevel].stops} 景点
+            </Text>
+          </View>
+        )}
       </Animated.View>
 
       {/* ARP Modal */}
@@ -900,6 +979,14 @@ const styles = StyleSheet.create({
   gaitMetricVal: { fontSize: 26, fontWeight: "800", color: Colors.light.text, lineHeight: 30 },
   gaitMetricUnit: { fontSize: 12, color: Colors.light.textSecondary },
   gaitArpLabelRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+
+  visitedBadge: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 16, paddingBottom: 10,
+  },
+  visitedBadgeText: {
+    fontSize: 12, fontWeight: "700", color: "#3DAA6F",
+  },
 
   // ARP Modal
   arpOverlay: {
