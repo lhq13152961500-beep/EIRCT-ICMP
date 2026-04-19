@@ -579,12 +579,13 @@ export interface CustomRoute {
   poiIds: string[];
   color: string;
   icon: string;
+  imageData?: string | null;
   createdAt: string;
 }
 
 export async function getCustomRoutes(userId: string): Promise<CustomRoute[]> {
   const result = await pgPool.query(
-    "SELECT id, user_id, name, poi_ids, color, icon, created_at FROM custom_routes WHERE user_id = $1 ORDER BY created_at DESC",
+    "SELECT id, user_id, name, poi_ids, color, icon, image_data, created_at FROM custom_routes WHERE user_id = $1 ORDER BY created_at DESC",
     [userId]
   );
   return result.rows.map((r: any) => ({
@@ -594,6 +595,7 @@ export async function getCustomRoutes(userId: string): Promise<CustomRoute[]> {
     poiIds: Array.isArray(r.poi_ids) ? r.poi_ids : JSON.parse(r.poi_ids || "[]"),
     color: r.color,
     icon: r.icon,
+    imageData: r.image_data ?? null,
     createdAt: r.created_at,
   }));
 }
@@ -603,11 +605,12 @@ export async function addCustomRoute(
   name: string,
   poiIds: string[],
   color: string,
-  icon: string
+  icon: string,
+  imageData?: string | null
 ): Promise<CustomRoute> {
   const result = await pgPool.query(
-    "INSERT INTO custom_routes (user_id, name, poi_ids, color, icon) VALUES ($1, $2, $3, $4, $5) RETURNING id, user_id, name, poi_ids, color, icon, created_at",
-    [userId, name, JSON.stringify(poiIds), color, icon]
+    "INSERT INTO custom_routes (user_id, name, poi_ids, color, icon, image_data) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, user_id, name, poi_ids, color, icon, image_data, created_at",
+    [userId, name, JSON.stringify(poiIds), color, icon, imageData ?? null]
   );
   const r = result.rows[0];
   return {
@@ -617,6 +620,7 @@ export async function addCustomRoute(
     poiIds: Array.isArray(r.poi_ids) ? r.poi_ids : JSON.parse(r.poi_ids || "[]"),
     color: r.color,
     icon: r.icon,
+    imageData: r.image_data ?? null,
     createdAt: r.created_at,
   };
 }

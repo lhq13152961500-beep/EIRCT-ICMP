@@ -9,6 +9,9 @@ import {
   StatusBar,
   TextInput,
   PanResponder,
+  Image,
+  ActionSheetIOS,
+  Alert,
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,6 +19,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
 import Colors from "@/constants/colors";
 import { setPendingCustomRoute } from "@/lib/itinerary-store";
 import { getApiUrl } from "@/lib/query-client";
@@ -85,6 +90,7 @@ export default function CreateItineraryScreen() {
   const [activeFilter, setActiveFilter] = useState<FilterKey>("全部");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [routeName, setRouteName] = useState("");
+  const [routeImageUri, setRouteImageUri] = useState<string | null>(null);
   const [dragState, setDragState] = useState<{ idx: number; dy: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [miniMapReady, setMiniMapReady] = useState(false);
@@ -118,7 +124,48 @@ export default function CreateItineraryScreen() {
 
   const togglePoi = useCallback((id: string) => {
     haptic();
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    setSelectedIds(prev => {
+      const isAdding = !prev.includes(id);
+      if (isAdding && miniMapReady) {
+        setTimeout(() => {
+          miniMapRef.current?.injectJavaScript(
+            `(function(){ window.zoomToSelectedPoi && window.zoomToSelectedPoi(${JSON.stringify(id)}); })(); true;`
+          );
+        }, 0);
+      }
+      return isAdding ? [...prev, id] : prev.filter(x => x !== id);
+    });
+  }, [miniMapReady]);
+
+  const pickImage = useCallback(async () => {
+    haptic();
+    const doLaunch = async (source: "gallery" | "camera") => {
+      const permResult = source === "camera"
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permResult.granted) {
+        Alert.alert("需要权限", source === "camera" ? "请在设置中开启相机权限" : "请在设置中开启相册权限");
+        return;
+      }
+      const result = source === "camera"
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.7 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+      if (!result.canceled && result.assets.length > 0) {
+        setRouteImageUri(result.assets[0].uri);
+      }
+    };
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ["取消", "从相册选取", "拍照"], cancelButtonIndex: 0 },
+        (idx) => { if (idx === 1) doLaunch("gallery"); else if (idx === 2) doLaunch("camera"); }
+      );
+    } else {
+      Alert.alert("行程图标", "选择图片来源", [
+        { text: "从相册选取", onPress: () => doLaunch("gallery") },
+        { text: "拍照", onPress: () => doLaunch("camera") },
+        { text: "取消", style: "cancel" },
+      ]);
+    }
   }, []);
 
   const removePoi = useCallback((id: string) => {
@@ -195,13 +242,26 @@ export default function CreateItineraryScreen() {
     const color = "#E88A2E";
     const icon = "⭐";
     let savedId: string | undefined;
+    let imageBase64: string | null = null;
+
+    if (routeImageUri) {
+      try {
+        const base64 = await FileSystem.readAsStringAsync(routeImageUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        imageBase64 = `data:image/jpeg;base64,${base64}`;
+      } catch (e) {
+        console.warn("[create-itinerary] read image failed:", e);
+      }
+    }
+
     if (user?.id && user.id !== "guest") {
       try {
         setSaving(true);
         const res = await fetch(`${getApiUrl()}api/custom-routes`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: user.id, name, poiIds: selectedIds, color, icon }),
+          body: JSON.stringify({ userId: user.id, name, poiIds: selectedIds, color, icon, imageData: imageBase64 }),
         });
         if (res.ok) {
           const data = await res.json();
@@ -213,9 +273,9 @@ export default function CreateItineraryScreen() {
         setSaving(false);
       }
     }
-    setPendingCustomRoute({ ids: selectedIds, name, color, icon, savedId });
+    setPendingCustomRoute({ ids: selectedIds, name, color, icon, imageData: imageBase64, savedId });
     router.back();
-  }, [selectedIds, routeName, user]);
+  }, [selectedIds, routeName, routeImageUri, user]);
 
   const formatDuration = (minutes: number) => {
     if (minutes < 60) return `约${minutes}分钟`;
@@ -358,6 +418,38 @@ export default function CreateItineraryScreen() {
                 returnKeyType="done"
               />
             </View>
+          )}
+
+          {/* Route Image Picker */}
+          {selectedPois.length > 0 && (
+            <Pressable style={styles.imagePicker} onPress={pickImage}>
+              {routeImageUri ? (
+                <View style={styles.imagePickerPreview}>
+                  <Image source={{ uri: routeImageUri }} style={styles.imagePickerThumb} />
+                  <View style={styles.imagePickerPreviewText}>
+                    <Text style={styles.imagePickerLabel}>行程图标</Text>
+                    <Text style={styles.imagePickerSub}>点击更换图片</Text>
+                  </View>
+                  <Pressable
+                    style={styles.imagePickerClear}
+                    onPress={(e) => { e.stopPropagation(); haptic(); setRouteImageUri(null); }}
+                  >
+                    <Ionicons name="close-circle" size={20} color="#BEB4AA" />
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={styles.imagePickerEmpty}>
+                  <View style={styles.imagePickerIcon}>
+                    <Ionicons name="image-outline" size={24} color="#8B5E3C" />
+                  </View>
+                  <View>
+                    <Text style={styles.imagePickerLabel}>添加行程图标</Text>
+                    <Text style={styles.imagePickerSub}>从相册或拍照选取（可选）</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color="#BEB4AA" style={{ marginLeft: "auto" }} />
+                </View>
+              )}
+            </Pressable>
           )}
 
           {selectedPois.length === 0 ? (
@@ -654,4 +746,42 @@ const styles = StyleSheet.create({
     gap: 8, paddingVertical: 15, borderRadius: 14,
   },
   startBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
+
+  imagePicker: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#EEE8DF",
+    marginBottom: 12,
+    overflow: "hidden",
+  },
+  imagePickerEmpty: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    gap: 12,
+  },
+  imagePickerIcon: {
+    width: 44, height: 44, borderRadius: 10,
+    backgroundColor: "#FFF4E6",
+    alignItems: "center", justifyContent: "center",
+  },
+  imagePickerLabel: {
+    fontSize: 14, fontWeight: "600", color: Colors.light.text,
+  },
+  imagePickerSub: {
+    fontSize: 11.5, color: Colors.light.textSecondary, marginTop: 2,
+  },
+  imagePickerPreview: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    gap: 12,
+  },
+  imagePickerThumb: {
+    width: 52, height: 52, borderRadius: 10,
+    backgroundColor: "#EEE8DF",
+  },
+  imagePickerPreviewText: { flex: 1 },
+  imagePickerClear: { padding: 4 },
 });

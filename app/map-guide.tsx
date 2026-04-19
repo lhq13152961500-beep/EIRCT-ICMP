@@ -11,6 +11,7 @@ import {
   StatusBar,
   ActivityIndicator,
   LayoutChangeEvent,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -149,6 +150,7 @@ interface CustomRouteData {
   poiIds: string[];
   color: string;
   icon: string;
+  imageData?: string | null;
 }
 
 export default function MapGuideScreen() {
@@ -226,6 +228,7 @@ export default function MapGuideScreen() {
         poiIds: r.poiIds,
         color: r.color,
         icon: r.icon,
+        imageData: r.imageData ?? null,
       })));
     } catch (e) {
       console.warn("[map-guide] fetchCustomRoutes error:", e);
@@ -257,7 +260,7 @@ export default function MapGuideScreen() {
         setCustomRoutes(prev => {
           const exists = prev.find(r => r.id === pending.savedId);
           if (exists) return prev;
-          return [{ id: pending.savedId!, name: pending.name, poiIds: pending.ids, color: pending.color, icon: pending.icon }, ...prev];
+          return [{ id: pending.savedId!, name: pending.name, poiIds: pending.ids, color: pending.color, icon: pending.icon, imageData: pending.imageData ?? null }, ...prev];
         });
       }
       if (mapReady) {
@@ -627,17 +630,23 @@ export default function MapGuideScreen() {
               {customRoutes.map((route) => (
                 <View key={route.id} style={styles.routeCard}>
                   <View style={[styles.routeCardTop, { backgroundColor: route.color + "18" }]}>
-                    <View style={styles.routeCardTopLeft}>
+                    {route.imageData ? (
+                      <Image
+                        source={{ uri: route.imageData }}
+                        style={styles.customRouteImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
                       <Text style={styles.routeCardIcon}>{route.icon}</Text>
-                      <View style={styles.routeCardTitleWrap}>
-                        <View style={styles.customRouteTitleRow}>
-                          <Text style={styles.routeCardTitle} numberOfLines={1}>{route.name}</Text>
-                          <View style={[styles.customBadge, { backgroundColor: route.color + "25" }]}>
-                            <Text style={[styles.customBadgeText, { color: route.color }]}>我的行程</Text>
-                          </View>
+                    )}
+                    <View style={styles.routeCardTitleWrap}>
+                      <View style={styles.customRouteTitleRow}>
+                        <Text style={styles.routeCardTitle} numberOfLines={1}>{route.name}</Text>
+                        <View style={[styles.customBadge, { backgroundColor: route.color + "25" }]}>
+                          <Text style={[styles.customBadgeText, { color: route.color }]}>我的行程</Text>
                         </View>
-                        <Text style={styles.routeCardDesc}>{route.poiIds.length} 个景点</Text>
                       </View>
+                      <Text style={styles.routeCardDesc}>{route.poiIds.length} 个景点</Text>
                     </View>
                     <Pressable
                       style={styles.deleteRouteBtn}
@@ -980,7 +989,7 @@ const styles = StyleSheet.create({
   createBtnText: { fontSize: 13, fontWeight: "600", color: Colors.light.text },
 
   // Custom route card elements
-  customRouteTitleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
+  customRouteTitleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" },
   customBadge: {
     paddingHorizontal: 6, paddingVertical: 2,
     borderRadius: 6,
@@ -991,5 +1000,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF0F0",
     alignItems: "center", justifyContent: "center",
     marginLeft: 8,
+    flexShrink: 0,
+  },
+  customRouteImage: {
+    width: 52, height: 52,
+    borderRadius: 10,
+    backgroundColor: "#EEE8DF",
+    marginRight: 12,
+    flexShrink: 0,
   },
 });

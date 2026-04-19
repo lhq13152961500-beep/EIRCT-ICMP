@@ -3,6 +3,7 @@ export interface PendingRoute {
   name: string;
   color: string;
   icon: string;
+  imageData?: string | null;
   savedId?: string;
 }
 

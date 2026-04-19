@@ -139,7 +139,7 @@ async function incrementArchivePlay(id) {
 }
 async function getCustomRoutes(userId) {
   const result = await pgPool.query(
-    "SELECT id, user_id, name, poi_ids, color, icon, created_at FROM custom_routes WHERE user_id = $1 ORDER BY created_at DESC",
+    "SELECT id, user_id, name, poi_ids, color, icon, image_data, created_at FROM custom_routes WHERE user_id = $1 ORDER BY created_at DESC",
     [userId]
   );
   return result.rows.map((r) => ({
@@ -149,13 +149,14 @@ async function getCustomRoutes(userId) {
     poiIds: Array.isArray(r.poi_ids) ? r.poi_ids : JSON.parse(r.poi_ids || "[]"),
     color: r.color,
     icon: r.icon,
+    imageData: r.image_data ?? null,
     createdAt: r.created_at
   }));
 }
-async function addCustomRoute(userId, name, poiIds, color, icon) {
+async function addCustomRoute(userId, name, poiIds, color, icon, imageData) {
   const result = await pgPool.query(
-    "INSERT INTO custom_routes (user_id, name, poi_ids, color, icon) VALUES ($1, $2, $3, $4, $5) RETURNING id, user_id, name, poi_ids, color, icon, created_at",
-    [userId, name, JSON.stringify(poiIds), color, icon]
+    "INSERT INTO custom_routes (user_id, name, poi_ids, color, icon, image_data) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, user_id, name, poi_ids, color, icon, image_data, created_at",
+    [userId, name, JSON.stringify(poiIds), color, icon, imageData ?? null]
   );
   const r = result.rows[0];
   return {
@@ -165,6 +166,7 @@ async function addCustomRoute(userId, name, poiIds, color, icon) {
     poiIds: Array.isArray(r.poi_ids) ? r.poi_ids : JSON.parse(r.poi_ids || "[]"),
     color: r.color,
     icon: r.icon,
+    imageData: r.image_data ?? null,
     createdAt: r.created_at
   };
 }
@@ -1806,12 +1808,12 @@ async function registerRoutes(app2) {
   });
   app2.post("/api/custom-routes", async (req, res) => {
     try {
-      const { userId, name, poiIds, color, icon } = req.body;
+      const { userId, name, poiIds, color, icon, imageData } = req.body;
       if (!userId || !name || !Array.isArray(poiIds) || poiIds.length === 0) {
         return res.status(400).json({ error: "userId, name, poiIds required" });
       }
       const { addCustomRoute: addCustomRoute2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
-      const route = await addCustomRoute2(userId, name, poiIds, color || "#E88A2E", icon || "\u2B50");
+      const route = await addCustomRoute2(userId, name, poiIds, color || "#E88A2E", icon || "\u2B50", imageData ?? null);
       return res.json(route);
     } catch (err) {
       console.error("[custom-routes] POST error:", err);

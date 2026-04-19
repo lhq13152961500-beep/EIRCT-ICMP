@@ -162,6 +162,14 @@ window.highlightSelected = function(ids) {
   });
 };
 
+window.zoomToSelectedPoi = function(id) {
+  if (!map) return;
+  var poi = POIS.find(function(p) { return p.id === id; });
+  if (!poi) return;
+  var wgs = gcj2wgs(poi.pos[0], poi.pos[1]);
+  map.flyTo([wgs[1], wgs[0]], 17, { animate: true, duration: 0.6 });
+};
+
 function shouldShow(poi) {
   if (currentFilter === "全部") return true;
   return poi.category === currentFilter;

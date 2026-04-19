@@ -865,12 +865,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/custom-routes", async (req, res) => {
     try {
-      const { userId, name, poiIds, color, icon } = req.body;
+      const { userId, name, poiIds, color, icon, imageData } = req.body;
       if (!userId || !name || !Array.isArray(poiIds) || poiIds.length === 0) {
         return res.status(400).json({ error: "userId, name, poiIds required" });
       }
       const { addCustomRoute } = await import("./storage.js");
-      const route = await addCustomRoute(userId, name, poiIds, color || "#E88A2E", icon || "⭐");
+      const route = await addCustomRoute(userId, name, poiIds, color || "#E88A2E", icon || "⭐", imageData ?? null);
       return res.json(route);
     } catch (err) {
       console.error("[custom-routes] POST error:", err);
