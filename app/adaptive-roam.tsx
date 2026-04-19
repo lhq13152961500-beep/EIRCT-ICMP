@@ -184,45 +184,55 @@ export default function AdaptiveRoamScreen() {
         }
       });
 
-      // Pedometer — request permission, then check hardware availability
-      const { status } = await Pedometer.requestPermissionsAsync().catch(() => ({ status: "denied" }));
-      const isPedoAvail = status === "granted" && await Pedometer.isAvailableAsync().catch(() => false);
+      // Pedometer — attempt to request permission (best-effort; some devices report
+      // "denied" incorrectly in Expo Go even though the hardware is available).
+      await Pedometer.requestPermissionsAsync().catch(() => {});
 
-      if (isPedoAvail) {
-        // Sensor confirmed: mark ready immediately with 0 values.
-        // Data will update as soon as the user takes steps — no timeout needed.
+      // Base availability solely on hardware, not on the (sometimes wrong) permission status.
+      const isAvail = await Pedometer.isAvailableAsync().catch(() => false);
+      console.log("[Pedo] isAvailable:", isAvail);
+
+      if (isAvail) {
+        // Sensor hardware confirmed. Mark ready immediately so the UI shows
+        // real data (0 values until user walks). No need to wait for first step.
         setSensorReady(true);
 
-        pedometerSub = Pedometer.watchStepCount(result => {
-          const now = Date.now();
-          const ref = pedoRef.current;
+        try {
+          pedometerSub = Pedometer.watchStepCount(result => {
+            const now = Date.now();
+            const ref = pedoRef.current;
 
-          if (ref) {
-            const dtMin = (now - ref.time) / 60000;
-            if (dtMin >= 0.08) {
-              const stepsInWindow = result.steps - ref.count;
-              const cadence = Math.round(stepsInWindow / dtMin);
-              const clampedCadence = Math.max(0, Math.min(220, cadence));
-              const sl = +(Math.min(0.90, Math.max(0.35, 0.35 + clampedCadence * 0.003))).toFixed(2);
-              const spd = +Math.min(9, Math.max(0, (clampedCadence * sl / 60) * 3.6)).toFixed(1);
+            if (ref) {
+              const dtMin = (now - ref.time) / 60000;
+              if (dtMin >= 0.08) {
+                const stepsInWindow = result.steps - ref.count;
+                const cadence = Math.round(stepsInWindow / dtMin);
+                const clampedCadence = Math.max(0, Math.min(220, cadence));
+                const sl = +(Math.min(0.90, Math.max(0.35, 0.35 + clampedCadence * 0.003))).toFixed(2);
+                const spd = +Math.min(9, Math.max(0, (clampedCadence * sl / 60) * 3.6)).toFixed(1);
 
-              setFreq(clampedCadence);
-              setStepLen(sl);
-              setSpeed(spd);
+                setFreq(clampedCadence);
+                setStepLen(sl);
+                setSpeed(spd);
 
-              if (spd < 1.0) {
-                if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
-              } else {
-                wasRestingRef.current = false;
+                if (spd < 1.0) {
+                  if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
+                } else {
+                  wasRestingRef.current = false;
+                }
+                pedoRef.current = { count: result.steps, time: now };
               }
+            } else {
               pedoRef.current = { count: result.steps, time: now };
             }
-          } else {
-            pedoRef.current = { count: result.steps, time: now };
-          }
-        });
+          });
+        } catch (e) {
+          console.log("[Pedo] watchStepCount error:", e);
+          // stays in real-sensor mode (sensorReady=true) with 0 values
+        }
       } else {
-        // Permission denied or hardware unavailable — use simulation
+        // Hardware unavailable — use simulation
+        console.log("[Pedo] hardware unavailable, activating fallback simulation");
         activateFallback();
       }
     })();
