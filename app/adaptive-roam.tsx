@@ -726,32 +726,16 @@ export default function AdaptiveRoamScreen() {
                 : `步速活跃（${speedDisplay} 米/分），系统已为您扩展路线至 ${currentRoute.stops} 个景点（+${stopsDiff}），推荐探索更多${interestLabel}类景区。`}
             </Text>
 
-            {arpAccepted ? (
-              <View style={[styles.arpAcceptedBtn, { backgroundColor: arpColor + "22", borderColor: arpColor }]}>
-                <Ionicons name="checkmark-circle" size={18} color={arpColor} />
-                <Text style={[styles.arpAcceptedText, { color: arpColor }]}>已应用优化方案</Text>
-              </View>
-            ) : (
-              <Pressable
-                style={[styles.arpActionBtn, { backgroundColor: arpColor }]}
-                onPress={() => {
-                  haptic("medium");
-                  setArpAccepted(true);
-                  setTimeout(() => setArpModalVisible(false), 800);
-                }}
-              >
-                <Text style={styles.arpActionBtnText}>
-                  {arpLevel === "等待步行" ? "知道了，开始行走"
-                    : arpLevel === "疲劳预警" ? "接受优化路线"
-                    : arpLevel === "适中" ? "应用偏好推荐"
-                    : "探索延伸景点"}
-                </Text>
-                <Ionicons name="navigate" size={16} color="#fff" />
-              </Pressable>
-            )}
-
-            <Pressable onPress={() => setArpModalVisible(false)} style={styles.arpCloseBtn}>
-              <Text style={styles.arpCloseText}>稍后再说</Text>
+            <Pressable
+              style={[styles.arpActionBtn, { backgroundColor: arpColor }]}
+              onPress={() => {
+                haptic("medium");
+                setArpAccepted(true);
+                setArpModalVisible(false);
+              }}
+            >
+              <Text style={styles.arpActionBtnText}>知道了，继续行走</Text>
+              <Ionicons name="walk" size={16} color="#fff" />
             </Pressable>
           </View>
         </Pressable>
