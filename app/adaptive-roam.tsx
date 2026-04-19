@@ -151,16 +151,20 @@ export default function AdaptiveRoamScreen() {
     let pedometerSub: { remove: () => void } | null = null;
     let accelSub: { remove: () => void } | null = null;
 
-    // Step detection — dual-EMA band-pass approach
-    // fastMag (τ≈110ms): smooths noise, preserves step rhythm (~1-2 Hz)
-    // slowMag (τ≈1300ms): tracks gravity/orientation drift only
-    // dev = fastMag - slowMag isolates the walking signal
+    // Step detection — dual-EMA + hysteresis threshold crossing
+    // fastMag (τ≈110ms): removes sample noise, keeps step signal
+    // slowMag (τ≈1300ms): tracks gravity/orientation only
+    // dev = fastMag - slowMag isolates walking oscillation (~1-2 Hz)
+    // Hysteresis: arm goes "armed" when dev drops below LOW, fires when dev > HIGH
+    // This avoids needing a full negative zero-crossing (which fails in pocket/hand)
     let fastMag = -1;
     let slowMag = -1;
-    let prevDev  = 0;
+    let stepArmed = true;       // ready to detect next peak
     let lastStepTime = 0;
     const stepTimes: number[] = [];
     let pedoActive = false;
+    const STEP_HIGH = 0.05;     // fire threshold (g) — catches gentle pocket walking
+    const STEP_LOW  = 0.02;     // reset threshold (g) — re-arm after each peak
 
     // Mark sensor ready immediately
     setSensorReady(true);
@@ -188,19 +192,20 @@ export default function AdaptiveRoamScreen() {
       // Dual EMA: τ_fast≈110ms (α=0.70), τ_slow≈1300ms (α=0.97)
       fastMag = 0.70 * fastMag + 0.30 * mag;
       slowMag = 0.97 * slowMag + 0.03 * mag;
-      const dev = fastMag - slowMag;  // band-pass walking signal
+      const dev = fastMag - slowMag;
 
       const now = Date.now();
       if (now % 2000 < 40) {
-        console.log(`[Accel] mag=${mag.toFixed(3)} fast=${fastMag.toFixed(3)} slow=${slowMag.toFixed(3)} dev=${dev.toFixed(3)} steps=${stepTimes.length}`);
+        console.log(`[Accel] dev=${dev.toFixed(3)} armed=${stepArmed} steps=${stepTimes.length}`);
       }
 
-      // Positive zero-crossing with threshold ≥0.08g
-      // fast-slow band-pass reliably oscillates ±0.15-0.30g during normal walking
-      if (prevDev < 0 && dev >= 0.08 && (now - lastStepTime) > 250) {
+      // Hysteresis step detection
+      if (stepArmed && dev >= STEP_HIGH && (now - lastStepTime) > 280) {
+        // STEP DETECTED
+        stepArmed = false;
         lastStepTime = now;
 
-        // Rolling 8-second window (more stable cadence average)
+        // Rolling 8-second window
         stepTimes.push(now);
         const cutoff = now - 8000;
         let i = 0;
@@ -208,18 +213,20 @@ export default function AdaptiveRoamScreen() {
         if (i > 0) stepTimes.splice(0, i);
 
         if (stepTimes.length >= 3) {
-          // cadence derived from average interval between detected steps
+          // Cadence from average interval of recent steps (robust to missed detections)
           const intervals: number[] = [];
           for (let j = 1; j < stepTimes.length; j++) {
             intervals.push(stepTimes[j] - stepTimes[j - 1]);
           }
-          const avgIntervalMs = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-          const cadence = Math.round(60000 / avgIntervalMs);
-          const clamped = Math.max(0, Math.min(200, cadence));
+          // Use median interval to ignore outliers (pauses, missed steps)
+          const sorted = [...intervals].sort((a, b) => a - b);
+          const medianMs = sorted[Math.floor(sorted.length / 2)];
+          const cadence  = Math.round(60000 / medianMs);
+          const clamped  = Math.max(30, Math.min(200, cadence));
           const sl  = +(Math.min(0.90, Math.max(0.35, 0.35 + clamped * 0.003))).toFixed(2);
           const spd = +Math.min(8, Math.max(0, (clamped * sl / 60) * 3.6)).toFixed(1);
 
-          console.log(`[Accel] cadence=${clamped} sl=${sl} spd=${spd}`);
+          console.log(`[Step] cadence=${clamped} sl=${sl} spd=${spd} n=${stepTimes.length}`);
           setFreq(clamped);
           setStepLen(sl);
           setSpeed(spd);
@@ -228,13 +235,15 @@ export default function AdaptiveRoamScreen() {
             if (!wasRestingRef.current) { restCountRef.current += 1; wasRestingRef.current = true; }
           } else { wasRestingRef.current = false; }
         }
+      } else if (!stepArmed && dev < STEP_LOW) {
+        // Re-arm: dev has returned below low threshold, ready for next peak
+        stepArmed = true;
       }
-      prevDev = dev;
     });
 
-    // Decay timer: if no step for 5 s, reset speed/cadence to 0
+    // Decay timer: no step for 8 s → gradually reset display to 0
     const decayTimer = setInterval(() => {
-      if (!pedoActive && Date.now() - lastStepTime > 5000) {
+      if (!pedoActive && Date.now() - lastStepTime > 8000) {
         setSpeed(0); setFreq(0); setStepLen(0);
       }
     }, 1000);
