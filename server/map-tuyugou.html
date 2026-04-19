@@ -269,6 +269,33 @@ window.clearRoute = function() {
   _routeStopMarkers = [];
 };
 
+// GPS-aware route drawing: finds the nearest POI in poiIds to (userLng, userLat)
+// and draws only the remaining portion of the route from that POI onward.
+// Falls back to full drawRoute when no position is available.
+window.drawRouteFromPosition = function(poiIds, color, userLng, userLat) {
+  if (!userLng || !userLat || poiIds.length < 2) {
+    window.drawRoute(poiIds, color);
+    return;
+  }
+
+  // Find nearest POI index in GCJ-02 space (no need for precise Haversine here)
+  var minDist = Infinity;
+  var nearestIdx = 0;
+  poiIds.forEach(function(id, idx) {
+    var poi = POIS.find(function(p) { return p.id === id; });
+    if (!poi) return;
+    var dlng = poi.pos[0] - userLng;
+    var dlat = poi.pos[1] - userLat;
+    var dist = dlng * dlng + dlat * dlat;
+    if (dist < minDist) { minDist = dist; nearestIdx = idx; }
+  });
+
+  // Slice route to start from nearest POI; keep at least 2 stops
+  var remaining = poiIds.slice(nearestIdx);
+  if (remaining.length < 2) remaining = poiIds.slice(Math.max(0, poiIds.length - 2));
+  window.drawRoute(remaining, color);
+};
+
 window.selectPoi = function(id) {
   if (id === null) {
     activeMarkerId = null;

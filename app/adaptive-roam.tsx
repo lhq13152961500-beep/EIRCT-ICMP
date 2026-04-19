@@ -18,6 +18,7 @@ import WebView from "react-native-webview";
 import { Accelerometer, Pedometer } from "expo-sensors";
 import { getApiUrl } from "@/lib/query-client";
 import { roamSession } from "@/lib/roam-session";
+import { useLocation } from "@/contexts/LocationContext";
 import Colors from "@/constants/colors";
 
 const haptic = (style: "light" | "medium" = "light") => {
@@ -63,6 +64,14 @@ function timeToLevel(hours: number) {
 export default function AdaptiveRoamScreen() {
   const insets = useSafeAreaInsets();
   const savedSession = roamSession.get();
+  const { locationStatus } = useLocation();
+  // Keep latest GPS coords (GCJ-02) for GPS-aware route switching
+  const userLocRef = useRef<{ lng: number; lat: number } | null>(null);
+  useEffect(() => {
+    if (locationStatus.state === "located") {
+      userLocRef.current = { lng: locationStatus.lng, lat: locationStatus.lat };
+    }
+  }, [locationStatus]);
 
   const [phase, setPhase]       = useState<"setup" | "roaming">(savedSession ? "roaming" : "setup");
   const [selectedTime, setTime] = useState<number>(savedSession?.selectedTime ?? 1.5);
@@ -135,7 +144,14 @@ export default function AdaptiveRoamScreen() {
       else if (arpState === "疲劳预警") next = Math.max(prev - 1, 0);
       if (next !== prev) {
         const route = ROUTE_LEVELS[next];
-        injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)});`);
+        const loc = userLocRef.current;
+        if (loc) {
+          // GPS-aware: draw remaining route from user's current nearest POI onward
+          injectJs(`window.drawRouteFromPosition && window.drawRouteFromPosition(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)}, ${loc.lng}, ${loc.lat});`);
+        } else {
+          // No GPS fix yet — draw full new route
+          injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(route.ids)}, ${JSON.stringify(route.color)});`);
+        }
         setArpAccepted(false);
       }
       return next;
