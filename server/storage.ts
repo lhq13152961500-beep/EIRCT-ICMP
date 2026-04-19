@@ -572,4 +572,61 @@ export async function incrementArchivePlay(id: string): Promise<void> {
   await pgPool.query("UPDATE sound_archives SET play_count = play_count + 1 WHERE id = $1", [id]);
 }
 
+export interface CustomRoute {
+  id: string;
+  userId: string;
+  name: string;
+  poiIds: string[];
+  color: string;
+  icon: string;
+  createdAt: string;
+}
+
+export async function getCustomRoutes(userId: string): Promise<CustomRoute[]> {
+  const result = await pgPool.query(
+    "SELECT id, user_id, name, poi_ids, color, icon, created_at FROM custom_routes WHERE user_id = $1 ORDER BY created_at DESC",
+    [userId]
+  );
+  return result.rows.map((r: any) => ({
+    id: r.id,
+    userId: r.user_id,
+    name: r.name,
+    poiIds: Array.isArray(r.poi_ids) ? r.poi_ids : JSON.parse(r.poi_ids || "[]"),
+    color: r.color,
+    icon: r.icon,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function addCustomRoute(
+  userId: string,
+  name: string,
+  poiIds: string[],
+  color: string,
+  icon: string
+): Promise<CustomRoute> {
+  const result = await pgPool.query(
+    "INSERT INTO custom_routes (user_id, name, poi_ids, color, icon) VALUES ($1, $2, $3, $4, $5) RETURNING id, user_id, name, poi_ids, color, icon, created_at",
+    [userId, name, JSON.stringify(poiIds), color, icon]
+  );
+  const r = result.rows[0];
+  return {
+    id: r.id,
+    userId: r.user_id,
+    name: r.name,
+    poiIds: Array.isArray(r.poi_ids) ? r.poi_ids : JSON.parse(r.poi_ids || "[]"),
+    color: r.color,
+    icon: r.icon,
+    createdAt: r.created_at,
+  };
+}
+
+export async function deleteCustomRoute(id: string, userId: string): Promise<boolean> {
+  const result = await pgPool.query(
+    "DELETE FROM custom_routes WHERE id = $1 AND user_id = $2",
+    [id, userId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
 export const storage = new HybridStorage();

@@ -1,13 +1,21 @@
-let pendingCustomRouteIds: string[] | null = null;
-
-export function setPendingCustomRoute(ids: string[]) {
-  pendingCustomRouteIds = ids;
+export interface PendingRoute {
+  ids: string[];
+  name: string;
+  color: string;
+  icon: string;
+  savedId?: string;
 }
 
-export function getPendingCustomRoute(): string[] | null {
-  return pendingCustomRouteIds;
+let pendingRoute: PendingRoute | null = null;
+
+export function setPendingCustomRoute(route: PendingRoute) {
+  pendingRoute = route;
+}
+
+export function getPendingCustomRoute(): PendingRoute | null {
+  return pendingRoute;
 }
 
 export function clearPendingCustomRoute() {
-  pendingCustomRouteIds = null;
+  pendingRoute = null;
 }

@@ -22,7 +22,8 @@ import { WebView } from "react-native-webview";
 import Colors from "@/constants/colors";
 import { useLocation } from "@/contexts/LocationContext";
 import { getApiUrl } from "@/lib/query-client";
-import { getPendingCustomRoute, clearPendingCustomRoute } from "@/lib/itinerary-store";
+import { getPendingCustomRoute, clearPendingCustomRoute, PendingRoute } from "@/lib/itinerary-store";
+import { useAuth } from "@/contexts/AuthContext";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const SHEET_FULL = SCREEN_HEIGHT * 0.74;
@@ -142,11 +143,20 @@ const MAP_URL = (() => {
 /* Stable object reference — prevents WebView from reloading on parent re-renders */
 const MAP_SOURCE = MAP_URL ? { uri: MAP_URL } : undefined;
 
+interface CustomRouteData {
+  id: string;
+  name: string;
+  poiIds: string[];
+  color: string;
+  icon: string;
+}
+
 export default function MapGuideScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 0 : insets.top;
   const bottomPad = Platform.OS === "web" ? 16 : insets.bottom;
   const { locationStatus, isLocating } = useLocation();
+  const { user } = useAuth();
 
   const locationName =
     locationStatus.state === "located" ? locationStatus.locationName : null;
@@ -169,10 +179,11 @@ export default function MapGuideScreen() {
   const [mapAreaHeight, setMapAreaHeight] = useState(SCREEN_HEIGHT * 0.62);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState(false);
+  const [customRoutes, setCustomRoutes] = useState<CustomRouteData[]>([]);
 
   const sheetAnim = useRef(new Animated.Value(0)).current;
   const webViewRef = useRef<WebView>(null);
-  const pendingCustomRouteRef = useRef<string[] | null>(null);
+  const pendingCustomRouteRef = useRef<PendingRoute | null>(null);
 
   const mapW = SCREEN_WIDTH;
   const mapH = mapAreaHeight;
@@ -203,33 +214,79 @@ export default function MapGuideScreen() {
     injectJs(`window.setMyLocation && window.setMyLocation(${START_LNG}, ${START_LAT});`);
   }, [mapReady, injectJs]);
 
+  // Load custom routes from API
+  const fetchCustomRoutes = useCallback(async (userId: string) => {
+    try {
+      const res = await fetch(`${getApiUrl()}api/custom-routes/user/${encodeURIComponent(userId)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setCustomRoutes(data.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        poiIds: r.poiIds,
+        color: r.color,
+        icon: r.icon,
+      })));
+    } catch (e) {
+      console.warn("[map-guide] fetchCustomRoutes error:", e);
+    }
+  }, []);
+
   // When map becomes ready, draw any pending custom route
   useEffect(() => {
     if (!mapReady) return;
-    const ids = pendingCustomRouteRef.current;
-    if (ids && ids.length > 0) {
+    const pending = pendingCustomRouteRef.current;
+    if (pending && pending.ids.length > 0) {
       pendingCustomRouteRef.current = null;
-      setActiveRouteId("custom");
+      setActiveRouteId(pending.savedId ?? "custom");
       setSheetOpen(false);
-      injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(ids)}, "#E88A2E");`);
+      injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(pending.ids)}, ${JSON.stringify(pending.color)});`);
     }
   }, [mapReady, injectJs]);
 
   // Pick up custom route from store when screen is focused (returning from create-itinerary)
   useFocusEffect(
     useCallback(() => {
-      const ids = getPendingCustomRoute();
-      if (!ids || ids.length === 0) return;
-      clearPendingCustomRoute();
-      if (mapReady) {
-        setActiveRouteId("custom");
-        setSheetOpen(false);
-        injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(ids)}, "#E88A2E");`);
-      } else {
-        pendingCustomRouteRef.current = ids;
+      if (user?.id && user.id !== "guest") {
+        fetchCustomRoutes(user.id);
       }
-    }, [mapReady, injectJs])
+      const pending = getPendingCustomRoute();
+      if (!pending || pending.ids.length === 0) return;
+      clearPendingCustomRoute();
+      if (pending.savedId) {
+        setCustomRoutes(prev => {
+          const exists = prev.find(r => r.id === pending.savedId);
+          if (exists) return prev;
+          return [{ id: pending.savedId!, name: pending.name, poiIds: pending.ids, color: pending.color, icon: pending.icon }, ...prev];
+        });
+      }
+      if (mapReady) {
+        setActiveRouteId(pending.savedId ?? "custom");
+        setSheetOpen(false);
+        injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(pending.ids)}, ${JSON.stringify(pending.color)});`);
+      } else {
+        pendingCustomRouteRef.current = pending;
+      }
+    }, [mapReady, injectJs, user, fetchCustomRoutes])
   );
+
+  const handleDeleteCustomRoute = useCallback(async (routeId: string) => {
+    if (!user?.id) return;
+    try {
+      await fetch(`${getApiUrl()}api/custom-routes/${encodeURIComponent(routeId)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      setCustomRoutes(prev => prev.filter(r => r.id !== routeId));
+      if (activeRouteId === routeId) {
+        setActiveRouteId(null);
+        injectJs(`window.clearRoute && window.clearRoute();`);
+      }
+    } catch (e) {
+      console.warn("[map-guide] deleteCustomRoute error:", e);
+    }
+  }, [user, activeRouteId, injectJs]);
 
   const handleWebViewMessage = useCallback((event: { nativeEvent: { data: string } }) => {
     try {
@@ -275,7 +332,12 @@ export default function MapGuideScreen() {
     outputRange: [SHEET_FULL + 40, 0],
   });
 
-  const activeRoute = activeRouteId ? ROUTES.find(r => r.id === activeRouteId) ?? null : null;
+  const activeRoute = activeRouteId
+    ? (ROUTES.find(r => r.id === activeRouteId) ?? null)
+    : null;
+  const activeCustomRoute = activeRouteId
+    ? (customRoutes.find(r => r.id === activeRouteId) ?? null)
+    : null;
 
   const startRoute = useCallback((route: RouteItem) => {
     haptic("medium");
@@ -463,6 +525,19 @@ export default function MapGuideScreen() {
                     <Ionicons name="close" size={20} color="#fff" />
                   </Pressable>
                 </View>
+              ) : activeCustomRoute ? (
+                <View style={[styles.activeRouteBtn, { shadowColor: activeCustomRoute.color }]}>
+                  <View style={[styles.activeRouteBtnMain, { backgroundColor: activeCustomRoute.color }]}>
+                    <Text style={styles.activeRouteBtnIcon}>{activeCustomRoute.icon}</Text>
+                    <Text style={styles.activeRouteBtnText} numberOfLines={1}>{activeCustomRoute.name}</Text>
+                  </View>
+                  <Pressable
+                    style={[styles.activeRouteCancelBtn, { backgroundColor: activeCustomRoute.color }]}
+                    onPress={cancelRoute}
+                  >
+                    <Ionicons name="close" size={20} color="#fff" />
+                  </Pressable>
+                </View>
               ) : (
                 <Pressable style={styles.routeBtn} onPress={openSheet}>
                   <LinearGradient
@@ -474,7 +549,7 @@ export default function MapGuideScreen() {
                     <MaterialCommunityIcons name="map-marker-path" size={20} color="#fff" />
                     <Text style={styles.routeBtnText}>游览路线</Text>
                     <View style={styles.routeBtnBadge}>
-                      <Text style={styles.routeBtnBadgeText}>{ROUTES.length}</Text>
+                      <Text style={styles.routeBtnBadgeText}>{ROUTES.length + customRoutes.length}</Text>
                     </View>
                   </LinearGradient>
                 </Pressable>
@@ -532,7 +607,10 @@ export default function MapGuideScreen() {
               <View style={styles.sheetHeaderRow}>
                 <View>
                   <Text style={styles.sheetTitleWhite}>游览路线</Text>
-                  <Text style={styles.sheetSubWhite}>为你推荐 {ROUTES.length} 条游览路线</Text>
+                  <Text style={styles.sheetSubWhite}>
+                    共 {ROUTES.length + customRoutes.length} 条路线
+                    {customRoutes.length > 0 ? `（含 ${customRoutes.length} 条自定义）` : ""}
+                  </Text>
                 </View>
                 <Pressable style={styles.sheetCloseBtn} onPress={closeSheet}>
                   <Ionicons name="close" size={18} color="rgba(255,255,255,0.85)" />
@@ -545,6 +623,53 @@ export default function MapGuideScreen() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: bottomPad + 100, paddingTop: 12 }}
             >
+              {/* Custom routes */}
+              {customRoutes.map((route) => (
+                <View key={route.id} style={styles.routeCard}>
+                  <View style={[styles.routeCardTop, { backgroundColor: route.color + "18" }]}>
+                    <View style={styles.routeCardTopLeft}>
+                      <Text style={styles.routeCardIcon}>{route.icon}</Text>
+                      <View style={styles.routeCardTitleWrap}>
+                        <View style={styles.customRouteTitleRow}>
+                          <Text style={styles.routeCardTitle} numberOfLines={1}>{route.name}</Text>
+                          <View style={[styles.customBadge, { backgroundColor: route.color + "25" }]}>
+                            <Text style={[styles.customBadgeText, { color: route.color }]}>我的行程</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.routeCardDesc}>{route.poiIds.length} 个景点</Text>
+                      </View>
+                    </View>
+                    <Pressable
+                      style={styles.deleteRouteBtn}
+                      onPress={() => { haptic(); handleDeleteCustomRoute(route.id); }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#E8514A" />
+                    </Pressable>
+                  </View>
+                  <View style={styles.routeCardBottom}>
+                    <View style={styles.routeCardStats}>
+                      <View style={styles.routeStat}>
+                        <Ionicons name="location-outline" size={13} color={Colors.light.textSecondary} />
+                        <Text style={styles.routeStatText}>{route.poiIds.length}个景点</Text>
+                      </View>
+                    </View>
+                    <Pressable
+                      style={[styles.startBtn, { backgroundColor: route.color }]}
+                      onPress={() => {
+                        haptic("medium");
+                        setActiveRouteId(route.id);
+                        injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(route.poiIds)}, ${JSON.stringify(route.color)});`);
+                        closeSheet();
+                      }}
+                    >
+                      <Ionicons name="play" size={14} color="#fff" />
+                      <Text style={styles.startBtnText}>开始游览</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+
+              {/* System routes */}
               {ROUTES.map((route) => (
                 <Pressable
                   key={route.id}
@@ -853,4 +978,18 @@ const styles = StyleSheet.create({
     backgroundColor: "#F2F2F5",
   },
   createBtnText: { fontSize: 13, fontWeight: "600", color: Colors.light.text },
+
+  // Custom route card elements
+  customRouteTitleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
+  customBadge: {
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: 6,
+  },
+  customBadgeText: { fontSize: 10, fontWeight: "700" },
+  deleteRouteBtn: {
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: "#FFF0F0",
+    alignItems: "center", justifyContent: "center",
+    marginLeft: 8,
+  },
 });

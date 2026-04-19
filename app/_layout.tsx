@@ -71,6 +71,7 @@ function RootLayoutNav() {
       <Stack.Screen name="villager-companion"   options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="local-shop"           options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="dialect-game"         options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="create-itinerary"     options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="(tabs)"   options={{ headerShown: false }} />
     </Stack>
   );

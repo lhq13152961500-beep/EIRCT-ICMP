@@ -849,6 +849,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Custom routes API
+  app.get("/api/custom-routes/user/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      if (!userId) return res.status(400).json({ error: "userId required" });
+      const { getCustomRoutes } = await import("./storage.js");
+      const routes = await getCustomRoutes(userId);
+      return res.json(routes);
+    } catch (err) {
+      console.error("[custom-routes] GET error:", err);
+      return res.status(500).json({ error: "Failed to fetch routes" });
+    }
+  });
+
+  app.post("/api/custom-routes", async (req, res) => {
+    try {
+      const { userId, name, poiIds, color, icon } = req.body;
+      if (!userId || !name || !Array.isArray(poiIds) || poiIds.length === 0) {
+        return res.status(400).json({ error: "userId, name, poiIds required" });
+      }
+      const { addCustomRoute } = await import("./storage.js");
+      const route = await addCustomRoute(userId, name, poiIds, color || "#E88A2E", icon || "⭐");
+      return res.json(route);
+    } catch (err) {
+      console.error("[custom-routes] POST error:", err);
+      return res.status(500).json({ error: "Failed to create route" });
+    }
+  });
+
+  app.delete("/api/custom-routes/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { userId } = req.body;
+      if (!id || !userId) return res.status(400).json({ error: "id and userId required" });
+      const { deleteCustomRoute } = await import("./storage.js");
+      const deleted = await deleteCustomRoute(id, userId);
+      return res.json({ deleted });
+    } catch (err) {
+      console.error("[custom-routes] DELETE error:", err);
+      return res.status(500).json({ error: "Failed to delete route" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

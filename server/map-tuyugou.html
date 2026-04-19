@@ -79,6 +79,7 @@ var markerLayer = null; /* LayerGroup for batch add/remove */
 var myLocMarker = null;
 var activeMarkerId = null;
 var currentFilter = "全部";
+var selectedPoiIds = [];
 
 function sendToApp(data) {
   try {
@@ -88,19 +89,20 @@ function sendToApp(data) {
   } catch(e) {}
 }
 
-function buildMarkerHtml(poi, isActive) {
+function buildMarkerHtml(poi, isActive, isSelected) {
   var c = COLORS[poi.category] || { dot:"#888", text:"#555" };
-  var bgColor  = isActive ? c.dot : "white";
-  var txtColor = isActive ? "white" : c.text;
-  var border   = isActive ? "none" : "2px solid " + c.dot;
-  var shadow   = isActive ? "0 3px 10px rgba(0,0,0,0.35)" : "0 2px 7px rgba(0,0,0,0.22)";
-  var scale    = isActive ? "scale(1.12)" : "scale(1)";
+  var bgColor  = isActive ? c.dot : isSelected ? "#FFF4E6" : "white";
+  var txtColor = isActive ? "white" : isSelected ? "#B8681E" : c.text;
+  var border   = isActive ? "none" : isSelected ? "2px solid #E88A2E" : "2px solid " + c.dot;
+  var shadow   = isActive ? "0 3px 10px rgba(0,0,0,0.35)" : isSelected ? "0 0 0 3px rgba(232,138,46,0.35), 0 2px 8px rgba(0,0,0,0.25)" : "0 2px 7px rgba(0,0,0,0.22)";
+  var scale    = isActive ? "scale(1.12)" : isSelected ? "scale(1.08)" : "scale(1)";
+  var dotColor = isSelected ? "#E88A2E" : c.dot;
   return (
     '<div class="custom-marker">' +
     '<div class="marker-bubble" style="background:' + bgColor + ';border:' + border + ';color:' + txtColor + ';box-shadow:' + shadow + ';transform:' + scale + '">' +
     poi.emoji + ' <span>' + poi.name + '</span></div>' +
-    '<div class="marker-stem" style="background:' + c.dot + '"></div>' +
-    '<div class="marker-dot" style="background:' + c.dot + '"></div>' +
+    '<div class="marker-stem" style="background:' + dotColor + '"></div>' +
+    '<div class="marker-dot" style="background:' + dotColor + '"></div>' +
     '</div>'
   );
 }
@@ -113,8 +115,9 @@ function poiToWgs(poi) {
 function createLeafletMarker(poi) {
   var wgsLatLng = poiToWgs(poi);
   var isActive = (poi.id === activeMarkerId);
+  var isSelected = selectedPoiIds.indexOf(poi.id) !== -1;
   var icon = L.divIcon({
-    html: buildMarkerHtml(poi, isActive),
+    html: buildMarkerHtml(poi, isActive, isSelected),
     className: '',
     iconSize: null,
     iconAnchor: [30, 54],
@@ -133,14 +136,31 @@ function setActiveMarker(id) {
     var m = leafletMarkers[pid];
     var poi = POIS.find(function(p){ return p.id === pid; });
     if (!poi) return;
+    var isSelected = selectedPoiIds.indexOf(pid) !== -1;
     m.setIcon(L.divIcon({
-      html: buildMarkerHtml(poi, poi.id === id),
+      html: buildMarkerHtml(poi, poi.id === id, isSelected),
       className: '',
       iconSize: null,
       iconAnchor: [30, 54],
     }));
   });
 }
+
+window.highlightSelected = function(ids) {
+  selectedPoiIds = ids || [];
+  Object.keys(leafletMarkers).forEach(function(pid) {
+    var m = leafletMarkers[pid];
+    var poi = POIS.find(function(p){ return p.id === pid; });
+    if (!poi) return;
+    var isSelected = selectedPoiIds.indexOf(pid) !== -1;
+    m.setIcon(L.divIcon({
+      html: buildMarkerHtml(poi, poi.id === activeMarkerId, isSelected),
+      className: '',
+      iconSize: null,
+      iconAnchor: [30, 54],
+    }));
+  });
+};
 
 function shouldShow(poi) {
   if (currentFilter === "全部") return true;

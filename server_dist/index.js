@@ -1,18 +1,30 @@
-// server/index.ts
-import express from "express";
-
-// server/routes.ts
-import { createServer } from "node:http";
-import { createHash, randomUUID as randomUUID3 } from "crypto";
-import { readFileSync, existsSync } from "node:fs";
-import { join as join2 } from "node:path";
-import https from "node:https";
-import OpenAI, { toFile } from "openai";
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
 
 // server/storage.ts
+var storage_exports = {};
+__export(storage_exports, {
+  HybridStorage: () => HybridStorage,
+  addCustomRoute: () => addCustomRoute,
+  createSoundArchive: () => createSoundArchive,
+  deleteCustomRoute: () => deleteCustomRoute,
+  getCustomRoutes: () => getCustomRoutes,
+  getSoundArchiveAudio: () => getSoundArchiveAudio,
+  getSoundArchiveStats: () => getSoundArchiveStats,
+  getSoundArchives: () => getSoundArchives,
+  incrementArchivePlay: () => incrementArchivePlay,
+  initSoundArchivesTable: () => initSoundArchivesTable,
+  storage: () => storage
+});
 import { randomUUID } from "crypto";
 import { Pool } from "pg";
-var pgPool = new Pool({ connectionString: process.env.DATABASE_URL });
 function haversineMeters(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
   const toRad = (v) => v * Math.PI / 180;
@@ -21,340 +33,6 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
-var HybridStorage = class {
-  async getUser(id) {
-    const res = await pgPool.query(
-      "SELECT id, username, password FROM users WHERE id = $1",
-      [id]
-    );
-    if (res.rows.length === 0) return void 0;
-    const row = res.rows[0];
-    return { id: row.id, username: row.username, password: row.password };
-  }
-  async getUserByUsername(username) {
-    const res = await pgPool.query(
-      "SELECT id, username, password FROM users WHERE username = $1",
-      [username]
-    );
-    if (res.rows.length === 0) return void 0;
-    const row = res.rows[0];
-    return { id: row.id, username: row.username, password: row.password };
-  }
-  async createUser(insertUser) {
-    const id = randomUUID();
-    const res = await pgPool.query(
-      "INSERT INTO users (id, username, password) VALUES ($1, $2, $3) RETURNING id, username, password",
-      [id, insertUser.username, insertUser.password]
-    );
-    const row = res.rows[0];
-    return { id: row.id, username: row.username, password: row.password };
-  }
-  async updateUserPassword(username, hashedPassword) {
-    const res = await pgPool.query(
-      "UPDATE users SET password = $1 WHERE username = $2 RETURNING id",
-      [hashedPassword, username]
-    );
-    return (res.rowCount ?? 0) > 0;
-  }
-  rowToProfile(row) {
-    return {
-      userId: row.user_id,
-      displayName: row.display_name,
-      bio: row.bio,
-      gender: row.gender,
-      birthYear: row.birth_year,
-      birthMonth: row.birth_month,
-      region: row.region,
-      phone: row.phone,
-      address: row.address,
-      avatarUrl: row.avatar_url,
-      updatedAt: row.updated_at
-    };
-  }
-  async getProfile(userId) {
-    const res = await pgPool.query(
-      "SELECT * FROM profiles WHERE user_id = $1",
-      [userId]
-    );
-    if (res.rows.length === 0) return null;
-    return this.rowToProfile(res.rows[0]);
-  }
-  async upsertProfile(userId, data) {
-    const res = await pgPool.query(
-      `INSERT INTO profiles (user_id, display_name, bio, gender, birth_year, birth_month, region, phone, address, avatar_url, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-       ON CONFLICT (user_id) DO UPDATE SET
-         display_name = COALESCE($2, profiles.display_name),
-         bio          = COALESCE($3, profiles.bio),
-         gender       = COALESCE($4, profiles.gender),
-         birth_year   = COALESCE($5, profiles.birth_year),
-         birth_month  = COALESCE($6, profiles.birth_month),
-         region       = COALESCE($7, profiles.region),
-         phone        = COALESCE($8, profiles.phone),
-         address      = COALESCE($9, profiles.address),
-         avatar_url   = COALESCE($10, profiles.avatar_url),
-         updated_at   = NOW()
-       RETURNING *`,
-      [
-        userId,
-        data.displayName ?? null,
-        data.bio ?? null,
-        data.gender ?? null,
-        data.birthYear ?? null,
-        data.birthMonth ?? null,
-        data.region ?? null,
-        data.phone ?? null,
-        data.address ?? null,
-        data.avatarUrl ?? null
-      ]
-    );
-    return this.rowToProfile(res.rows[0]);
-  }
-  rowToRecording(row) {
-    return {
-      id: row.id,
-      userId: row.user_id,
-      title: row.title,
-      locationName: row.location_name,
-      lat: row.lat,
-      lng: row.lng,
-      durationSeconds: row.duration_seconds,
-      publishedAt: row.published_at.toISOString(),
-      author: row.author,
-      quote: row.quote,
-      tags: row.tags || [],
-      imageUri: row.image_uri,
-      audioUrl: row.audio_url
-    };
-  }
-  async addRecording(r) {
-    let audioData = null;
-    if (r.audioData && r.audioData.length > 0) {
-      audioData = r.audioData;
-    }
-    const res = await pgPool.query(
-      `INSERT INTO recordings (user_id, title, location_name, lat, lng, duration_seconds, author, quote, tags, audio_data, image_uri)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING id, user_id, title, location_name, lat, lng, duration_seconds, published_at, author, quote, tags, image_uri, audio_url`,
-      [
-        r.userId ?? null,
-        r.title,
-        r.locationName,
-        r.lat,
-        r.lng,
-        r.durationSeconds,
-        r.author,
-        r.quote,
-        r.tags,
-        audioData,
-        r.imageUri ?? null
-      ]
-    );
-    const rec = this.rowToRecording(res.rows[0]);
-    if (audioData) {
-      rec.audioUri = `/api/recordings/${rec.id}/audio`;
-    }
-    return rec;
-  }
-  async getRecordingAudio(id) {
-    const res = await pgPool.query(
-      "SELECT audio_url, audio_data FROM recordings WHERE id = $1",
-      [id]
-    );
-    if (res.rows.length === 0) return null;
-    if (res.rows[0].audio_url) return res.rows[0].audio_url;
-    return res.rows[0].audio_data ?? null;
-  }
-  async getNearbyRecordings(lat, lng, radiusMeters, viewerUserId) {
-    const res = await pgPool.query(
-      `SELECT id, user_id, title, location_name, lat, lng, duration_seconds, published_at, author, quote, tags, image_uri, audio_url,
-              (audio_data IS NOT NULL OR audio_url IS NOT NULL) AS has_audio
-       FROM recordings
-       ORDER BY published_at DESC
-       LIMIT 200`
-    );
-    const nearby = res.rows.filter((r) => haversineMeters(lat, lng, r.lat, r.lng) <= radiusMeters).map((r) => {
-      const rec = this.rowToRecording(r);
-      if (rec.audioUrl) {
-        rec.audioUri = rec.audioUrl;
-      } else if (r.has_audio) {
-        rec.audioUri = `/api/recordings/${rec.id}/audio`;
-      }
-      return rec;
-    });
-    if (nearby.length === 0) return nearby;
-    const ids = nearby.map((r) => r.id);
-    const likesRes = await pgPool.query(
-      `SELECT recording_id, COUNT(*)::int AS cnt FROM recording_likes WHERE recording_id = ANY($1) GROUP BY recording_id`,
-      [ids]
-    );
-    const likeMap = {};
-    for (const row of likesRes.rows) likeMap[row.recording_id] = row.cnt;
-    const commentsRes = await pgPool.query(
-      `SELECT id, recording_id, user_id, username, text, created_at, voice_url FROM recording_comments WHERE recording_id = ANY($1) ORDER BY created_at ASC`,
-      [ids]
-    );
-    const commentMap = {};
-    for (const row of commentsRes.rows) {
-      const rid = row.recording_id;
-      if (!commentMap[rid]) commentMap[rid] = [];
-      commentMap[rid].push({
-        id: row.id,
-        recordingId: rid,
-        userId: row.user_id,
-        username: row.username,
-        text: row.text,
-        createdAt: row.created_at.toISOString(),
-        voiceUrl: row.voice_url
-      });
-    }
-    let userLikeSet = /* @__PURE__ */ new Set();
-    if (viewerUserId) {
-      const ulRes = await pgPool.query(
-        `SELECT recording_id FROM recording_likes WHERE user_id = $1 AND recording_id = ANY($2)`,
-        [viewerUserId, ids]
-      );
-      for (const row of ulRes.rows) userLikeSet.add(row.recording_id);
-    }
-    for (const rec of nearby) {
-      rec.likeCount = likeMap[rec.id] ?? 0;
-      rec.comments = commentMap[rec.id] ?? [];
-      rec.isLiked = userLikeSet.has(rec.id);
-    }
-    return nearby;
-  }
-  async getRecordingsByUser(userId) {
-    const res = await pgPool.query(
-      `SELECT id, user_id, title, location_name, lat, lng, duration_seconds, published_at, author, quote, tags, image_uri, audio_url,
-              (audio_data IS NOT NULL OR audio_url IS NOT NULL) AS has_audio
-       FROM recordings
-       WHERE user_id = $1
-       ORDER BY published_at DESC`,
-      [userId]
-    );
-    const recs = res.rows.map((r) => {
-      const rec = this.rowToRecording(r);
-      if (rec.audioUrl) {
-        rec.audioUri = rec.audioUrl;
-      } else if (r.has_audio) {
-        rec.audioUri = `/api/recordings/${rec.id}/audio`;
-      }
-      return rec;
-    });
-    if (recs.length === 0) return recs;
-    const ids = recs.map((r) => r.id);
-    const likesRes = await pgPool.query(
-      `SELECT recording_id, COUNT(*)::int AS cnt FROM recording_likes WHERE recording_id = ANY($1) GROUP BY recording_id`,
-      [ids]
-    );
-    const likeMap = {};
-    for (const row of likesRes.rows) likeMap[row.recording_id] = row.cnt;
-    const commentsRes = await pgPool.query(
-      `SELECT id, recording_id, user_id, username, text, created_at, voice_url FROM recording_comments WHERE recording_id = ANY($1) ORDER BY created_at ASC`,
-      [ids]
-    );
-    const commentMap = {};
-    for (const row of commentsRes.rows) {
-      const rid = row.recording_id;
-      if (!commentMap[rid]) commentMap[rid] = [];
-      commentMap[rid].push({
-        id: row.id,
-        recordingId: rid,
-        userId: row.user_id,
-        username: row.username,
-        text: row.text,
-        createdAt: row.created_at.toISOString(),
-        voiceUrl: row.voice_url
-      });
-    }
-    for (const rec of recs) {
-      rec.likeCount = likeMap[rec.id] ?? 0;
-      rec.comments = commentMap[rec.id] ?? [];
-    }
-    return recs;
-  }
-  async toggleLike(recordingId, userId) {
-    const delRes = await pgPool.query(
-      `DELETE FROM recording_likes WHERE recording_id = $1 AND user_id = $2 RETURNING id`,
-      [recordingId, userId]
-    );
-    let liked;
-    if (delRes.rowCount && delRes.rowCount > 0) {
-      liked = false;
-    } else {
-      await pgPool.query(
-        `INSERT INTO recording_likes (recording_id, user_id) VALUES ($1, $2) ON CONFLICT (recording_id, user_id) DO NOTHING`,
-        [recordingId, userId]
-      );
-      liked = true;
-    }
-    const countRes = await pgPool.query(
-      `SELECT COUNT(*)::int AS cnt FROM recording_likes WHERE recording_id = $1`,
-      [recordingId]
-    );
-    return { liked, likeCount: countRes.rows[0].cnt };
-  }
-  async addComment(recordingId, userId, username, text, voiceData) {
-    let voiceUrl = null;
-    const res = await pgPool.query(
-      `INSERT INTO recording_comments (recording_id, user_id, username, text, voice_url, voice_data) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [recordingId, userId, username, text, voiceUrl, voiceData ?? null]
-    );
-    const row = res.rows[0];
-    if (voiceData) {
-      voiceUrl = `/api/comments/${row.id}/voice`;
-      await pgPool.query(
-        "UPDATE recording_comments SET voice_url = $1 WHERE id = $2",
-        [voiceUrl, row.id]
-      );
-    }
-    return {
-      id: row.id,
-      recordingId: row.recording_id,
-      userId: row.user_id,
-      username: row.username,
-      text: row.text,
-      createdAt: row.created_at.toISOString(),
-      voiceUrl: voiceData ? voiceUrl : row.voice_url
-    };
-  }
-  async getCommentVoice(commentId) {
-    const res = await pgPool.query(
-      "SELECT voice_data FROM recording_comments WHERE id = $1",
-      [commentId]
-    );
-    if (res.rows.length === 0) return null;
-    return res.rows[0].voice_data ?? null;
-  }
-  async getInteractions(recordingId, viewerUserId) {
-    const likeRes = await pgPool.query(
-      `SELECT COUNT(*)::int AS cnt FROM recording_likes WHERE recording_id = $1`,
-      [recordingId]
-    );
-    let isLiked = false;
-    if (viewerUserId) {
-      const ul = await pgPool.query(
-        `SELECT id FROM recording_likes WHERE recording_id = $1 AND user_id = $2`,
-        [recordingId, viewerUserId]
-      );
-      isLiked = ul.rows.length > 0;
-    }
-    const commentsRes = await pgPool.query(
-      `SELECT id, recording_id, user_id, username, text, created_at, voice_url FROM recording_comments WHERE recording_id = $1 ORDER BY created_at ASC`,
-      [recordingId]
-    );
-    const comments = commentsRes.rows.map((row) => ({
-      id: row.id,
-      recordingId: row.recording_id,
-      userId: row.user_id,
-      username: row.username,
-      text: row.text,
-      createdAt: row.created_at.toISOString(),
-      voiceUrl: row.voice_url
-    }));
-    return { likeCount: likeRes.rows[0].cnt, isLiked, comments };
-  }
-};
 async function initSoundArchivesTable() {
   await pgPool.query(`
     CREATE TABLE IF NOT EXISTS sound_archives (
@@ -459,7 +137,398 @@ async function getSoundArchiveAudio(id) {
 async function incrementArchivePlay(id) {
   await pgPool.query("UPDATE sound_archives SET play_count = play_count + 1 WHERE id = $1", [id]);
 }
-var storage = new HybridStorage();
+async function getCustomRoutes(userId) {
+  const result = await pgPool.query(
+    "SELECT id, user_id, name, poi_ids, color, icon, created_at FROM custom_routes WHERE user_id = $1 ORDER BY created_at DESC",
+    [userId]
+  );
+  return result.rows.map((r) => ({
+    id: r.id,
+    userId: r.user_id,
+    name: r.name,
+    poiIds: Array.isArray(r.poi_ids) ? r.poi_ids : JSON.parse(r.poi_ids || "[]"),
+    color: r.color,
+    icon: r.icon,
+    createdAt: r.created_at
+  }));
+}
+async function addCustomRoute(userId, name, poiIds, color, icon) {
+  const result = await pgPool.query(
+    "INSERT INTO custom_routes (user_id, name, poi_ids, color, icon) VALUES ($1, $2, $3, $4, $5) RETURNING id, user_id, name, poi_ids, color, icon, created_at",
+    [userId, name, JSON.stringify(poiIds), color, icon]
+  );
+  const r = result.rows[0];
+  return {
+    id: r.id,
+    userId: r.user_id,
+    name: r.name,
+    poiIds: Array.isArray(r.poi_ids) ? r.poi_ids : JSON.parse(r.poi_ids || "[]"),
+    color: r.color,
+    icon: r.icon,
+    createdAt: r.created_at
+  };
+}
+async function deleteCustomRoute(id, userId) {
+  const result = await pgPool.query(
+    "DELETE FROM custom_routes WHERE id = $1 AND user_id = $2",
+    [id, userId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+var pgPool, HybridStorage, storage;
+var init_storage = __esm({
+  "server/storage.ts"() {
+    "use strict";
+    pgPool = new Pool({ connectionString: process.env.DATABASE_URL });
+    HybridStorage = class {
+      async getUser(id) {
+        const res = await pgPool.query(
+          "SELECT id, username, password FROM users WHERE id = $1",
+          [id]
+        );
+        if (res.rows.length === 0) return void 0;
+        const row = res.rows[0];
+        return { id: row.id, username: row.username, password: row.password };
+      }
+      async getUserByUsername(username) {
+        const res = await pgPool.query(
+          "SELECT id, username, password FROM users WHERE username = $1",
+          [username]
+        );
+        if (res.rows.length === 0) return void 0;
+        const row = res.rows[0];
+        return { id: row.id, username: row.username, password: row.password };
+      }
+      async createUser(insertUser) {
+        const id = randomUUID();
+        const res = await pgPool.query(
+          "INSERT INTO users (id, username, password) VALUES ($1, $2, $3) RETURNING id, username, password",
+          [id, insertUser.username, insertUser.password]
+        );
+        const row = res.rows[0];
+        return { id: row.id, username: row.username, password: row.password };
+      }
+      async updateUserPassword(username, hashedPassword) {
+        const res = await pgPool.query(
+          "UPDATE users SET password = $1 WHERE username = $2 RETURNING id",
+          [hashedPassword, username]
+        );
+        return (res.rowCount ?? 0) > 0;
+      }
+      rowToProfile(row) {
+        return {
+          userId: row.user_id,
+          displayName: row.display_name,
+          bio: row.bio,
+          gender: row.gender,
+          birthYear: row.birth_year,
+          birthMonth: row.birth_month,
+          region: row.region,
+          phone: row.phone,
+          address: row.address,
+          avatarUrl: row.avatar_url,
+          updatedAt: row.updated_at
+        };
+      }
+      async getProfile(userId) {
+        const res = await pgPool.query(
+          "SELECT * FROM profiles WHERE user_id = $1",
+          [userId]
+        );
+        if (res.rows.length === 0) return null;
+        return this.rowToProfile(res.rows[0]);
+      }
+      async upsertProfile(userId, data) {
+        const res = await pgPool.query(
+          `INSERT INTO profiles (user_id, display_name, bio, gender, birth_year, birth_month, region, phone, address, avatar_url, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+       ON CONFLICT (user_id) DO UPDATE SET
+         display_name = COALESCE($2, profiles.display_name),
+         bio          = COALESCE($3, profiles.bio),
+         gender       = COALESCE($4, profiles.gender),
+         birth_year   = COALESCE($5, profiles.birth_year),
+         birth_month  = COALESCE($6, profiles.birth_month),
+         region       = COALESCE($7, profiles.region),
+         phone        = COALESCE($8, profiles.phone),
+         address      = COALESCE($9, profiles.address),
+         avatar_url   = COALESCE($10, profiles.avatar_url),
+         updated_at   = NOW()
+       RETURNING *`,
+          [
+            userId,
+            data.displayName ?? null,
+            data.bio ?? null,
+            data.gender ?? null,
+            data.birthYear ?? null,
+            data.birthMonth ?? null,
+            data.region ?? null,
+            data.phone ?? null,
+            data.address ?? null,
+            data.avatarUrl ?? null
+          ]
+        );
+        return this.rowToProfile(res.rows[0]);
+      }
+      rowToRecording(row) {
+        return {
+          id: row.id,
+          userId: row.user_id,
+          title: row.title,
+          locationName: row.location_name,
+          lat: row.lat,
+          lng: row.lng,
+          durationSeconds: row.duration_seconds,
+          publishedAt: row.published_at.toISOString(),
+          author: row.author,
+          quote: row.quote,
+          tags: row.tags || [],
+          imageUri: row.image_uri,
+          audioUrl: row.audio_url
+        };
+      }
+      async addRecording(r) {
+        let audioData = null;
+        if (r.audioData && r.audioData.length > 0) {
+          audioData = r.audioData;
+        }
+        const res = await pgPool.query(
+          `INSERT INTO recordings (user_id, title, location_name, lat, lng, duration_seconds, author, quote, tags, audio_data, image_uri)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id, user_id, title, location_name, lat, lng, duration_seconds, published_at, author, quote, tags, image_uri, audio_url`,
+          [
+            r.userId ?? null,
+            r.title,
+            r.locationName,
+            r.lat,
+            r.lng,
+            r.durationSeconds,
+            r.author,
+            r.quote,
+            r.tags,
+            audioData,
+            r.imageUri ?? null
+          ]
+        );
+        const rec = this.rowToRecording(res.rows[0]);
+        if (audioData) {
+          rec.audioUri = `/api/recordings/${rec.id}/audio`;
+        }
+        return rec;
+      }
+      async getRecordingAudio(id) {
+        const res = await pgPool.query(
+          "SELECT audio_url, audio_data FROM recordings WHERE id = $1",
+          [id]
+        );
+        if (res.rows.length === 0) return null;
+        if (res.rows[0].audio_url) return res.rows[0].audio_url;
+        return res.rows[0].audio_data ?? null;
+      }
+      async getNearbyRecordings(lat, lng, radiusMeters, viewerUserId) {
+        const res = await pgPool.query(
+          `SELECT id, user_id, title, location_name, lat, lng, duration_seconds, published_at, author, quote, tags, image_uri, audio_url,
+              (audio_data IS NOT NULL OR audio_url IS NOT NULL) AS has_audio
+       FROM recordings
+       ORDER BY published_at DESC
+       LIMIT 200`
+        );
+        const nearby = res.rows.filter((r) => haversineMeters(lat, lng, r.lat, r.lng) <= radiusMeters).map((r) => {
+          const rec = this.rowToRecording(r);
+          if (rec.audioUrl) {
+            rec.audioUri = rec.audioUrl;
+          } else if (r.has_audio) {
+            rec.audioUri = `/api/recordings/${rec.id}/audio`;
+          }
+          return rec;
+        });
+        if (nearby.length === 0) return nearby;
+        const ids = nearby.map((r) => r.id);
+        const likesRes = await pgPool.query(
+          `SELECT recording_id, COUNT(*)::int AS cnt FROM recording_likes WHERE recording_id = ANY($1) GROUP BY recording_id`,
+          [ids]
+        );
+        const likeMap = {};
+        for (const row of likesRes.rows) likeMap[row.recording_id] = row.cnt;
+        const commentsRes = await pgPool.query(
+          `SELECT id, recording_id, user_id, username, text, created_at, voice_url FROM recording_comments WHERE recording_id = ANY($1) ORDER BY created_at ASC`,
+          [ids]
+        );
+        const commentMap = {};
+        for (const row of commentsRes.rows) {
+          const rid = row.recording_id;
+          if (!commentMap[rid]) commentMap[rid] = [];
+          commentMap[rid].push({
+            id: row.id,
+            recordingId: rid,
+            userId: row.user_id,
+            username: row.username,
+            text: row.text,
+            createdAt: row.created_at.toISOString(),
+            voiceUrl: row.voice_url
+          });
+        }
+        let userLikeSet = /* @__PURE__ */ new Set();
+        if (viewerUserId) {
+          const ulRes = await pgPool.query(
+            `SELECT recording_id FROM recording_likes WHERE user_id = $1 AND recording_id = ANY($2)`,
+            [viewerUserId, ids]
+          );
+          for (const row of ulRes.rows) userLikeSet.add(row.recording_id);
+        }
+        for (const rec of nearby) {
+          rec.likeCount = likeMap[rec.id] ?? 0;
+          rec.comments = commentMap[rec.id] ?? [];
+          rec.isLiked = userLikeSet.has(rec.id);
+        }
+        return nearby;
+      }
+      async getRecordingsByUser(userId) {
+        const res = await pgPool.query(
+          `SELECT id, user_id, title, location_name, lat, lng, duration_seconds, published_at, author, quote, tags, image_uri, audio_url,
+              (audio_data IS NOT NULL OR audio_url IS NOT NULL) AS has_audio
+       FROM recordings
+       WHERE user_id = $1
+       ORDER BY published_at DESC`,
+          [userId]
+        );
+        const recs = res.rows.map((r) => {
+          const rec = this.rowToRecording(r);
+          if (rec.audioUrl) {
+            rec.audioUri = rec.audioUrl;
+          } else if (r.has_audio) {
+            rec.audioUri = `/api/recordings/${rec.id}/audio`;
+          }
+          return rec;
+        });
+        if (recs.length === 0) return recs;
+        const ids = recs.map((r) => r.id);
+        const likesRes = await pgPool.query(
+          `SELECT recording_id, COUNT(*)::int AS cnt FROM recording_likes WHERE recording_id = ANY($1) GROUP BY recording_id`,
+          [ids]
+        );
+        const likeMap = {};
+        for (const row of likesRes.rows) likeMap[row.recording_id] = row.cnt;
+        const commentsRes = await pgPool.query(
+          `SELECT id, recording_id, user_id, username, text, created_at, voice_url FROM recording_comments WHERE recording_id = ANY($1) ORDER BY created_at ASC`,
+          [ids]
+        );
+        const commentMap = {};
+        for (const row of commentsRes.rows) {
+          const rid = row.recording_id;
+          if (!commentMap[rid]) commentMap[rid] = [];
+          commentMap[rid].push({
+            id: row.id,
+            recordingId: rid,
+            userId: row.user_id,
+            username: row.username,
+            text: row.text,
+            createdAt: row.created_at.toISOString(),
+            voiceUrl: row.voice_url
+          });
+        }
+        for (const rec of recs) {
+          rec.likeCount = likeMap[rec.id] ?? 0;
+          rec.comments = commentMap[rec.id] ?? [];
+        }
+        return recs;
+      }
+      async toggleLike(recordingId, userId) {
+        const delRes = await pgPool.query(
+          `DELETE FROM recording_likes WHERE recording_id = $1 AND user_id = $2 RETURNING id`,
+          [recordingId, userId]
+        );
+        let liked;
+        if (delRes.rowCount && delRes.rowCount > 0) {
+          liked = false;
+        } else {
+          await pgPool.query(
+            `INSERT INTO recording_likes (recording_id, user_id) VALUES ($1, $2) ON CONFLICT (recording_id, user_id) DO NOTHING`,
+            [recordingId, userId]
+          );
+          liked = true;
+        }
+        const countRes = await pgPool.query(
+          `SELECT COUNT(*)::int AS cnt FROM recording_likes WHERE recording_id = $1`,
+          [recordingId]
+        );
+        return { liked, likeCount: countRes.rows[0].cnt };
+      }
+      async addComment(recordingId, userId, username, text, voiceData) {
+        let voiceUrl = null;
+        const res = await pgPool.query(
+          `INSERT INTO recording_comments (recording_id, user_id, username, text, voice_url, voice_data) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+          [recordingId, userId, username, text, voiceUrl, voiceData ?? null]
+        );
+        const row = res.rows[0];
+        if (voiceData) {
+          voiceUrl = `/api/comments/${row.id}/voice`;
+          await pgPool.query(
+            "UPDATE recording_comments SET voice_url = $1 WHERE id = $2",
+            [voiceUrl, row.id]
+          );
+        }
+        return {
+          id: row.id,
+          recordingId: row.recording_id,
+          userId: row.user_id,
+          username: row.username,
+          text: row.text,
+          createdAt: row.created_at.toISOString(),
+          voiceUrl: voiceData ? voiceUrl : row.voice_url
+        };
+      }
+      async getCommentVoice(commentId) {
+        const res = await pgPool.query(
+          "SELECT voice_data FROM recording_comments WHERE id = $1",
+          [commentId]
+        );
+        if (res.rows.length === 0) return null;
+        return res.rows[0].voice_data ?? null;
+      }
+      async getInteractions(recordingId, viewerUserId) {
+        const likeRes = await pgPool.query(
+          `SELECT COUNT(*)::int AS cnt FROM recording_likes WHERE recording_id = $1`,
+          [recordingId]
+        );
+        let isLiked = false;
+        if (viewerUserId) {
+          const ul = await pgPool.query(
+            `SELECT id FROM recording_likes WHERE recording_id = $1 AND user_id = $2`,
+            [recordingId, viewerUserId]
+          );
+          isLiked = ul.rows.length > 0;
+        }
+        const commentsRes = await pgPool.query(
+          `SELECT id, recording_id, user_id, username, text, created_at, voice_url FROM recording_comments WHERE recording_id = $1 ORDER BY created_at ASC`,
+          [recordingId]
+        );
+        const comments = commentsRes.rows.map((row) => ({
+          id: row.id,
+          recordingId: row.recording_id,
+          userId: row.user_id,
+          username: row.username,
+          text: row.text,
+          createdAt: row.created_at.toISOString(),
+          voiceUrl: row.voice_url
+        }));
+        return { likeCount: likeRes.rows[0].cnt, isLiked, comments };
+      }
+    };
+    storage = new HybridStorage();
+  }
+});
+
+// server/index.ts
+import express from "express";
+
+// server/routes.ts
+init_storage();
+import { createServer } from "node:http";
+import { createHash, randomUUID as randomUUID3 } from "crypto";
+import { readFileSync, existsSync } from "node:fs";
+import { join as join2 } from "node:path";
+import https from "node:https";
+import OpenAI, { toFile } from "openai";
 
 // server/doubao-realtime.ts
 import WebSocket from "ws";
@@ -1721,6 +1790,45 @@ async function registerRoutes(app2) {
     } catch (err) {
       console.error("[sound-archives/audio]", err);
       return res.status(500).json({ error: "\u83B7\u53D6\u97F3\u9891\u5931\u8D25" });
+    }
+  });
+  app2.get("/api/custom-routes/user/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      if (!userId) return res.status(400).json({ error: "userId required" });
+      const { getCustomRoutes: getCustomRoutes2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+      const routes = await getCustomRoutes2(userId);
+      return res.json(routes);
+    } catch (err) {
+      console.error("[custom-routes] GET error:", err);
+      return res.status(500).json({ error: "Failed to fetch routes" });
+    }
+  });
+  app2.post("/api/custom-routes", async (req, res) => {
+    try {
+      const { userId, name, poiIds, color, icon } = req.body;
+      if (!userId || !name || !Array.isArray(poiIds) || poiIds.length === 0) {
+        return res.status(400).json({ error: "userId, name, poiIds required" });
+      }
+      const { addCustomRoute: addCustomRoute2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+      const route = await addCustomRoute2(userId, name, poiIds, color || "#E88A2E", icon || "\u2B50");
+      return res.json(route);
+    } catch (err) {
+      console.error("[custom-routes] POST error:", err);
+      return res.status(500).json({ error: "Failed to create route" });
+    }
+  });
+  app2.delete("/api/custom-routes/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { userId } = req.body;
+      if (!id || !userId) return res.status(400).json({ error: "id and userId required" });
+      const { deleteCustomRoute: deleteCustomRoute2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+      const deleted = await deleteCustomRoute2(id, userId);
+      return res.json({ deleted });
+    } catch (err) {
+      console.error("[custom-routes] DELETE error:", err);
+      return res.status(500).json({ error: "Failed to delete route" });
     }
   });
   const httpServer = createServer(app2);

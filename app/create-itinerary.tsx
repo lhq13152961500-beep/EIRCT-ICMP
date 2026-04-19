@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,7 +7,10 @@ import {
   ScrollView,
   Platform,
   StatusBar,
+  TextInput,
+  PanResponder,
 } from "react-native";
+import { WebView } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -15,6 +18,8 @@ import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { setPendingCustomRoute } from "@/lib/itinerary-store";
+import { getApiUrl } from "@/lib/query-client";
+import { useAuth } from "@/contexts/AuthContext";
 
 const haptic = (style: "light" | "medium" = "light") => {
   if (Platform.OS !== "web") {
@@ -62,45 +67,58 @@ const ALL_POIS: PoiItem[] = [
   { id: "11", name: "瓜果长廊",     emoji: "🍈", category: "美食", desc: "种植哈密瓜、白杏等特色瓜果，可现场品尝", duration: 25, distance: 0.3 },
 ];
 
+const MAP_URL = (() => {
+  try {
+    return new URL("api/map-tuyugou", getApiUrl()).href;
+  } catch {
+    return "";
+  }
+})();
+
+const DRAG_ITEM_HEIGHT = 76;
+const MAX_DRAG_SLOTS = 12;
+
 export default function CreateItineraryScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+
   const [activeFilter, setActiveFilter] = useState<FilterKey>("全部");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [routeName, setRouteName] = useState("");
+  const [dragState, setDragState] = useState<{ idx: number; dy: number } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [miniMapReady, setMiniMapReady] = useState(false);
 
-  const filteredPois = activeFilter === "全部"
-    ? ALL_POIS
-    : ALL_POIS.filter(p => p.category === activeFilter);
+  const draggingRef = useRef<{ idx: number } | null>(null);
+  const selectedIdsRef = useRef<string[]>([]);
+  const miniMapRef = useRef<WebView>(null);
 
+  useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
+
+  const filteredPois = activeFilter === "全部" ? ALL_POIS : ALL_POIS.filter(p => p.category === activeFilter);
   const selectedPois = selectedIds.map(id => ALL_POIS.find(p => p.id === id)!).filter(Boolean);
-
   const totalMinutes = selectedPois.reduce((s, p) => s + p.duration, 0);
   const totalDistance = selectedPois.reduce((s, p) => s + p.distance, 0);
 
+  const injectMiniMap = useCallback((js: string) => {
+    miniMapRef.current?.injectJavaScript(`(function(){${js}})(); true;`);
+  }, []);
+
+  useEffect(() => {
+    if (!miniMapReady) return;
+    injectMiniMap(`window.highlightSelected && window.highlightSelected(${JSON.stringify(selectedIds)});`);
+  }, [selectedIds, miniMapReady, injectMiniMap]);
+
+  const handleMiniMapMessage = useCallback((event: { nativeEvent: { data: string } }) => {
+    try {
+      const msg = JSON.parse(event.nativeEvent.data);
+      if (msg.type === "ready") setMiniMapReady(true);
+    } catch {}
+  }, []);
+
   const togglePoi = useCallback((id: string) => {
     haptic();
-    setSelectedIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
-  }, []);
-
-  const moveUp = useCallback((index: number) => {
-    if (index === 0) return;
-    haptic();
-    setSelectedIds(prev => {
-      const arr = [...prev];
-      [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
-      return arr;
-    });
-  }, []);
-
-  const moveDown = useCallback((index: number) => {
-    haptic();
-    setSelectedIds(prev => {
-      if (index >= prev.length - 1) return prev;
-      const arr = [...prev];
-      [arr[index], arr[index + 1]] = [arr[index + 1], arr[index]];
-      return arr;
-    });
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   }, []);
 
   const removePoi = useCallback((id: string) => {
@@ -108,12 +126,96 @@ export default function CreateItineraryScreen() {
     setSelectedIds(prev => prev.filter(x => x !== id));
   }, []);
 
-  const handleStart = useCallback(() => {
+  const dragTargetIdx = useMemo(() => {
+    if (dragState === null) return null;
+    return Math.max(0, Math.min(selectedPois.length - 1, Math.round(dragState.idx + dragState.dy / DRAG_ITEM_HEIGHT)));
+  }, [dragState, selectedPois.length]);
+
+  const displayOrder = useMemo<number[]>(() => {
+    if (dragState === null || dragTargetIdx === null || dragTargetIdx === dragState.idx) {
+      return selectedPois.map((_, i) => i);
+    }
+    const order = selectedPois.map((_, i) => i);
+    const [moved] = order.splice(dragState.idx, 1);
+    order.splice(dragTargetIdx, 0, moved);
+    return order;
+  }, [dragState, dragTargetIdx, selectedPois.length]);
+
+  const panResponders = useMemo(() => {
+    return Array.from({ length: MAX_DRAG_SLOTS }, (_, pos) => {
+      let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+      let active = false;
+      return PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => active,
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: () => {
+          longPressTimer = setTimeout(() => {
+            active = true;
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+            draggingRef.current = { idx: pos };
+            setDragState({ idx: pos, dy: 0 });
+          }, 250);
+        },
+        onPanResponderMove: (_, gs) => {
+          if (!active) return;
+          setDragState({ idx: pos, dy: gs.dy });
+        },
+        onPanResponderRelease: (_, gs) => {
+          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+          if (!active) { draggingRef.current = null; setDragState(null); return; }
+          active = false;
+          const ids = selectedIdsRef.current;
+          const newIdx = Math.max(0, Math.min(ids.length - 1, Math.round(pos + gs.dy / DRAG_ITEM_HEIGHT)));
+          if (newIdx !== pos) {
+            setSelectedIds(prev => {
+              const arr = [...prev];
+              const [item] = arr.splice(pos, 1);
+              arr.splice(newIdx, 0, item);
+              return arr;
+            });
+          }
+          draggingRef.current = null;
+          setDragState(null);
+        },
+        onPanResponderTerminate: () => {
+          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+          active = false;
+          draggingRef.current = null;
+          setDragState(null);
+        },
+      });
+    });
+  }, []);
+
+  const handleStart = useCallback(async () => {
     if (selectedIds.length === 0) return;
     haptic("medium");
-    setPendingCustomRoute(selectedIds);
+    const name = routeName.trim() || `我的行程`;
+    const color = "#E88A2E";
+    const icon = "⭐";
+    let savedId: string | undefined;
+    if (user?.id && user.id !== "guest") {
+      try {
+        setSaving(true);
+        const res = await fetch(`${getApiUrl()}api/custom-routes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.id, name, poiIds: selectedIds, color, icon }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          savedId = data.id;
+        }
+      } catch (e) {
+        console.warn("[create-itinerary] save route failed:", e);
+      } finally {
+        setSaving(false);
+      }
+    }
+    setPendingCustomRoute({ ids: selectedIds, name, color, icon, savedId });
     router.back();
-  }, [selectedIds]);
+  }, [selectedIds, routeName, user]);
 
   const formatDuration = (minutes: number) => {
     if (minutes < 60) return `约${minutes}分钟`;
@@ -133,10 +235,7 @@ export default function CreateItineraryScreen() {
         end={{ x: 1, y: 0 }}
         style={[styles.header, { paddingTop: insets.top + 8 }]}
       >
-        <Pressable
-          style={styles.backBtn}
-          onPress={() => { haptic(); router.back(); }}
-        >
+        <Pressable style={styles.backBtn} onPress={() => { haptic(); router.back(); }}>
           <Ionicons name="chevron-back" size={22} color="#fff" />
         </Pressable>
         <View style={styles.headerCenter}>
@@ -150,13 +249,34 @@ export default function CreateItineraryScreen() {
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+        keyboardShouldPersistTaps="handled"
       >
+        {/* Mini Map */}
+        {MAP_URL ? (
+          <View style={styles.miniMapWrap}>
+            <WebView
+              ref={miniMapRef}
+              source={{ uri: MAP_URL }}
+              style={styles.miniMap}
+              javaScriptEnabled
+              scrollEnabled={false}
+              onMessage={handleMiniMapMessage}
+              androidLayerType="hardware"
+            />
+            <View style={styles.miniMapOverlay} pointerEvents="none">
+              <View style={styles.miniMapBadge}>
+                <Ionicons name="map-outline" size={12} color="#8B5E3C" />
+                <Text style={styles.miniMapBadgeText}>景区地图</Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
         {/* Section 1: Select POIs */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>选择景点</Text>
           <Text style={styles.sectionSub}>点击添加到你的行程</Text>
 
-          {/* Category Filter */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -176,7 +296,6 @@ export default function CreateItineraryScreen() {
             ))}
           </ScrollView>
 
-          {/* POI List */}
           <View style={styles.poiList}>
             {filteredPois.map(poi => {
               const isSelected = selectedIds.includes(poi.id);
@@ -225,6 +344,22 @@ export default function CreateItineraryScreen() {
             )}
           </View>
 
+          {/* Route Name Input */}
+          {selectedPois.length > 0 && (
+            <View style={styles.routeNameWrap}>
+              <Ionicons name="pencil-outline" size={15} color={Colors.light.textSecondary} />
+              <TextInput
+                style={styles.routeNameInput}
+                value={routeName}
+                onChangeText={setRouteName}
+                placeholder="为行程起个名字（可选）"
+                placeholderTextColor="#BEB4AA"
+                maxLength={30}
+                returnKeyType="done"
+              />
+            </View>
+          )}
+
           {selectedPois.length === 0 ? (
             <View style={styles.emptyItinerary}>
               <Text style={styles.emptyEmoji}>🗺️</Text>
@@ -233,59 +368,56 @@ export default function CreateItineraryScreen() {
             </View>
           ) : (
             <View style={styles.itinList}>
-              {selectedPois.map((poi, index) => (
-                <View key={poi.id} style={styles.itinItem}>
-                  {/* Route line connector */}
-                  <View style={styles.itinLeft}>
-                    <View style={styles.itinIndexBubble}>
-                      <Text style={styles.itinIndexText}>{index + 1}</Text>
+              <Text style={styles.dragHint}>
+                <Ionicons name="information-circle-outline" size={12} color={Colors.light.textSecondary} />
+                {" "}长按右侧拖拽手柄可以调整顺序
+              </Text>
+              {displayOrder.map((origIdx, visualPos) => {
+                const poi = selectedPois[origIdx];
+                if (!poi) return null;
+                const isDragging = dragState?.idx === origIdx;
+                const isDropTarget = dragTargetIdx === visualPos && dragState !== null && !isDragging;
+                return (
+                  <View
+                    key={poi.id}
+                    style={[
+                      styles.itinItem,
+                      isDragging && styles.itinItemDragging,
+                      isDropTarget && styles.itinItemDropTarget,
+                    ]}
+                  >
+                    <View style={styles.itinLeft}>
+                      <View style={[styles.itinIndexBubble, isDragging && styles.itinIndexBubbleDrag]}>
+                        <Text style={styles.itinIndexText}>{visualPos + 1}</Text>
+                      </View>
+                      {visualPos < selectedPois.length - 1 && (
+                        <View style={[styles.itinConnector, isDropTarget && styles.itinConnectorTarget]} />
+                      )}
                     </View>
-                    {index < selectedPois.length - 1 && (
-                      <View style={styles.itinConnector} />
-                    )}
-                  </View>
 
-                  <View style={styles.itinCardWrap}>
-                    <View style={styles.itinCard}>
-                      <Text style={styles.itinEmoji}>{poi.emoji}</Text>
-                      <View style={styles.itinCardBody}>
-                        <Text style={styles.itinCardName}>{poi.name}</Text>
-                        <Text style={styles.itinCardDuration}>游览约 {poi.duration} 分钟</Text>
-                      </View>
-                      <View style={styles.itinActions}>
-                        <Pressable
-                          style={[styles.arrowBtn, index === 0 && styles.arrowBtnDisabled]}
-                          onPress={() => moveUp(index)}
-                          disabled={index === 0}
-                        >
-                          <Ionicons
-                            name="chevron-up"
-                            size={16}
-                            color={index === 0 ? "#ccc" : Colors.light.textSecondary}
-                          />
-                        </Pressable>
-                        <Pressable
-                          style={[styles.arrowBtn, index === selectedPois.length - 1 && styles.arrowBtnDisabled]}
-                          onPress={() => moveDown(index)}
-                          disabled={index === selectedPois.length - 1}
-                        >
-                          <Ionicons
-                            name="chevron-down"
-                            size={16}
-                            color={index === selectedPois.length - 1 ? "#ccc" : Colors.light.textSecondary}
-                          />
-                        </Pressable>
-                        <Pressable
-                          style={styles.removeBtn}
-                          onPress={() => removePoi(poi.id)}
-                        >
-                          <Ionicons name="close" size={14} color="#E8514A" />
-                        </Pressable>
+                    <View style={styles.itinCardWrap}>
+                      <View style={[styles.itinCard, isDragging && styles.itinCardDragging]}>
+                        <Text style={styles.itinEmoji}>{poi.emoji}</Text>
+                        <View style={styles.itinCardBody}>
+                          <Text style={styles.itinCardName}>{poi.name}</Text>
+                          <Text style={styles.itinCardDuration}>游览约 {poi.duration} 分钟</Text>
+                        </View>
+                        <View style={styles.itinActions}>
+                          <Pressable style={styles.removeBtn} onPress={() => removePoi(poi.id)}>
+                            <Ionicons name="close" size={14} color="#E8514A" />
+                          </Pressable>
+                          <View
+                            {...(panResponders[origIdx]?.panHandlers ?? {})}
+                            style={styles.dragHandle}
+                          >
+                            <Ionicons name="reorder-three" size={20} color="#BEB4AA" />
+                          </View>
+                        </View>
                       </View>
                     </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>
@@ -312,19 +444,19 @@ export default function CreateItineraryScreen() {
           </View>
         )}
         <Pressable
-          style={[styles.startBtn, selectedIds.length === 0 && styles.startBtnDisabled]}
+          style={[styles.startBtn, (selectedIds.length === 0 || saving) && styles.startBtnDisabled]}
           onPress={handleStart}
-          disabled={selectedIds.length === 0}
+          disabled={selectedIds.length === 0 || saving}
         >
           <LinearGradient
-            colors={selectedIds.length > 0 ? ["#E88A2E", "#C96F1A"] : ["#ccc", "#bbb"]}
+            colors={selectedIds.length > 0 && !saving ? ["#E88A2E", "#C96F1A"] : ["#ccc", "#bbb"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.startBtnGrad}
           >
             <Ionicons name="map-outline" size={18} color="#fff" />
             <Text style={styles.startBtnText}>
-              {selectedIds.length === 0 ? "请先选择景点" : "生成路线，开始游览"}
+              {saving ? "保存中..." : selectedIds.length === 0 ? "请先选择景点" : "生成路线，开始游览"}
             </Text>
           </LinearGradient>
         </Pressable>
@@ -337,24 +469,48 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F8F5F0" },
 
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingBottom: 14,
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 12, paddingBottom: 14,
   },
   backBtn: {
-    width: 38, height: 38,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 38, height: 38, borderRadius: 19,
+    alignItems: "center", justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.15)",
   },
   headerCenter: { flex: 1, alignItems: "center" },
   headerTitle: { fontSize: 17, fontWeight: "700", color: "#fff" },
   headerSub: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2 },
 
-  scroll: { flex: 1 },
+  miniMapWrap: {
+    height: 180,
+    marginHorizontal: 0,
+    marginBottom: 4,
+    overflow: "hidden",
+    position: "relative",
+  },
+  miniMap: { flex: 1 },
+  miniMapOverlay: {
+    position: "absolute",
+    top: 10,
+    left: 12,
+  },
+  miniMapBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  miniMapBadgeText: { fontSize: 11, fontWeight: "600", color: "#8B5E3C" },
 
+  scroll: { flex: 1 },
   section: { paddingHorizontal: 16, paddingTop: 20 },
   sectionTitle: { fontSize: 16, fontWeight: "700", color: Colors.light.text },
   sectionSub: { fontSize: 12, color: Colors.light.textSecondary, marginTop: 2, marginBottom: 12 },
@@ -362,8 +518,7 @@ const styles = StyleSheet.create({
   filterRow: { marginHorizontal: -16, marginBottom: 12 },
   filterTab: {
     paddingHorizontal: 14, paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: "#fff",
+    borderRadius: 20, backgroundColor: "#fff",
     borderWidth: 1, borderColor: "#E8E0D5",
   },
   filterTabActive: { backgroundColor: "#8B5E3C", borderColor: "#8B5E3C" },
@@ -372,25 +527,15 @@ const styles = StyleSheet.create({
 
   poiList: { gap: 8 },
   poiCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1.5,
-    borderColor: "#EEE8DF",
-    gap: 10,
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "#fff", borderRadius: 12, padding: 12,
+    borderWidth: 1.5, borderColor: "#EEE8DF", gap: 10,
   },
-  poiCardSelected: {
-    borderColor: "#E88A2E",
-    backgroundColor: "#FFFAF5",
-  },
+  poiCardSelected: { borderColor: "#E88A2E", backgroundColor: "#FFFAF5" },
   poiCardPressed: { opacity: 0.85 },
   poiEmojiBg: {
-    width: 44, height: 44,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 44, height: 44, borderRadius: 10,
+    alignItems: "center", justifyContent: "center",
   },
   poiEmoji: { fontSize: 22 },
   poiBody: { flex: 1 },
@@ -401,132 +546,112 @@ const styles = StyleSheet.create({
   poiTagText: { fontSize: 10.5, fontWeight: "600" },
   poiDuration: { fontSize: 11, color: Colors.light.textSecondary },
   checkCircle: {
-    width: 24, height: 24,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "#D0C8BE",
-    alignItems: "center",
-    justifyContent: "center",
+    width: 24, height: 24, borderRadius: 12,
+    borderWidth: 1.5, borderColor: "#D0C8BE",
+    alignItems: "center", justifyContent: "center",
     backgroundColor: "#fff",
   },
   checkCircleActive: { backgroundColor: "#E88A2E", borderColor: "#E88A2E" },
 
   itinHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 4,
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between", marginBottom: 8,
   },
   itinCount: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#E88A2E",
-    backgroundColor: "#FFF4E6",
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 10,
+    fontSize: 13, fontWeight: "600", color: "#E88A2E",
+    backgroundColor: "#FFF4E6", paddingHorizontal: 10,
+    paddingVertical: 3, borderRadius: 10,
+  },
+
+  routeNameWrap: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "#fff", borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderWidth: 1, borderColor: "#EEE8DF",
+    marginBottom: 12, gap: 8,
+  },
+  routeNameInput: {
+    flex: 1, fontSize: 14, color: Colors.light.text, padding: 0,
   },
 
   emptyItinerary: {
-    alignItems: "center",
-    paddingVertical: 32,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: "#EEE8DF",
-    borderStyle: "dashed",
+    alignItems: "center", paddingVertical: 32,
+    backgroundColor: "#fff", borderRadius: 12, marginTop: 8,
+    borderWidth: 1, borderColor: "#EEE8DF", borderStyle: "dashed",
   },
   emptyEmoji: { fontSize: 36, marginBottom: 8 },
   emptyText: { fontSize: 14, fontWeight: "600", color: Colors.light.text },
   emptySubText: { fontSize: 12, color: Colors.light.textSecondary, marginTop: 4 },
 
-  itinList: { paddingTop: 8 },
+  itinList: { paddingTop: 4 },
+  dragHint: {
+    fontSize: 11, color: Colors.light.textSecondary,
+    marginBottom: 10, textAlign: "center",
+  },
   itinItem: { flexDirection: "row", gap: 8 },
+  itinItemDragging: { opacity: 0.55 },
+  itinItemDropTarget: { backgroundColor: "rgba(232,138,46,0.06)", borderRadius: 10 },
   itinLeft: { alignItems: "center", width: 28 },
   itinIndexBubble: {
-    width: 28, height: 28,
-    borderRadius: 14,
+    width: 28, height: 28, borderRadius: 14,
     backgroundColor: "#8B5E3C",
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center", justifyContent: "center",
   },
+  itinIndexBubbleDrag: { backgroundColor: "#E88A2E" },
   itinIndexText: { fontSize: 12, fontWeight: "700", color: "#fff" },
   itinConnector: {
-    flex: 1,
-    width: 2,
-    backgroundColor: "#D9C9B5",
-    marginVertical: 3,
-    minHeight: 16,
+    flex: 1, width: 2, backgroundColor: "#D9C9B5",
+    marginVertical: 3, minHeight: 16,
   },
+  itinConnectorTarget: { backgroundColor: "#E88A2E" },
   itinCardWrap: { flex: 1, paddingBottom: 10 },
   itinCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#EEE8DF",
-    gap: 10,
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "#fff", borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: "#EEE8DF", gap: 10,
+  },
+  itinCardDragging: {
+    borderColor: "#E88A2E",
+    shadowColor: "#E88A2E",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   itinEmoji: { fontSize: 22, width: 30, textAlign: "center" },
   itinCardBody: { flex: 1 },
   itinCardName: { fontSize: 14, fontWeight: "700", color: Colors.light.text },
   itinCardDuration: { fontSize: 11.5, color: Colors.light.textSecondary, marginTop: 2 },
-  itinActions: { flexDirection: "column", gap: 2, alignItems: "center" },
-  arrowBtn: {
-    width: 26, height: 26,
-    borderRadius: 6,
-    backgroundColor: "#F5F0EB",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  arrowBtnDisabled: { backgroundColor: "#F5F5F5" },
+  itinActions: { flexDirection: "column", gap: 4, alignItems: "center" },
   removeBtn: {
-    width: 26, height: 26,
-    borderRadius: 6,
+    width: 28, height: 28, borderRadius: 8,
     backgroundColor: "#FFF0F0",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
+    alignItems: "center", justifyContent: "center",
+  },
+  dragHandle: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: "#F5F0EB",
+    alignItems: "center", justifyContent: "center",
   },
 
   footer: {
-    backgroundColor: "#fff",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#EEE8DF",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 8,
+    backgroundColor: "#fff", paddingHorizontal: 16, paddingTop: 12,
+    borderTopWidth: 1, borderTopColor: "#EEE8DF",
+    shadowColor: "#000", shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 8,
   },
   footerStats: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-    gap: 8,
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "center", marginBottom: 10, gap: 8,
   },
   footerStat: { flexDirection: "row", alignItems: "center", gap: 4 },
   footerStatText: { fontSize: 12.5, color: Colors.light.textSecondary, fontWeight: "500" },
-  footerDot: {
-    width: 3, height: 3,
-    borderRadius: 1.5,
-    backgroundColor: "#CCC",
-  },
+  footerDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: "#CCC" },
   startBtn: { borderRadius: 14, overflow: "hidden" },
   startBtnDisabled: { opacity: 0.7 },
   startBtnGrad: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 15,
-    borderRadius: 14,
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 8, paddingVertical: 15, borderRadius: 14,
   },
   startBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
 });
