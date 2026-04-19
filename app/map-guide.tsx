@@ -660,7 +660,7 @@ export default function MapGuideScreen() {
               {/* Custom routes */}
               {customRoutes.map((route) => (
                 <View key={route.id} style={styles.routeCard}>
-                  <View style={[styles.routeCardTop, { backgroundColor: route.color + "18" }]}>
+                  <View style={[styles.routeCardTop, styles.customRouteCardTop]}>
                     {route.imageData ? (
                       <Image
                         source={{ uri: route.imageData }}
@@ -673,8 +673,8 @@ export default function MapGuideScreen() {
                     <View style={styles.routeCardTitleWrap}>
                       <View style={styles.customRouteTitleRow}>
                         <Text style={styles.routeCardTitle} numberOfLines={1}>{route.name}</Text>
-                        <View style={[styles.customBadge, { backgroundColor: route.color + "25" }]}>
-                          <Text style={[styles.customBadgeText, { color: route.color }]}>我的行程</Text>
+                        <View style={styles.customBadge}>
+                          <Text style={styles.customBadgeText}>我的行程</Text>
                         </View>
                       </View>
                       <Text style={styles.routeCardDesc}>{route.poiIds.length} 个景点</Text>
@@ -1038,12 +1038,14 @@ const styles = StyleSheet.create({
   createBtnText: { fontSize: 13, fontWeight: "600", color: Colors.light.text },
 
   // Custom route card elements
+  customRouteCardTop: { backgroundColor: "#E6F2FB" },
   customRouteTitleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" },
   customBadge: {
     paddingHorizontal: 6, paddingVertical: 2,
     borderRadius: 6,
+    backgroundColor: "#C5DEF5",
   },
-  customBadgeText: { fontSize: 10, fontWeight: "700" },
+  customBadgeText: { fontSize: 10, fontWeight: "700", color: "#2873A8" },
   deleteRouteBtn: {
     width: 32, height: 32, borderRadius: 10,
     backgroundColor: "#FFF0F0",
