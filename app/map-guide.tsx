@@ -657,6 +657,57 @@ export default function MapGuideScreen() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: bottomPad + 100, paddingTop: 12 }}
             >
+              {/* System routes */}
+              {ROUTES.map((route) => (
+                <Pressable
+                  key={route.id}
+                  style={({ pressed }) => [styles.routeCard, pressed && styles.routeCardPressed]}
+                  onPress={() => { haptic("medium"); closeSheet(); }}
+                >
+                  <View style={[styles.routeCardTop, { backgroundColor: route.accent }]}>
+                    <View style={styles.routeCardTopLeft}>
+                      <Text style={styles.routeCardIcon}>{route.icon}</Text>
+                      <View style={styles.routeCardTitleWrap}>
+                        <Text style={styles.routeCardTitle}>{route.title}</Text>
+                        <Text style={styles.routeCardDesc}>{route.desc}</Text>
+                      </View>
+                    </View>
+                  </View>
+                  <View style={styles.routeCardBottom}>
+                    <View style={styles.routeCardStats}>
+                      <View style={styles.routeStat}>
+                        <Ionicons name="business-outline" size={13} color={Colors.light.textSecondary} />
+                        <Text style={styles.routeStatText}>{route.buildings}个景点</Text>
+                      </View>
+                      <View style={styles.routeStatDivider} />
+                      <View style={styles.routeStat}>
+                        <Ionicons name="footsteps-outline" size={13} color={Colors.light.textSecondary} />
+                        <Text style={styles.routeStatText}>{route.distance}公里</Text>
+                      </View>
+                      <View style={styles.routeStatDivider} />
+                      <View style={styles.routeStat}>
+                        <Ionicons name="time-outline" size={13} color={Colors.light.textSecondary} />
+                        <Text style={styles.routeStatText}>{route.duration}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.routeCardTagRow}>
+                      {route.tags.map((t) => (
+                        <View key={t} style={[styles.routeTag, { backgroundColor: route.color + "18" }]}>
+                          <Text style={[styles.routeTagText, { color: route.color }]}>{t}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    <Pressable
+                      style={[styles.startBtn, { backgroundColor: route.color }]}
+                      onPress={() => startRoute(route)}
+                    >
+                      <Ionicons name="play" size={14} color="#fff" />
+                      <Text style={styles.startBtnText}>开始游览</Text>
+                    </Pressable>
+                  </View>
+                </Pressable>
+              ))}
+
               {/* Custom routes */}
               {customRoutes.map((route) => (
                 <View key={route.id} style={styles.routeCard}>
@@ -726,56 +777,6 @@ export default function MapGuideScreen() {
                 </View>
               ))}
 
-              {/* System routes */}
-              {ROUTES.map((route) => (
-                <Pressable
-                  key={route.id}
-                  style={({ pressed }) => [styles.routeCard, pressed && styles.routeCardPressed]}
-                  onPress={() => { haptic("medium"); closeSheet(); }}
-                >
-                  <View style={[styles.routeCardTop, { backgroundColor: route.accent }]}>
-                    <View style={styles.routeCardTopLeft}>
-                      <Text style={styles.routeCardIcon}>{route.icon}</Text>
-                      <View style={styles.routeCardTitleWrap}>
-                        <Text style={styles.routeCardTitle}>{route.title}</Text>
-                        <Text style={styles.routeCardDesc}>{route.desc}</Text>
-                      </View>
-                    </View>
-                  </View>
-                  <View style={styles.routeCardBottom}>
-                    <View style={styles.routeCardStats}>
-                      <View style={styles.routeStat}>
-                        <Ionicons name="business-outline" size={13} color={Colors.light.textSecondary} />
-                        <Text style={styles.routeStatText}>{route.buildings}个景点</Text>
-                      </View>
-                      <View style={styles.routeStatDivider} />
-                      <View style={styles.routeStat}>
-                        <Ionicons name="footsteps-outline" size={13} color={Colors.light.textSecondary} />
-                        <Text style={styles.routeStatText}>{route.distance}公里</Text>
-                      </View>
-                      <View style={styles.routeStatDivider} />
-                      <View style={styles.routeStat}>
-                        <Ionicons name="time-outline" size={13} color={Colors.light.textSecondary} />
-                        <Text style={styles.routeStatText}>{route.duration}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.routeCardTagRow}>
-                      {route.tags.map((t) => (
-                        <View key={t} style={[styles.routeTag, { backgroundColor: route.color + "18" }]}>
-                          <Text style={[styles.routeTagText, { color: route.color }]}>{t}</Text>
-                        </View>
-                      ))}
-                    </View>
-                    <Pressable
-                      style={[styles.startBtn, { backgroundColor: route.color }]}
-                      onPress={() => startRoute(route)}
-                    >
-                      <Ionicons name="play" size={14} color="#fff" />
-                      <Text style={styles.startBtnText}>开始游览</Text>
-                    </Pressable>
-                  </View>
-                </Pressable>
-              ))}
             </ScrollView>
 
             <View style={[styles.sheetFooter, { paddingBottom: bottomPad + 16 }]}>
