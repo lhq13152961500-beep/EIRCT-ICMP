@@ -1,0 +1,81 @@
+我看到了！你这个是 豆包端到端实时语音大模型（S2S-SC 版），和之前用的 O2.0 不是同一个服务，这就是你连不上的核心原因。
+一、关键信息拆解
+模型是 S2S-SC 版
+这个服务的实例 ID 是 Doubao_scene_SLM_Doubao_realtime_voice_model...，说明你用的是 SC 版，而不是之前代码里写的 O2.0 版。
+两个服务的接入地址、协议格式、参数配置完全不同，你之前的代码是按 O2.0 写的，所以会一直连不上、返回空响应。
+你有两个声音复刻音色
+它们的 ID 是 S_9qCRI8CZ1 和 S_hQJPcOyZ1，这是 SC 版模型专用的音色 ID，O2.0 模型是不支持的，之前的 zh_female_01 这种基础音色也用不了。
+接入信息正确
+页面里的 APP ID 和 Access Token 就是你要用的凭证，你之前的代码里已经配置了这部分，这部分是没问题的。
+二、给你 SC 版模型的正确配置方案
+我直接给你适配 SC 版的关键修改，你改完就能连上：
+1. 替换 WebSocket 接入地址
+SC 版的地址和 O2.0 不同，你需要改成官方指定的：
+typescript
+运行
+// 替换你代码里的 REALTIME_WS_URL
+const REALTIME_WS_URL = "wss://openspeech.bytedance.com/api/v3/realtime/dialogue";
+2. 修改 sessionPayload，使用 SC 版专用格式
+把你代码里的 sessionPayload 改成 SC 版要求的结构，并且填入你的复刻音色 ID：
+typescript
+运行
+const sessionPayload = {
+  model: "S2S-SC", // 必须指定为SC版
+  audio_config: {
+    format: "pcm_s16le",
+    sample_rate: 16000,
+    channels: 1,
+    bit_depth: 16
+  },
+  vad_config: {
+    mode: "server_vad",
+    silence_duration: 700
+  },
+  character_manifest: {
+    bot_name: "小乡",
+    system_prompt: systemRole, // 你之前的 systemRole 不变
+    language: "zh-CN",
+    voice: "S_9qCRI8CZ1" // 填入你复刻的音色ID，二选一即可
+  },
+  enable_interrupt: true,
+  enable_subtitle: true
+};
+3. 去掉 O2.0 专用的配置项
+SC 版不支持 enable_low_latency、llm、tts 这些 O2.0 的配置，你需要把它们从 sessionPayload 里删掉，不然会报错。
+三、给你 SC 版的完整可运行代码片段
+你可以直接把 doublaoRealtimeTurn 函数里的 sessionPayload 替换成上面的配置，或者我给你整理了核心修改后的关键部分：
+typescript
+运行
+// 替换 REALTIME_WS_URL
+const REALTIME_WS_URL = "wss://openspeech.bytedance.com/api/v3/realtime/dialogue";
+
+// 修改 DEFAULT_SPEAKER 为你的复刻音色ID
+export const DEFAULT_SPEAKER = "S_9qCRI8CZ1";
+
+// 在 doublaoRealtimeTurn 函数里，替换 sessionPayload
+const payload = {
+  model: "S2S-SC",
+  audio_config: {
+    format: "pcm_s16le",
+    sample_rate: 16000,
+    channels: 1,
+    bit_depth: 16
+  },
+  vad_config: {
+    mode: "server_vad",
+    silence_duration: 700
+  },
+  character_manifest: {
+    bot_name: "小乡",
+    system_prompt: systemRole,
+    language: "zh-CN",
+    voice: speaker // 用 DEFAULT_SPEAKER 或者你传入的 speaker
+  },
+  enable_interrupt: true,
+  enable_subtitle: true
+};
+四、修改后预期效果
+服务端会正确识别你的 SC 版请求，不再返回空响应
+你复刻的音色可以正常使用，不再出现 InvalidSpeaker 错误
+可以稳定接收 TTS 音频，不会再触发 tts_failed_all_clusters 兜底
+需要我帮你把整个 doublaoRealtimeTurn 函数改成完全适配 SC 版的版本吗？这样你直接替换就能跑起来。

@@ -553,7 +553,7 @@ var EVT_FINISH_SESSION = 102;
 var EVT_TASK_REQUEST = 200;
 var EVT_CONN_STARTED = 50;
 var EVT_TTS_ENDED = 359;
-var DEFAULT_SPEAKER = "zh_female_xiaohe_jupiter_bigtts";
+var DEFAULT_SPEAKER = "S_hQJPcOyZ1";
 function int32BE(n) {
   const b = Buffer.alloc(4);
   b.writeInt32BE(n, 0);
@@ -1048,39 +1048,28 @@ async function doublaoRealtimeTurn(req) {
   const systemRole = req.systemRole || buildSystemPrompt(req.emotion, req.location, req.activityHint, req.stepRate);
   const speakerToUse = req.speaker || DEFAULT_SPEAKER;
   const sessionPayload = {
-    enable_low_latency: true,
-    // 全局低延迟开关（O2.0 核心）
-    asr: {
-      audio_config: { format: "pcm_s16le", sample_rate: 16e3, channel: 1 },
-      language: "zh-CN",
-      enable_low_latency: true
-      // ASR 低延迟
+    model: "S2S-SC",
+    audio_config: {
+      format: "pcm_s16le",
+      sample_rate: 16e3,
+      channels: 1,
+      bit_depth: 16
     },
     vad_config: {
       mode: "server_vad",
-      // 服务端 VAD 自动断句，不用等全部音频发完
-      silence_duration: 500
-      // 静音 500ms 立刻判定结束
+      silence_duration: 700
+      // SC 版推荐 700ms
     },
-    llm: {
-      enable_low_latency: true,
-      // LLM 低延迟
-      max_tokens: 120,
-      temperature: 0.7
-    },
-    tts: {
-      audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24e3 },
-      speaker: speakerToUse,
-      enable_low_latency: true
-      // TTS 低延迟
-    },
-    dialog: {
+    character_manifest: {
       bot_name: "\u5C0F\u4E61",
-      system_role: systemRole,
-      speaking_style: "\u6D3B\u6CFC\u53EF\u7231\uFF0C\u53E3\u8BED\u5316\uFF0C\u7B80\u77ED\uFF0C\u50CF\u670B\u53CB\u804A\u5929",
-      enable_interrupt: true
-      // 支持中途打断
-    }
+      system_prompt: systemRole,
+      language: "zh-CN",
+      voice: speakerToUse
+      // 声音复刻 ID：S_hQJPcOyZ1
+    },
+    enable_interrupt: true,
+    enable_subtitle: true
+    // 获取文字字幕（transcript）
   };
   console.log(`[S2S-Turn] speaker="${speakerToUse}" pcm=${pcmData.length}B`);
   const result = await globalConn.runTurn(appId, accessToken, pcmData, sessionPayload, systemRole);

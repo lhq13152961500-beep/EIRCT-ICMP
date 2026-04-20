@@ -23,7 +23,8 @@ const EVT_TASK_REQUEST  = 200;
 const EVT_CONN_STARTED  = 50;
 const EVT_TTS_ENDED     = 359;
 
-export const DEFAULT_SPEAKER = "zh_female_xiaohe_jupiter_bigtts";
+// S2S-SC 版声音复刻音色（豆包端到端实时语音大模型专用）
+export const DEFAULT_SPEAKER = "S_hQJPcOyZ1";
 
 function int32BE(n: number): Buffer {
   const b = Buffer.alloc(4);
@@ -572,39 +573,32 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
   const systemRole = req.systemRole || buildSystemPrompt(req.emotion, req.location, req.activityHint, req.stepRate);
   const speakerToUse = req.speaker || DEFAULT_SPEAKER;
 
-  // ── Session payload — O2.0 超低延迟配置 ──
+  // ── Session payload — S2S-SC（Scene SLM）版格式 ──
+  // SC 版与 O2.0 结构完全不同：无 asr/tts/llm/dialog 分块，统一用 character_manifest
   const sessionPayload = {
-    enable_low_latency: true,           // 全局低延迟开关（O2.0 核心）
+    model: "S2S-SC",
 
-    asr: {
-      audio_config: { format: "pcm_s16le", sample_rate: 16000, channel: 1 },
-      language: "zh-CN",
-      enable_low_latency: true,         // ASR 低延迟
+    audio_config: {
+      format: "pcm_s16le",
+      sample_rate: 16000,
+      channels: 1,
+      bit_depth: 16,
     },
 
     vad_config: {
-      mode: "server_vad",               // 服务端 VAD 自动断句，不用等全部音频发完
-      silence_duration: 500,            // 静音 500ms 立刻判定结束
+      mode: "server_vad",
+      silence_duration: 700,            // SC 版推荐 700ms
     },
 
-    llm: {
-      enable_low_latency: true,         // LLM 低延迟
-      max_tokens: 120,
-      temperature: 0.7,
-    },
-
-    tts: {
-      audio_config: { channel: 1, format: "pcm_s16le", sample_rate: 24000 },
-      speaker: speakerToUse,
-      enable_low_latency: true,         // TTS 低延迟
-    },
-
-    dialog: {
+    character_manifest: {
       bot_name: "小乡",
-      system_role: systemRole,
-      speaking_style: "活泼可爱，口语化，简短，像朋友聊天",
-      enable_interrupt: true,           // 支持中途打断
+      system_prompt: systemRole,
+      language: "zh-CN",
+      voice: speakerToUse,             // 声音复刻 ID：S_hQJPcOyZ1
     },
+
+    enable_interrupt: true,
+    enable_subtitle: true,             // 获取文字字幕（transcript）
   };
 
   console.log(`[S2S-Turn] speaker="${speakerToUse}" pcm=${pcmData.length}B`);
