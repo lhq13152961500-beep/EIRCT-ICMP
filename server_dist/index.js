@@ -553,7 +553,7 @@ var EVT_FINISH_SESSION = 102;
 var EVT_TASK_REQUEST = 200;
 var EVT_CONN_STARTED = 50;
 var EVT_TTS_ENDED = 359;
-var DEFAULT_SPEAKER = "S_hQJPcOyZ1";
+var DEFAULT_SPEAKER = "ICL_zh_female_nuanxinxuejie_tob";
 function int32BE(n) {
   const b = Buffer.alloc(4);
   b.writeInt32BE(n, 0);

@@ -23,8 +23,9 @@ const EVT_TASK_REQUEST  = 200;
 const EVT_CONN_STARTED  = 50;
 const EVT_TTS_ENDED     = 359;
 
-// S2S-SC 版声音复刻音色（豆包端到端实时语音大模型专用）
-export const DEFAULT_SPEAKER = "S_hQJPcOyZ1";
+// ICL_ 内置音色：不需要注册，用于验证 S2S 通路是否正常
+// 确认通路 OK 后可改回复刻音色 S_hQJPcOyZ1
+export const DEFAULT_SPEAKER = "ICL_zh_female_nuanxinxuejie_tob";
 
 function int32BE(n: number): Buffer {
   const b = Buffer.alloc(4);
