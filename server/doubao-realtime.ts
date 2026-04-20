@@ -198,7 +198,7 @@ class PersistentRealtimeConn {
         headers: {
           "X-Api-App-ID":       appId,
           "X-Api-Access-Key":   token,
-          "X-Api-Resource-Id":  "volc.speech.s2s_sc",
+          "X-Api-Resource-Id":  "volc.speech.dialog",
           "X-Api-App-Key":      APP_KEY,
           "X-Api-Connect-Id":   randomUUID(),
         },
