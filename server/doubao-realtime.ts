@@ -198,7 +198,7 @@ class PersistentRealtimeConn {
         headers: {
           "X-Api-App-ID":       appId,
           "X-Api-Access-Key":   token,
-          "X-Api-Resource-Id":  "volc.speech.dialog",
+          "X-Api-Resource-Id":  "volc.speech.s2s_sc",
           "X-Api-App-Key":      APP_KEY,
           "X-Api-Connect-Id":   randomUUID(),
         },
@@ -597,7 +597,7 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
       voice: speakerToUse,             // 声音复刻 ID：S_hQJPcOyZ1
     },
 
-    enable_interrupt: true,
+    enable_interrupt: false,           // 海外服务器必须关，否则时序冲突
     enable_subtitle: true,             // 获取文字字幕（transcript）
   };
 
