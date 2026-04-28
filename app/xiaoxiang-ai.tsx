@@ -377,12 +377,14 @@ export default function XiaoxiangAiScreen() {
         // Returns true if actual speech was detected, false for silence-only turns
         let vadSpeechDetected = false;
         await new Promise<void>((resolve) => {
-          const SPEECH_DB       = -35;   // dB above this = speech
-          const SILENCE_END_MS  = 1200;  // pause after speech → end turn
-          const NO_SPEECH_MS    = 6000;  // no speech at all → silence turn
-          const MAX_RECORD_MS   = 12000; // hard cap
-          let speechStarted = false;
-          let lastSpeechTime = 0;
+          const SPEECH_DB         = -28;   // dB threshold — higher = less sensitive to ambient noise
+          const MIN_SPEECH_MS     = 400;   // must speak for 400ms before counting as real speech
+          const SILENCE_END_MS    = 1200;  // pause after speech → end turn
+          const NO_SPEECH_MS      = 6000;  // no speech at all → silence turn
+          const MAX_RECORD_MS     = 12000; // hard cap
+          let speechStartTime     = 0;     // when current speech run started
+          let speechConfirmed     = false; // true after MIN_SPEECH_MS of continuous speech
+          let lastSpeechTime      = 0;
           const startTime = Date.now();
           let settled = false;
 
@@ -402,22 +404,28 @@ export default function XiaoxiangAiScreen() {
             if (elapsed > MAX_RECORD_MS) { settle(); return; }
 
             if (metering > SPEECH_DB) {
-              if (!speechStarted) {
-                speechStarted = true;
+              if (speechStartTime === 0) speechStartTime = now;
+              lastSpeechTime = now;
+
+              // Only confirm speech after sustained vocalization (not transient noise)
+              if (!speechConfirmed && now - speechStartTime >= MIN_SPEECH_MS) {
+                speechConfirmed = true;
                 vadSpeechDetected = true;
-                lastSpeechTime = now;
-                console.log("[VAD] 说话开始");
-              } else {
-                lastSpeechTime = now;
+                console.log("[VAD] 说话确认（持续>400ms）");
               }
-            } else if (speechStarted) {
-              if (now - lastSpeechTime > SILENCE_END_MS) {
-                console.log("[VAD] 停顿检测 → 发送");
+            } else {
+              // Below threshold — reset speech run if it wasn't confirmed
+              if (!speechConfirmed) speechStartTime = 0;
+
+              if (speechConfirmed) {
+                if (now - lastSpeechTime > SILENCE_END_MS) {
+                  console.log("[VAD] 停顿检测 → 发送");
+                  settle();
+                }
+              } else if (elapsed > NO_SPEECH_MS) {
+                console.log("[VAD] 无语音 → 跳过本轮");
                 settle();
               }
-            } else if (elapsed > NO_SPEECH_MS) {
-              console.log("[VAD] 无语音 → 跳过本轮");
-              settle();
             }
           });
         });
