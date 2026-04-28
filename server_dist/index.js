@@ -854,7 +854,13 @@ var PersistentRealtimeConn = class {
           return;
         }
         if (msg.msgType === MT_AUDIO_SERVER && Buffer.isBuffer(msg.payload) && msg.payload.length > 0) {
-          if (!ttsKnownFailed) audioChunks.push(msg.payload);
+          if (!ttsKnownFailed) {
+            if (audioChunks.length === 0) {
+              const first16 = msg.payload.subarray(0, 16).toString("hex");
+              console.log(`[S2S-Audio] first chunk ${msg.payload.length}B, hex: ${first16}`);
+            }
+            audioChunks.push(msg.payload);
+          }
           return;
         }
         if (msg.eventId !== 0) console.log(`[S2S-Turn] evt=${msg.eventId}`);

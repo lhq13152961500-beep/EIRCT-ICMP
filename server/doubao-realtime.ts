@@ -361,7 +361,13 @@ class PersistentRealtimeConn {
 
         // Audio frame
         if (msg.msgType === MT_AUDIO_SERVER && Buffer.isBuffer(msg.payload) && (msg.payload as Buffer).length > 0) {
-          if (!ttsKnownFailed) audioChunks.push(msg.payload as Buffer);
+          if (!ttsKnownFailed) {
+            if (audioChunks.length === 0) {
+              const first16 = (msg.payload as Buffer).subarray(0, 16).toString("hex");
+              console.log(`[S2S-Audio] first chunk ${(msg.payload as Buffer).length}B, hex: ${first16}`);
+            }
+            audioChunks.push(msg.payload as Buffer);
+          }
           return;
         }
 
