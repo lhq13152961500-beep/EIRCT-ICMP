@@ -967,10 +967,11 @@ async function callDoubaoLLM(userText, systemRole) {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: "doubao-1-5-pro-32k-250115",
+        model: "doubao-seed-2-0-lite-260215",
         messages: [{ role: "system", content: systemRole }, { role: "user", content: userText }],
         max_tokens: 120,
-        temperature: 0.85
+        temperature: 0.85,
+        thinking: { type: "disabled" }
       })
     });
     const data = await resp.json();
@@ -1753,7 +1754,7 @@ async function registerRoutes(app2) {
           }
           return { role: m.role, content: m.content };
         });
-        const model = "doubao-1-5-pro-32k-250115";
+        const model = "doubao-seed-2-0-lite-260215";
         const completion = await doubaoClient.chat.completions.create({
           model,
           messages: [
@@ -1761,7 +1762,9 @@ async function registerRoutes(app2) {
             ...formattedMessages
           ],
           max_tokens: 300,
-          temperature: 0.85
+          temperature: 0.85,
+          // Disable deep thinking — keeps quality but removes reasoning latency (~18s → ~2s)
+          ...{ thinking: { type: "disabled" } }
         });
         console.log("[Doubao] model:", model, "usage:", completion.usage);
         const reply2 = completion.choices[0]?.message?.content || "\u62B1\u6B49\uFF0C\u6211\u6682\u65F6\u65E0\u6CD5\u56DE\u7B54\u8FD9\u4E2A\u95EE\u9898\uFF5E";

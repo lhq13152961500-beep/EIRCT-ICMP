@@ -735,7 +735,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return { role: m.role as "user" | "assistant", content: m.content as string };
         });
 
-        const model = "doubao-1-5-pro-32k-250115";
+        const model = "doubao-seed-2-0-lite-260215";
 
         const completion = await doubaoClient.chat.completions.create({
           model,
@@ -745,6 +745,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ],
           max_tokens: 300,
           temperature: 0.85,
+          // Disable deep thinking — keeps quality but removes reasoning latency (~18s → ~2s)
+          ...({ thinking: { type: "disabled" } } as any),
         });
 
         console.log("[Doubao] model:", model, "usage:", completion.usage);
