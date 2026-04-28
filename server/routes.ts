@@ -735,7 +735,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return { role: m.role as "user" | "assistant", content: m.content as string };
         });
 
-        const model = "doubao-seed-2-0-lite-260215";
+        const model = "doubao-1-5-pro-32k-250115";
 
         const completion = await doubaoClient.chat.completions.create({
           model,

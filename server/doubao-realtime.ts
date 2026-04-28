@@ -480,7 +480,7 @@ export async function callDoubaoLLM(userText: string, systemRole: string): Promi
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: "doubao-seed-2-0-lite-260215",
+        model: "doubao-1-5-pro-32k-250115",
         messages: [{ role: "system", content: systemRole }, { role: "user", content: userText }],
         max_tokens: 120,
         temperature: 0.85,

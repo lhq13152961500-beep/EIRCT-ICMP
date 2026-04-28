@@ -967,7 +967,7 @@ async function callDoubaoLLM(userText, systemRole) {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: "doubao-seed-2-0-lite-260215",
+        model: "doubao-1-5-pro-32k-250115",
         messages: [{ role: "system", content: systemRole }, { role: "user", content: userText }],
         max_tokens: 120,
         temperature: 0.85
@@ -1753,7 +1753,7 @@ async function registerRoutes(app2) {
           }
           return { role: m.role, content: m.content };
         });
-        const model = "doubao-seed-2-0-lite-260215";
+        const model = "doubao-1-5-pro-32k-250115";
         const completion = await doubaoClient.chat.completions.create({
           model,
           messages: [
