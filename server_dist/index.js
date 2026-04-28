@@ -537,7 +537,7 @@ import WebSocket from "ws";
 import { randomUUID as randomUUID2 } from "crypto";
 import { spawn } from "child_process";
 var REALTIME_WS_URL = "wss://openspeech.bytedance.com/api/v3/realtime/dialogue";
-var APP_KEY = "PlgvMymc7f3tQnJ6";
+var APP_KEY = "IUCDKhkG0Fm7clKyjS2REBi5eYN151Tw";
 var MT_FULL_CLIENT = 1;
 var MT_AUDIO_CLIENT = 2;
 var MT_AUDIO_SERVER = 11;
