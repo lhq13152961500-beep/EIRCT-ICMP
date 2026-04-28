@@ -1060,8 +1060,8 @@ async function doublaoRealtimeTurn(req) {
       speaker: speakerToUse,
       audio_config: {
         channel: 1,
-        format: "pcm",
-        // PCM float32 24kHz (server default for SC)
+        format: "pcm_s16le",
+        // 16-bit signed int — matches ffmpeg s16le decoder
         sample_rate: 24e3
       }
     },
