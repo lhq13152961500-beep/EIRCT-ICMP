@@ -32,9 +32,9 @@ const EVT_TTS_ENDED     = 359;
 const EVT_ASR_RESPONSE  = 451;
 const EVT_CHAT_RESPONSE = 550;
 
-// Built-in ICL voice for SC v1 — works without extra registration
-// Switch to user's cloned voice S_hQJPcOyZ1 (SC2.0) after verifying SC v1 pipeline
-export const DEFAULT_SPEAKER = "ICL_zh_female_nuanxinxuejie_tob";
+// User's cloned voice for SC2.0 (声音复刻-豆包端到端实时语音大模型)
+// Account confirmed to use SC2.0 (S_ prefix voices, ICL_ gives InvalidSpeaker)
+export const DEFAULT_SPEAKER = "S_hQJPcOyZ1";
 
 // ── Binary helpers ──────────────────────────────────────────────────────────
 function int32BE(n: number): Buffer {
@@ -635,6 +635,7 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
         strict_audit: false,
         recv_timeout: 10,
         input_mod: "audio_file", // pre-recorded audio, server adds silence for VAD
+        model: "2.2.0.0",        // SC2.0版本 — supports S_ prefix clone voices
       },
     },
   };

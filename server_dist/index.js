@@ -556,7 +556,7 @@ var EVT_SESSION_FAIL = 153;
 var EVT_TTS_ENDED = 359;
 var EVT_ASR_RESPONSE = 451;
 var EVT_CHAT_RESPONSE = 550;
-var DEFAULT_SPEAKER = "ICL_zh_female_nuanxinxuejie_tob";
+var DEFAULT_SPEAKER = "S_hQJPcOyZ1";
 function int32BE(n) {
   const b = Buffer.alloc(4);
   b.writeInt32BE(n, 0);
@@ -1075,8 +1075,10 @@ async function doublaoRealtimeTurn(req) {
       extra: {
         strict_audit: false,
         recv_timeout: 10,
-        input_mod: "audio_file"
+        input_mod: "audio_file",
         // pre-recorded audio, server adds silence for VAD
+        model: "2.2.0.0"
+        // SC2.0版本 — supports S_ prefix clone voices
       }
     }
   };
