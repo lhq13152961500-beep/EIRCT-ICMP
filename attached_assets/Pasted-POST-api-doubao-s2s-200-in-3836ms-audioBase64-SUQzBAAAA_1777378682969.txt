@@ -1,0 +1,173 @@
+POST /api/doubao/s2s 200 in 3836ms :: {"audioBase64":"SUQzBAAAAAAAI1RTU0UAAAAPA…
+GET /api/geocode/reverse 200 in 1080ms :: {"name":"河马泉街道 · 水磨沟区","raw":{"addres…
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 14ms :: [{"i…
+[S2S-Turn] PCM: 49152B (~1.5s)
+[S2S-Turn] speaker="S_hQJPcOyZ1" pcm=49152B
+[S2S-Turn] evt=150
+[S2S-Turn] SessionStarted dialog_id=aea1e877-9b00-4106-86f7-3b3d4d2eda9b → streaming PCM
+[S2S-Turn] PCM streaming done — waiting for VAD / TTS
+[S2S-Turn] evt=450
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] ASR: 我今天。
+[S2S-Turn] evt=459
+[S2S-Turn] evt=350
+[S2S-Audio] first chunk 16384B, hex: 49004b0047004b004d0053004f005100
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=559
+[S2S-Turn] evt=154
+[S2S-Turn] evt=351
+[S2S-Turn] evt=359
+[S2S-Turn] TTSEnded — chunks=23
+[S2S-Turn] Done: 402274B PCM transcript="我今天。" aiText="今天感觉怎么样？要是累了，景区里的烤馕馆可以坐坐，或者去瓜果长廊歇脚，都很舒服。"
+POST /api/doubao/s2s 200 in 4701ms :: {"audioBase64":"SUQzBAAAAAAAI1RTU0UAAAAPA…
+GET /api/geocode/reverse 200 in 1650ms :: {"name":"河马泉街道 · 水磨沟区","raw":{"addres…
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
+[S2S-Turn] PCM: 47104B (~1.5s)
+[S2S-Turn] speaker="S_hQJPcOyZ1" pcm=47104B
+[S2S-Turn] evt=150
+[S2S-Turn] SessionStarted dialog_id=c3922bc3-d726-4a0f-81e5-f4529070bd99 → streaming PCM
+[S2S-Turn] PCM streaming done — waiting for VAD / TTS
+[S2S-Turn] evt=450
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] ASR: 我想。
+[S2S-Turn] evt=459
+[S2S-Turn] evt=350
+[S2S-Audio] first chunk 16384B, hex: 3f004300430047004700490047004700
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=550
+[S2S-Turn] evt=559
+Reverse geocode error: TypeError: fetch failed
+    at node:internal/deps/undici/undici:14902:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/runner/workspace/server_dist/index.js:1443:23 {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1134:18)
+      at internalConnectMultiple (node:net:1210:5)
+      at internalConnectMultiple (node:net:1210:5)
+      at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+      at listOnTimeout (node:internal/timers:590:11)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error], [Error] ]
+  }
+}
+GET /api/geocode/reverse 500 in 255ms :: {"error":"Reverse geocode failed"}
+[S2S-Turn] evt=154
+[S2S-Turn] evt=351
+[S2S-Turn] evt=359
+[S2S-Turn] TTSEnded — chunks=19
+[S2S-Turn] Done: 334322B PCM transcript="我想。" aiText="是不是有点累啦？要不要先在附近的烤馕馆坐坐，吃个刚出炉的热馕垫垫肚子呀？"
+POST /api/doubao/s2s 200 in 4803ms :: {"audioBase64":"SUQzBAAAAAAAI1RTU0UAAAAPA…
+POST /api/doubao/s2s/close 200 in 2ms :: {"ok":true}
+[S2S] WS closed code=1000
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 14ms :: [{"i…
+POST /api/doubao/s2s/close 200 in 0ms :: {"ok":true}
+GET /api/geocode/reverse 200 in 680ms :: {"name":"河马泉街道 · 水磨沟区","raw":{"address…
+Reverse geocode error: TypeError: fetch failed
+    at node:internal/deps/undici/undici:14902:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/runner/workspace/server_dist/index.js:1443:23 {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1134:18)
+      at internalConnectMultiple (node:net:1210:5)
+      at internalConnectMultiple (node:net:1210:5)
+      at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+      at listOnTimeout (node:internal/timers:590:11)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error], [Error] ]
+  }
+}
+GET /api/geocode/reverse 500 in 255ms :: {"error":"Reverse geocode failed"}

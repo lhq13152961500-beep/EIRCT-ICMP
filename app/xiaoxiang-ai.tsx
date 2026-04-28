@@ -382,7 +382,7 @@ export default function XiaoxiangAiScreen() {
         }
         if (!recording) throw new Error("Failed to create recording after retries");
         companionRecordingRef.current = recording;
-        await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+        await new Promise<void>((resolve) => setTimeout(resolve, 4000));
         if (!companionActiveRef.current) break; // finally will stop recording
 
         uri = recording.getURI();
