@@ -315,20 +315,9 @@ export default function XiaoxiangAiScreen() {
         return;
       }
     } catch (e: any) {
-      console.log("[speakReply] TTS失败，使用设备语音:", e?.message);
+      console.log("[speakReply] TTS失败，跳过（禁用机械设备语音）:", e?.message);
     }
-    // Device TTS fallback — always available, no credentials needed
-    try {
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
-      await new Promise<void>((resolve) => {
-        Speech.speak(text, {
-          language: "zh-CN",
-          rate: 0.95,
-          onDone: resolve,
-          onError: () => resolve(),
-        });
-      });
-    } catch {}
+    // Device TTS intentionally disabled in companion mode — robotic voice breaks immersion
   }, [playDoubaoAudio]);
 
   const runCompanionLoop = useCallback(async (
@@ -385,27 +374,37 @@ export default function XiaoxiangAiScreen() {
         companionRecordingRef.current = recording;
 
         // VAD: wait until user speaks then pauses (or timeout)
+        // Returns true if actual speech was detected, false for silence-only turns
+        let vadSpeechDetected = false;
         await new Promise<void>((resolve) => {
           const SPEECH_DB       = -35;   // dB above this = speech
-          const SILENCE_END_MS  = 1500;  // pause after speech → end turn
+          const SILENCE_END_MS  = 1200;  // pause after speech → end turn
           const NO_SPEECH_MS    = 6000;  // no speech at all → silence turn
           const MAX_RECORD_MS   = 12000; // hard cap
           let speechStarted = false;
           let lastSpeechTime = 0;
           const startTime = Date.now();
+          let settled = false;
+
+          const settle = () => {
+            if (settled) return;
+            settled = true;
+            resolve();
+          };
 
           recording!.setProgressUpdateInterval(100);
           recording!.setOnRecordingStatusUpdate((status: any) => {
-            if (!companionActiveRef.current) { resolve(); return; }
+            if (settled || !companionActiveRef.current) { settle(); return; }
             const now = Date.now();
             const elapsed = now - startTime;
             const metering: number = status.metering ?? -160;
 
-            if (elapsed > MAX_RECORD_MS) { resolve(); return; }
+            if (elapsed > MAX_RECORD_MS) { settle(); return; }
 
             if (metering > SPEECH_DB) {
               if (!speechStarted) {
                 speechStarted = true;
+                vadSpeechDetected = true;
                 lastSpeechTime = now;
                 console.log("[VAD] 说话开始");
               } else {
@@ -414,16 +413,24 @@ export default function XiaoxiangAiScreen() {
             } else if (speechStarted) {
               if (now - lastSpeechTime > SILENCE_END_MS) {
                 console.log("[VAD] 停顿检测 → 发送");
-                resolve();
+                settle();
               }
             } else if (elapsed > NO_SPEECH_MS) {
               console.log("[VAD] 无语音 → 跳过本轮");
-              resolve();
+              settle();
             }
           });
         });
 
         if (!companionActiveRef.current) break; // finally will stop recording
+
+        // Skip S2S when no speech — prevents s2sFailCount from rising
+        // Still count toward silenceCount so proactive messages can trigger
+        if (!vadSpeechDetected) {
+          silenceCount++;
+          setCompanionStatus("listening");
+          continue;
+        }
 
         uri = recording.getURI();
         await recording.stopAndUnloadAsync();
