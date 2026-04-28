@@ -1,0 +1,99 @@
+ET /api/custom-routes/user/55149882-bf73-485e-b74e-352c26208a4b 304 in 14ms ::…
+baseUrl https://3e92fe11-b06c-4a3a-9702-4ce440384bf5-00-19n05ttnijouq.picard.replit.dev
+expsUrl 3e92fe11-b06c-4a3a-9702-4ce440384bf5-00-19n05ttnijouq.picard.replit.dev
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 12ms :: [{"i…
+GET /api/profile/55149882-bf73-485e-b74e-352c26208a4b 304 in 11ms :: {"profile"…
+GET /api/geocode/ip 304 in 853ms :: {"city":[],"lat":null,"lng":null}
+GET /api/doubao/status 200 in 1ms :: {"configured":true}
+GET /api/ai/voice-status 200 in 0ms :: {"available":true}
+[S2S-Turn] PCM: 51200B (~1.6s)
+[S2S-Turn] speaker="ICL_zh_female_nuanxinxuejie_tob" pcm=51200B
+GET /api/amap-locate 200 in 0ms
+[S2S] WS open → sending StartConnection (evt=1)
+Reverse geocode error: TypeError: fetch failed
+    at node:internal/deps/undici/undici:14902:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/runner/workspace/server_dist/index.js:1435:23 {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1134:18)
+      at internalConnectMultiple (node:net:1210:5)
+      at internalConnectMultiple (node:net:1210:5)
+      at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+      at listOnTimeout (node:internal/timers:590:11)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error], [Error] ]
+  }
+}
+GET /api/geocode/reverse 500 in 253ms :: {"error":"Reverse geocode failed"}
+[S2S] ConnectionStarted ✓ (evt=50)
+[S2S-Turn] evt=150
+[S2S-Turn] SessionStarted dialog_id=ac3ead50-a705-4dce-b3fa-8cb9945d7d08 → streaming PCM
+[S2S-Turn] PCM streaming done — waiting for VAD / TTS
+[S2S-Turn] evt=450
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] evt=451
+[S2S-Turn] ASR: 你好呀。
+[S2S-Turn] evt=459
+[S2S] ERROR code=55000001 msg=sami error: codes=40000000, desc=ClientError:InvalidSpeaker
+[S2S-Turn] InvalidSpeaker — falling back to text-only
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 12ms :: [{"i…
+[S2S-Turn] Done: 0B PCM transcript="你好呀。" aiText=""
+[S2S-Turn] No aiText, calling LLM for: "你好呀。"
+Reverse geocode error: TypeError: fetch failed
+    at node:internal/deps/undici/undici:14902:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/runner/workspace/server_dist/index.js:1435:23 {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1134:18)
+      at internalConnectMultiple (node:net:1210:5)
+      at internalConnectMultiple (node:net:1210:5)
+      at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+      at listOnTimeout (node:internal/timers:590:11)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error], [Error] ]
+  }
+}
+GET /api/geocode/reverse 500 in 255ms :: {"error":"Reverse geocode failed"}
+[S2S-Turn] HTTP TTS for: "你好呀～是不是走累啦？附近的烤馕馆、瓜果长廊都能歇脚，要不要去坐坐吃块甜哈密瓜呀😉"
+[DoubaoTTS-HTTP] cluster=volcano_mega voice=BV700_V2_streaming code=3001 msg=[resource_id=volc.tts.default] requested resource not granted
+[DoubaoTTS-HTTP] cluster=volcano_tts voice=BV700_streaming code=3001 msg=[resource_id=volc.tts.default] requested resource not granted
+[DoubaoS2S] error: HTTP TTS failed all clusters
+POST /api/doubao/s2s 500 in 20452ms :: {"error":"HTTP TTS failed all clusters"}
+POST /api/doubao/s2s/close 200 in 1ms :: {"ok":true}
+[S2S] WS closed code=1000
+[Transcribe] text="你好呀" prompt_len=92
+POST /api/ai/transcribe 200 in 379ms :: {"text":"你好呀"}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
+Reverse geocode error: TypeError: fetch failed
+    at node:internal/deps/undici/undici:14902:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/runner/workspace/server_dist/index.js:1435:23 {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1134:18)
+      at internalConnectMultiple (node:net:1210:5)
+      at internalConnectMultiple (node:net:1210:5)
+      at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+      at listOnTimeout (node:internal/timers:590:11)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error], [Error] ]
+  }
+}
+GET /api/geocode/reverse 500 in 254ms :: {"error":"Reverse geocode failed"}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
