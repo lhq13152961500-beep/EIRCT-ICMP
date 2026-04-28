@@ -1,0 +1,56 @@
+GET /api/geocode/ip 500 in 424ms :: {"error":"IP geocode failed"}
+GET /api/ai/voice-status 200 in 2ms :: {"available":true}
+GET /api/doubao/status 200 in 1ms :: {"configured":true}
+[S2S-Turn] PCM: 45056B (~1.4s)
+[S2S-Turn] speaker="S_hQJPcOyZ1" pcm=45056B
+[S2S] WS open → sending StartConnection (evt=1)
+[S2S] ConnectionStarted ✓ (evt=50)
+[S2S] ERROR code=45000001 msg=invalid X-Api-App-Key: IUCDKhkG0Fm7clKyjS2REBi5eYN151Tw, expected:[PlgvMymc7f3tQnJ6]
+[S2S-Turn] fatal error: invalid X-Api-App-Key: IUCDKhkG0Fm7clKyjS2REBi5eYN151Tw, expected:[PlgvMymc7f3tQnJ6]
+[S2S-Turn] Done: 0B PCM transcript="" aiText=""
+POST /api/doubao/s2s 200 in 1974ms :: {"audioBase64":"","format":"mp3","transcr…
+[Transcribe] text="你好呀" prompt_len=92
+POST /api/ai/transcribe 200 in 294ms :: {"text":"你好呀"}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 15ms :: [{"i…
+[Doubao] model: doubao-seed-2-0-lite-260215 usage: {
+  completion_tokens: 325,
+  prompt_tokens: 635,
+  total_tokens: 960,
+  prompt_tokens_details: { cached_tokens: 0 },
+  completion_tokens_details: { reasoning_tokens: 240 }
+}
+POST /api/ai/chat 200 in 27549ms :: {"reply":"亚克西呀朋友😊 看你现在逛得有些疲惫啦，好好歇会儿哦～\n等你休…
+[DoubaoTTS] cluster=volcano_mega voice=BV700_V2_streaming code=3001
+[DoubaoTTS] cluster=volcano_mega code=3001 — trying next
+[DoubaoTTS] cluster=volcano_tts voice=BV700_streaming code=3001
+[DoubaoTTS] cluster=volcano_tts code=3001 — trying next
+POST /api/doubao/tts 500 in 857ms :: {"error":"tts_failed_all_clusters"}
+POST /api/doubao/s2s/close 200 in 2ms :: {"ok":true}
+[S2S] WS closed code=1000
+[S2S-Turn] PCM: 47104B (~1.5s)
+[S2S-Turn] speaker="S_hQJPcOyZ1" pcm=47104B
+[S2S] WS open → sending StartConnection (evt=1)
+[S2S] ConnectionStarted ✓ (evt=50)
+[S2S] ERROR code=45000001 msg=invalid X-Api-App-Key: IUCDKhkG0Fm7clKyjS2REBi5eYN151Tw, expected:[PlgvMymc7f3tQnJ6]
+[S2S-Turn] fatal error: invalid X-Api-App-Key: IUCDKhkG0Fm7clKyjS2REBi5eYN151Tw, expected:[PlgvMymc7f3tQnJ6]
+[S2S-Turn] Done: 0B PCM transcript="" aiText=""
+POST /api/doubao/s2s 200 in 1492ms :: {"audioBase64":"","format":"mp3","transcr…
+[Transcribe] text="你好呀你好呀" prompt_len=92
+POST /api/ai/transcribe 200 in 557ms :: {"text":"你好呀你好呀"}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
+[Doubao] model: doubao-seed-2-0-lite-260215 usage: {
+  completion_tokens: 415,
+  prompt_tokens: 685,
+  total_tokens: 1100,
+  prompt_tokens_details: { cached_tokens: 0 },
+  completion_tokens_details: { reasoning_tokens: 343 }
+}
+POST /api/ai/chat 200 in 18617ms :: {"reply":"亚克西呀朋友😊 看您现在状态有些疲惫，先好好放松休息哦～您目前距…
+[DoubaoTTS] cluster=volcano_mega voice=BV700_V2_streaming code=3001
+[DoubaoTTS] cluster=volcano_mega code=3001 — trying next
+[DoubaoTTS] cluster=volcano_tts voice=BV700_streaming code=3001
+[DoubaoTTS] cluster=volcano_tts code=3001 — trying next
+POST /api/doubao/tts 500 in 1172ms :: {"error":"tts_failed_all_clusters"}
+POST /api/doubao/s2s/close 200 in 1ms :: {"ok":true}
+[S2S] WS closed code=1005
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
