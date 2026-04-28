@@ -363,6 +363,7 @@ export default function XiaoxiangAiScreen() {
           android: { extension: ".m4a", outputFormat: 2, audioEncoder: 3, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000 },
           ios: { extension: ".m4a", audioQuality: 127, sampleRate: 16000, numberOfChannels: 1, bitRate: 64000, linearPCMBitDepth: 16, linearPCMIsBigEndian: false, linearPCMIsFloat: false },
           web: {},
+          isMeteringEnabled: true,
         };
         for (let attempt = 0; attempt < 4; attempt++) {
           try {
@@ -382,7 +383,46 @@ export default function XiaoxiangAiScreen() {
         }
         if (!recording) throw new Error("Failed to create recording after retries");
         companionRecordingRef.current = recording;
-        await new Promise<void>((resolve) => setTimeout(resolve, 4000));
+
+        // VAD: wait until user speaks then pauses (or timeout)
+        await new Promise<void>((resolve) => {
+          const SPEECH_DB       = -35;   // dB above this = speech
+          const SILENCE_END_MS  = 1500;  // pause after speech → end turn
+          const NO_SPEECH_MS    = 6000;  // no speech at all → silence turn
+          const MAX_RECORD_MS   = 12000; // hard cap
+          let speechStarted = false;
+          let lastSpeechTime = 0;
+          const startTime = Date.now();
+
+          recording!.setProgressUpdateInterval(100);
+          recording!.setOnRecordingStatusUpdate((status: any) => {
+            if (!companionActiveRef.current) { resolve(); return; }
+            const now = Date.now();
+            const elapsed = now - startTime;
+            const metering: number = status.metering ?? -160;
+
+            if (elapsed > MAX_RECORD_MS) { resolve(); return; }
+
+            if (metering > SPEECH_DB) {
+              if (!speechStarted) {
+                speechStarted = true;
+                lastSpeechTime = now;
+                console.log("[VAD] 说话开始");
+              } else {
+                lastSpeechTime = now;
+              }
+            } else if (speechStarted) {
+              if (now - lastSpeechTime > SILENCE_END_MS) {
+                console.log("[VAD] 停顿检测 → 发送");
+                resolve();
+              }
+            } else if (elapsed > NO_SPEECH_MS) {
+              console.log("[VAD] 无语音 → 跳过本轮");
+              resolve();
+            }
+          });
+        });
+
         if (!companionActiveRef.current) break; // finally will stop recording
 
         uri = recording.getURI();
