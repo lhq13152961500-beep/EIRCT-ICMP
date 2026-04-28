@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { spawn } from "child_process";
 
 const REALTIME_WS_URL = "wss://openspeech.bytedance.com/api/v3/realtime/dialogue";
-const APP_KEY = "PlgvMymc7f3tQnJ6";
+const APP_KEY = "JhfPsaVFdSxpNjNlR1QbRkODZDuXuV9v";
 
 // Message Types (byte 1 high nibble)
 const MT_FULL_CLIENT  = 0x1;
