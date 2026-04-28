@@ -1,0 +1,86 @@
+GET /api/geocode/reverse 500 in 255ms :: {"error":"Reverse geocode failed"}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
+Reverse geocode error: TypeError: fetch failed
+    at node:internal/deps/undici/undici:14902:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/runner/workspace/server_dist/index.js:1444:23 {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1134:18)
+      at internalConnectMultiple (node:net:1210:5)
+      at internalConnectMultiple (node:net:1210:5)
+      at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+      at listOnTimeout (node:internal/timers:590:11)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error], [Error] ]
+  }
+}
+GET /api/geocode/reverse 500 in 254ms :: {"error":"Reverse geocode failed"}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
+Reverse geocode error: TypeError: fetch failed
+    at node:internal/deps/undici/undici:14902:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/runner/workspace/server_dist/index.js:1444:23 {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1134:18)
+      at internalConnectMultiple (node:net:1210:5)
+      at internalConnectMultiple (node:net:1210:5)
+      at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+      at listOnTimeout (node:internal/timers:590:11)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error], [Error] ]
+  }
+}
+GET /api/geocode/reverse 500 in 267ms :: {"error":"Reverse geocode failed"}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
+Reverse geocode error: TypeError: fetch failed
+    at node:internal/deps/undici/undici:14902:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/runner/workspace/server_dist/index.js:1444:23 {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1134:18)
+      at internalConnectMultiple (node:net:1210:5)
+      at internalConnectMultiple (node:net:1210:5)
+      at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+      at listOnTimeout (node:internal/timers:590:11)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error], [Error] ]
+  }
+}
+GET /api/geocode/reverse 500 in 255ms :: {"error":"Reverse geocode failed"}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 12ms :: [{"i…
+POST /api/doubao/s2s/close 200 in 1ms :: {"ok":true}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
+[S2S-Turn] PCM: 112640B (~3.5s)
+[S2S-Turn] speaker="S_hQJPcOyZ1" pcm=112640B
+[S2S] WS open → sending StartConnection (evt=1)
+[S2S] ConnectionStarted ✓ (evt=50)
+[S2S] ERROR code=55000000 msg=resource ID is mismatched with speaker related resource
+[S2S-Turn] fatal error: resource ID is mismatched with speaker related resource
+[S2S-Turn] Done: 0B PCM transcript="" aiText=""
+POST /api/doubao/s2s 200 in 1381ms :: {"audioBase64":"","format":"mp3","transcr…
+[Transcribe] text="你好呀,给我讲个故事吧。" prompt_len=92
+POST /api/ai/transcribe 200 in 358ms :: {"text":"你好呀,给我讲个故事吧。"}
+GET /api/geocode/reverse 304 in 686ms :: {"name":"河马泉街道 · 水磨沟区","raw":{"address…
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 12ms :: [{"i…
+[Doubao] model: doubao-seed-2-0-lite-260215 usage: {
+  completion_tokens: 123,
+  prompt_tokens: 652,
+  total_tokens: 775,
+  prompt_tokens_details: { cached_tokens: 0 },
+  completion_tokens_details: { reasoning_tokens: 0 }
+}
+POST /api/ai/chat 200 in 11202ms :: {"reply":"哈哈我给你讲个麻扎村的小故事吧亚克西~\n这座千年古村落已经在吐峪…
+[DoubaoTTS] cluster=volcano_mega voice=BV700_V2_streaming code=3001
+[DoubaoTTS] cluster=volcano_mega code=3001 — trying next
+[DoubaoTTS] cluster=volcano_tts voice=BV700_streaming code=3001
+[DoubaoTTS] cluster=volcano_tts code=3001 — trying next
+POST /api/doubao/tts 500 in 809ms :: {"error":"tts_failed_all_clusters"}
+POST /api/doubao/s2s/close 200 in 1ms :: {"ok":true}
+[S2S] WS closed code=1005
+GET /api/geocode/reverse 304 in 687ms :: {"name":"河马泉街道 · 水磨沟区","raw":{"address…
+GET /api/geocode/reverse 200 in 837ms :: {"name":"河马泉街道 · 水磨沟区","raw":{"address…
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…

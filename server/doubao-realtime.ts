@@ -34,7 +34,7 @@ const EVT_CHAT_RESPONSE = 550;
 
 // User's cloned voice for SC2.0 (声音复刻-豆包端到端实时语音大模型)
 // Account confirmed to use SC2.0 (S_ prefix voices, ICL_ gives InvalidSpeaker)
-export const DEFAULT_SPEAKER = "S_hQJPcOyZ1";
+export const DEFAULT_SPEAKER = "S_FAU3AvxZ1";
 
 // ── Binary helpers ──────────────────────────────────────────────────────────
 function int32BE(n: number): Buffer {
