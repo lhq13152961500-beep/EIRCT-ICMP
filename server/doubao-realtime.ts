@@ -5,65 +5,85 @@ import { spawn } from "child_process";
 const REALTIME_WS_URL = "wss://openspeech.bytedance.com/api/v3/realtime/dialogue";
 const APP_KEY = "PlgvMymc7f3tQnJ6";
 
-const BYTE0 = 0x11;
-const MT_FULL_CLIENT = 0x1;
+// Message Types (byte 1 high nibble)
+const MT_FULL_CLIENT  = 0x1;
 const MT_AUDIO_CLIENT = 0x2;
 const MT_AUDIO_SERVER = 0xb;
-const MT_ERROR = 0xf;
+const MT_FULL_SERVER  = 0x9;
+const MT_ERROR        = 0xf;
 
-const FL_SEQ_NON_TERM = 0x1;
-const FL_LAST_WITH_SEQ = 0x3;
-const FL_HAS_EVENT    = 0x4;
+// Message Type Specific Flags (byte 1 low nibble)
+// Official binary example shows flags=0b0100 (event only, NO sequence)
+const FL_EVENT_ONLY = 0x4;
 
+// Event IDs — client
 const EVT_START_CONN    = 1;
 const EVT_FINISH_CONN   = 2;
 const EVT_START_SESSION = 100;
 const EVT_FINISH_SESSION = 102;
 const EVT_TASK_REQUEST  = 200;
-const EVT_CONN_STARTED  = 50;
-const EVT_TTS_ENDED     = 359;
 
-// ICL_ 内置音色：不需要注册，用于验证 S2S 通路是否正常
-// 确认通路 OK 后可改回复刻音色 S_hQJPcOyZ1
+// Event IDs — server
+const EVT_CONN_STARTED  = 50;
+const EVT_CONN_FAILED   = 51;
+const EVT_SESSION_START = 150;
+const EVT_SESSION_FAIL  = 153;
+const EVT_TTS_ENDED     = 359;
+const EVT_ASR_RESPONSE  = 451;
+const EVT_CHAT_RESPONSE = 550;
+
+// Built-in ICL voice for SC v1 — works without extra registration
+// Switch to user's cloned voice S_hQJPcOyZ1 (SC2.0) after verifying SC v1 pipeline
 export const DEFAULT_SPEAKER = "ICL_zh_female_nuanxinxuejie_tob";
 
+// ── Binary helpers ──────────────────────────────────────────────────────────
 function int32BE(n: number): Buffer {
   const b = Buffer.alloc(4);
   b.writeInt32BE(n, 0);
   return b;
 }
 
+function uint32BE(n: number): Buffer {
+  const b = Buffer.alloc(4);
+  b.writeUInt32BE(n, 0);
+  return b;
+}
+
 function lenStr(s: string): Buffer {
   const sb = Buffer.from(s, "utf-8");
-  return Buffer.concat([int32BE(sb.length), sb]);
+  return Buffer.concat([uint32BE(sb.length), sb]);
 }
 
-function buildConnectEvent(eventId: number, seq: number): Buffer {
-  const flags = FL_HAS_EVENT | FL_SEQ_NON_TERM;
-  const hdr = Buffer.from([BYTE0, (MT_FULL_CLIENT << 4) | flags, 0x10, 0x00]);
+// Header builders — matches official binary example:
+//   byte0=0x11 (version=1, header_size=1)
+//   byte1=(msgType<<4)|0x04 (event-only flag, no sequence)
+//   byte2=0x10 for JSON text, 0x00 for raw audio
+//   byte3=0x00 (reserved)
+function fullClientHdr(): Buffer {
+  return Buffer.from([0x11, (MT_FULL_CLIENT << 4) | FL_EVENT_ONLY, 0x10, 0x00]);
+}
+function audioClientHdr(): Buffer {
+  return Buffer.from([0x11, (MT_AUDIO_CLIENT << 4) | FL_EVENT_ONLY, 0x00, 0x00]);
+}
+
+// StartConnection / FinishConnection (connect-level, no session ID)
+function buildConnectEvent(eventId: number): Buffer {
   const pl = Buffer.from("{}");
-  return Buffer.concat([hdr, int32BE(seq), int32BE(eventId), int32BE(pl.length), pl]);
+  return Buffer.concat([fullClientHdr(), int32BE(eventId), uint32BE(pl.length), pl]);
 }
 
-function buildSessionEvent(eventId: number, seq: number, sid: string, payload: object): Buffer {
-  const flags = FL_HAS_EVENT | FL_SEQ_NON_TERM;
-  const hdr = Buffer.from([BYTE0, (MT_FULL_CLIENT << 4) | flags, 0x10, 0x00]);
+// Session-level text events (StartSession, FinishSession, etc.)
+function buildSessionEvent(eventId: number, sid: string, payload: object): Buffer {
   const pl = Buffer.from(JSON.stringify(payload));
-  return Buffer.concat([hdr, int32BE(seq), int32BE(eventId), lenStr(sid), int32BE(pl.length), pl]);
+  return Buffer.concat([fullClientHdr(), int32BE(eventId), lenStr(sid), uint32BE(pl.length), pl]);
 }
 
-function buildAudioChunk(pcm: Buffer, seq: number, sid: string): Buffer {
-  const flags = FL_HAS_EVENT | FL_SEQ_NON_TERM;
-  const hdr = Buffer.from([BYTE0, (MT_AUDIO_CLIENT << 4) | flags, 0x00, 0x00]);
-  return Buffer.concat([hdr, int32BE(seq), int32BE(EVT_TASK_REQUEST), lenStr(sid), int32BE(pcm.length), pcm]);
+// Audio chunk — raw PCM, no compression, no JSON serialization
+function buildAudioChunk(pcm: Buffer, sid: string): Buffer {
+  return Buffer.concat([audioClientHdr(), int32BE(EVT_TASK_REQUEST), lenStr(sid), uint32BE(pcm.length), pcm]);
 }
 
-function buildLastAudioChunk(seq: number, sid: string): Buffer {
-  const flags = FL_HAS_EVENT | FL_LAST_WITH_SEQ;
-  const hdr = Buffer.from([BYTE0, (MT_AUDIO_CLIENT << 4) | flags, 0x00, 0x00]);
-  return Buffer.concat([hdr, int32BE(-seq), int32BE(EVT_TASK_REQUEST), lenStr(sid), int32BE(0)]);
-}
-
+// ── Server message parser ───────────────────────────────────────────────────
 interface ParsedMsg {
   msgType: number;
   eventId: number;
@@ -77,56 +97,74 @@ function parseServerMsg(raw: Buffer): ParsedMsg {
 
   const byte1 = raw[1];
   const msgType = (byte1 >> 4) & 0xf;
-  const flags = byte1 & 0xf;
-  let off = 4;
+  const flags   = byte1 & 0xf;
+  let off = 4; // skip 4-byte header
 
+  // ── Error packet ──
   if (msgType === MT_ERROR) {
-    let errorCode = 0;
-    if (off + 4 <= raw.length) { errorCode = raw.readInt32BE(off); off += 4; }
+    let code = 0;
+    if (off + 4 <= raw.length) { code = raw.readInt32BE(off); off += 4; }
     let plSize = 0;
     if (off + 4 <= raw.length) { plSize = raw.readUInt32BE(off); off += 4; }
     let errorText = "";
     if (plSize > 0 && off + plSize <= raw.length) {
-      errorText = raw.subarray(off, off + plSize).toString("utf-8");
-    }
-    console.error(`[S2S-Conn] ERROR code=${errorCode} msg=${errorText || raw.toString("hex")}`);
-    return { msgType, eventId: 0, payload: Buffer.alloc(0), errorCode, errorText };
-  }
-
-  if ((flags & 0x3) !== 0) {
-    if (off + 4 <= raw.length) off += 4;
-  }
-
-  let eventId = 0;
-  if (flags & 0x4) {
-    if (off + 4 <= raw.length) { eventId = raw.readInt32BE(off); off += 4; }
-  }
-
-  if (eventId > 52 && eventId < 700 && off + 4 <= raw.length) {
-    const sidLen = raw.readUInt32BE(off);
-    if (sidLen >= 1 && sidLen <= 256 && off + 4 + sidLen <= raw.length) {
-      off += 4 + sidLen;
-    }
-  }
-
-  let payload: Buffer | Record<string, unknown> = Buffer.alloc(0);
-  if (off + 4 <= raw.length) {
-    const plSize = raw.readUInt32BE(off); off += 4;
-    if (plSize > 0 && off + plSize <= raw.length) {
       const plBuf = raw.subarray(off, off + plSize);
-      if (msgType === MT_AUDIO_SERVER) {
-        payload = plBuf;
-      } else {
-        try { payload = JSON.parse(plBuf.toString("utf-8")) as Record<string, unknown>; }
-        catch { payload = plBuf; }
+      try {
+        const j = JSON.parse(plBuf.toString("utf-8")) as Record<string, unknown>;
+        errorText = typeof j.error === "string" ? j.error : plBuf.toString("utf-8");
+      } catch {
+        errorText = plBuf.toString("utf-8");
       }
     }
+    console.error(`[S2S] ERROR code=${code} msg=${errorText || raw.toString("hex")}`);
+    return { msgType, eventId: 0, payload: Buffer.alloc(0), errorCode: code, errorText };
   }
 
-  return { msgType, eventId, payload };
+  // ── Full-server or audio-server response ──
+  if (msgType === MT_FULL_SERVER || msgType === MT_AUDIO_SERVER) {
+    // Optional: negative sequence (flag bit 0x2)
+    if ((flags & 0x2) !== 0) {
+      if (off + 4 <= raw.length) off += 4;
+    }
+
+    // Optional: event ID (flag bit 0x4)
+    let eventId = 0;
+    if ((flags & 0x4) !== 0) {
+      if (off + 4 <= raw.length) { eventId = raw.readInt32BE(off); off += 4; }
+    }
+
+    // Session ID — always present (size=0 for connect-level events)
+    // Python parse_response always reads session_id_size unconditionally
+    if (off + 4 <= raw.length) {
+      const sidLen = raw.readUInt32BE(off);
+      off += 4; // advance past the 4-byte size field
+      if (sidLen > 0 && sidLen <= 256 && off + sidLen <= raw.length) {
+        off += sidLen; // skip over session ID bytes
+      }
+    }
+
+    // Payload
+    let payload: Buffer | Record<string, unknown> = Buffer.alloc(0);
+    if (off + 4 <= raw.length) {
+      const plSize = raw.readUInt32BE(off); off += 4;
+      if (plSize > 0 && off + plSize <= raw.length) {
+        const plBuf = raw.subarray(off, off + plSize);
+        if (msgType === MT_AUDIO_SERVER) {
+          payload = plBuf; // raw audio bytes
+        } else {
+          try { payload = JSON.parse(plBuf.toString("utf-8")) as Record<string, unknown>; }
+          catch { payload = plBuf; }
+        }
+      }
+    }
+
+    return { msgType, eventId, payload };
+  }
+
+  return { msgType: 0, eventId: 0, payload: Buffer.alloc(0) };
 }
 
-// ── In-memory PCM conversion — no temp files, no disk I/O ───────────────────
+// ── Audio format conversion ─────────────────────────────────────────────────
 async function convertM4aToPcmInMemory(m4aBuffer: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const proc = spawn("ffmpeg", [
@@ -161,24 +199,21 @@ async function convertPcmToMp3InMemory(pcmBuffer: Buffer, sampleRate = 24000): P
   });
 }
 
-// ── Persistent WebSocket connection (reused across turns) ────────────────────
+// ── Persistent WebSocket connection ─────────────────────────────────────────
 type MsgHandler = (msg: ParsedMsg) => void;
 
 class PersistentRealtimeConn {
   private ws: WebSocket | null = null;
-  private seq = 0;
   private connStarted = false;
   private connecting: Promise<void> | null = null;
   private msgHandler: MsgHandler | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly IDLE_MS = 90_000; // close after 90s idle
-
-  private nextSeq() { return ++this.seq; }
+  private readonly IDLE_MS = 90_000;
 
   private resetIdleTimer() {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
-      console.log("[S2S-Conn] Idle timeout — closing persistent WS");
+      console.log("[S2S] Idle timeout — closing persistent WS");
       this.close();
     }, this.IDLE_MS);
   }
@@ -191,7 +226,6 @@ class PersistentRealtimeConn {
     if (this.isReady()) { this.resetIdleTimer(); return; }
     if (this.connecting) return this.connecting;
 
-    this.seq = 0;
     this.connStarted = false;
 
     this.connecting = new Promise<void>((resolve, reject) => {
@@ -207,12 +241,12 @@ class PersistentRealtimeConn {
 
       const onConnectTimeout = setTimeout(() => {
         ws.terminate();
-        reject(new Error("WS connect timeout"));
+        reject(new Error("WS connect timeout (8s)"));
       }, 8000);
 
       ws.on("open", () => {
-        console.log("[S2S-Conn] WS open → StartConnection");
-        ws.send(buildConnectEvent(EVT_START_CONN, this.nextSeq()));
+        console.log("[S2S] WS open → sending StartConnection (evt=1)");
+        ws.send(buildConnectEvent(EVT_START_CONN));
       });
 
       ws.on("message", (raw: Buffer) => {
@@ -221,16 +255,17 @@ class PersistentRealtimeConn {
         if (!this.connStarted) {
           if (msg.eventId === EVT_CONN_STARTED) {
             clearTimeout(onConnectTimeout);
-            console.log("[S2S-Conn] Connected ✓ (persistent)");
+            console.log("[S2S] ConnectionStarted ✓ (evt=50)");
             this.ws = ws;
             this.connStarted = true;
             this.connecting = null;
             this.resetIdleTimer();
             resolve();
-          } else if (msg.eventId === 51 || msg.msgType === MT_ERROR) {
+          } else if (msg.eventId === EVT_CONN_FAILED || msg.msgType === MT_ERROR) {
             clearTimeout(onConnectTimeout);
             this.connecting = null;
-            reject(new Error(`ConnectFailed evt=${msg.eventId} err=${msg.errorText || ""}`));
+            const errMsg = msg.errorText || (msg.payload as Record<string,unknown>)?.error || "";
+            reject(new Error(`ConnectionFailed evt=${msg.eventId} err=${errMsg}`));
           }
           return;
         }
@@ -245,7 +280,7 @@ class PersistentRealtimeConn {
       });
 
       ws.on("close", (code) => {
-        console.log(`[S2S-Conn] WS closed code=${code}`);
+        console.log(`[S2S] WS closed code=${code}`);
         this.ws = null;
         this.connStarted = false;
         if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
@@ -262,14 +297,12 @@ class PersistentRealtimeConn {
     sessionPayload: object,
     systemRole: string,
   ): Promise<S2STurnResult> {
-    // Reconnect if needed
     try {
       await this.ensureConnected(appId, token);
     } catch (e: any) {
       throw new Error(`S2S connection failed: ${e.message}`);
     }
 
-    const conn = this; // capture for nested functions
     const ws = this.ws!;
     const sessionId = randomUUID();
     this.resetIdleTimer();
@@ -291,16 +324,16 @@ class PersistentRealtimeConn {
         if (textWaitTimer) { clearTimeout(textWaitTimer); textWaitTimer = null; }
         if (postAudioTimer) { clearTimeout(postAudioTimer); postAudioTimer = null; }
         clearTimeout(globalTimer);
-        try { ws.send(buildSessionEvent(EVT_FINISH_SESSION, this.nextSeq(), sessionId, {})); } catch {}
+        try { ws.send(buildSessionEvent(EVT_FINISH_SESSION, sessionId, {})); } catch {}
         this.resetIdleTimer();
         resolve(result);
       };
 
-      // Global safety timeout — 6s (O2.0 低延迟模式下足够)
+      // 8s global safety timeout
       const globalTimer = setTimeout(() => {
         console.warn(`[S2S-Turn] Global timeout — chunks=${audioChunks.length} transcript="${transcript}" aiText="${aiText.slice(0, 40)}"`);
         settle({ audioChunks, transcript, aiText });
-      }, 6000);
+      }, 8000);
 
       const startTextWaitTimer = () => {
         if (textWaitTimer) return;
@@ -315,9 +348,10 @@ class PersistentRealtimeConn {
         if (msg.msgType === MT_ERROR) {
           const errText = msg.errorText || "";
           if (errText.includes("InvalidSpeaker")) {
+            console.warn("[S2S-Turn] InvalidSpeaker — falling back to text-only");
             ttsKnownFailed = true;
-            if (aiText) { settle({ audioChunks: [], transcript, aiText }); }
-            else { startTextWaitTimer(); }
+            if (aiText) settle({ audioChunks: [], transcript, aiText });
+            else startTextWaitTimer();
             return;
           }
           console.error(`[S2S-Turn] fatal error: ${errText}`);
@@ -334,14 +368,23 @@ class PersistentRealtimeConn {
         if (msg.eventId !== 0) console.log(`[S2S-Turn] evt=${msg.eventId}`);
 
         switch (msg.eventId) {
-          case 150: // SessionStarted
+          case EVT_SESSION_START: { // 150
             if (sessionStarted) break;
             sessionStarted = true;
-            console.log("[S2S-Turn] Session started → streaming PCM");
+            const dialogId = (msg.payload as Record<string, unknown>)?.dialog_id ?? "";
+            console.log(`[S2S-Turn] SessionStarted dialog_id=${dialogId} → streaming PCM`);
             streamPcm();
             break;
+          }
 
-          case 451: { // ASR
+          case EVT_SESSION_FAIL: { // 153
+            const errPayload = msg.payload as Record<string, unknown>;
+            console.error("[S2S-Turn] SessionFailed:", JSON.stringify(errPayload));
+            settle({ audioChunks: [], transcript, aiText });
+            break;
+          }
+
+          case EVT_ASR_RESPONSE: { // 451
             const pl = msg.payload as Record<string, unknown>;
             const results = (pl?.results as Array<{ text: string; is_interim: boolean }>) ?? [];
             const final = results.find((r) => !r.is_interim);
@@ -349,17 +392,12 @@ class PersistentRealtimeConn {
             break;
           }
 
-          case 550: { // LLM streaming text
+          case EVT_CHAT_RESPONSE: { // 550
             const pl = msg.payload as Record<string, unknown>;
-            let chunk = "";
-            if (typeof pl?.content === "string") chunk = pl.content;
-            else if (typeof (pl?.delta as Record<string, unknown>)?.content === "string")
-              chunk = (pl.delta as Record<string, unknown>).content as string;
-            else if (typeof pl?.text === "string") chunk = pl.text;
-            else if (typeof pl?.reply === "string") chunk = pl.reply;
+            const chunk = typeof pl?.content === "string" ? pl.content : "";
             if (chunk) {
               aiText += chunk;
-              if (ttsKnownFailed && aiText) {
+              if (ttsKnownFailed) {
                 if (textWaitTimer) { clearTimeout(textWaitTimer); textWaitTimer = null; }
                 settle({ audioChunks: [], transcript, aiText });
               }
@@ -367,51 +405,44 @@ class PersistentRealtimeConn {
             break;
           }
 
-          case EVT_TTS_ENDED: // 359
-            console.log(`[S2S-Turn] TTSEnded chunks=${audioChunks.length}`);
+          case EVT_TTS_ENDED: { // 359
+            console.log(`[S2S-Turn] TTSEnded — chunks=${audioChunks.length}`);
             settle({ audioChunks, transcript, aiText });
             break;
-
-          case 153: // SessionFailed
-            console.error("[S2S-Turn] SessionFailed:", JSON.stringify(msg.payload));
-            settle({ audioChunks: [], transcript, aiText });
-            break;
+          }
 
           default:
             break;
         }
       };
 
-      // Start the session
-      ws.send(buildSessionEvent(EVT_START_SESSION, conn.nextSeq(), sessionId, sessionPayload));
+      // Send StartSession
+      ws.send(buildSessionEvent(EVT_START_SESSION, sessionId, sessionPayload));
 
-      // Stream PCM with setImmediate (no setTimeout delay between chunks)
-      const CHUNK_SIZE = 640; // 20ms chunks — O2.0 最适配，实时性更强
+      // Stream PCM in 20ms chunks (640 bytes @ 16kHz int16) using setImmediate
+      const CHUNK_BYTES = 640;
       const streamPcm = () => {
         let offset = 0;
         const sendNext = () => {
           if (settled) return;
           if (offset >= pcmData.length) {
-            console.log("[S2S-Turn] PCM done → last chunk");
-            ws.send(buildLastAudioChunk(conn.nextSeq(), sessionId));
+            console.log("[S2S-Turn] PCM streaming done — waiting for VAD / TTS");
             postAudioTimer = setTimeout(() => {
               postAudioTimer = null;
-              if (!settled && audioChunks.length === 0) {
-                console.warn(`[S2S-Turn] Post-audio timeout — transcript="${transcript}"`);
+              if (!settled && audioChunks.length === 0 && !aiText) {
+                console.warn("[S2S-Turn] Post-audio timeout");
                 settle({ audioChunks: [], transcript, aiText });
               }
             }, 6000);
             return;
           }
-          const end = Math.min(offset + CHUNK_SIZE, pcmData.length);
-          ws.send(buildAudioChunk(pcmData.subarray(offset, end), conn.nextSeq(), sessionId));
+          const end = Math.min(offset + CHUNK_BYTES, pcmData.length);
+          ws.send(buildAudioChunk(pcmData.subarray(offset, end), sessionId));
           offset = end;
           setImmediate(sendNext);
         };
         sendNext();
       };
-
-      // streamPcm is called from msgHandler when evt 150 (SessionStarted) arrives
     });
   }
 
@@ -419,7 +450,7 @@ class PersistentRealtimeConn {
     if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
     if (this.ws && this.ws.readyState === 1) {
       try {
-        this.ws.send(buildConnectEvent(EVT_FINISH_CONN, this.nextSeq()));
+        this.ws.send(buildConnectEvent(EVT_FINISH_CONN));
         this.ws.close();
       } catch {}
     }
@@ -428,14 +459,13 @@ class PersistentRealtimeConn {
   }
 }
 
-// Module-level singleton
 const globalConn = new PersistentRealtimeConn();
 
 export function closeRealtimeConn() {
   globalConn.close();
 }
 
-// ── ARK LLM (text chat fallback) ─────────────────────────────────────────────
+// ── ARK LLM text fallback ───────────────────────────────────────────────────
 export async function callDoubaoLLM(userText: string, systemRole: string): Promise<string> {
   const apiKey = process.env.ARK_API_KEY;
   if (!apiKey) return "";
@@ -458,7 +488,7 @@ export async function callDoubaoLLM(userText: string, systemRole: string): Promi
   }
 }
 
-// ── HTTP TTS (fallback when S2S TTS fails) ───────────────────────────────────
+// ── HTTP TTS fallback ───────────────────────────────────────────────────────
 export async function callDoubaoHttpTts(text: string, appId: string, token: string): Promise<Buffer> {
   const attempts = [
     { cluster: "volcano_mega", voice_type: "BV700_V2_streaming" },
@@ -489,7 +519,7 @@ export async function callDoubaoHttpTts(text: string, appId: string, token: stri
   throw new Error("HTTP TTS failed all clusters");
 }
 
-// ── System prompt builder ────────────────────────────────────────────────────
+// ── System prompt builder ───────────────────────────────────────────────────
 export interface DoubaoS2SRequest {
   audioBase64: string;
   mimeType?: string;
@@ -565,41 +595,48 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
   const accessToken = process.env.VOLCENGINE_ACCESS_TOKEN;
   if (!appId || !accessToken) throw new Error("Doubao credentials not configured");
 
-  // ── In-memory PCM conversion (no disk I/O) ──
+  // Convert M4A/AAC recording to PCM 16kHz int16 mono
   const m4aBuffer = Buffer.from(req.audioBase64, "base64");
   const pcmData = await convertM4aToPcmInMemory(m4aBuffer);
   console.log(`[S2S-Turn] PCM: ${pcmData.length}B (~${(pcmData.length / 32000).toFixed(1)}s)`);
 
-  const sessionId = randomUUID();
-  const systemRole = req.systemRole || buildSystemPrompt(req.emotion, req.location, req.activityHint, req.stepRate);
-  const speakerToUse = req.speaker || DEFAULT_SPEAKER;
+  const systemRole    = req.systemRole || buildSystemPrompt(req.emotion, req.location, req.activityHint, req.stepRate);
+  const speakerToUse  = req.speaker || DEFAULT_SPEAKER;
 
-  // ── Session payload — S2S-SC（Scene SLM）版格式 ──
-  // SC 版与 O2.0 结构完全不同：无 asr/tts/llm/dialog 分块，统一用 character_manifest
+  // ── Session payload — official asr/tts/dialog format ────────────────────
+  // References:
+  //   - SC版本 uses character_manifest (plain string) in dialog
+  //   - SC版本 supports ICL_ prefix voices (built-in clone voices)
+  //   - model field inside dialog.extra: "1.2.1.1"=O2.0, "2.2.0.0"=SC2.0
+  //   - SC v1 (ICL_ voices) → omit model field
+  //   - input_mod: "audio_file" since we send pre-recorded audio (server adds silence)
+  // ─────────────────────────────────────────────────────────────────────────
   const sessionPayload = {
-    model: "S2S-SC",
-
-    audio_config: {
-      format: "pcm_s16le",
-      sample_rate: 16000,
-      channels: 1,
-      bit_depth: 16,
+    asr: {
+      extra: {
+        end_smooth_window_ms: 1500,
+      },
     },
-
-    vad_config: {
-      mode: "server_vad",
-      silence_duration: 700,            // SC 版推荐 700ms
+    tts: {
+      speaker: speakerToUse,
+      audio_config: {
+        channel: 1,
+        format: "pcm",        // PCM float32 24kHz (server default for SC)
+        sample_rate: 24000,
+      },
     },
-
-    character_manifest: {
-      bot_name: "小乡",
-      system_prompt: systemRole,
-      language: "zh-CN",
-      voice: speakerToUse,             // 声音复刻 ID：S_hQJPcOyZ1
+    dialog: {
+      character_manifest: systemRole, // Plain string for SC版本
+      location: {
+        city: "新疆吐鲁番",
+        district: "吐峪沟",
+      },
+      extra: {
+        strict_audit: false,
+        recv_timeout: 10,
+        input_mod: "audio_file", // pre-recorded audio, server adds silence for VAD
+      },
     },
-
-    enable_interrupt: false,           // 海外服务器必须关，否则时序冲突
-    enable_subtitle: true,             // 获取文字字幕（transcript）
   };
 
   console.log(`[S2S-Turn] speaker="${speakerToUse}" pcm=${pcmData.length}B`);
@@ -614,7 +651,7 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
     return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: result.aiText };
   }
 
-  // Fallback path: use HTTP TTS with LLM text
+  // Fallback: call LLM for text, then HTTP TTS
   let aiResponseText = result.aiText;
   if (!aiResponseText && result.transcript) {
     console.log(`[S2S-Turn] No aiText, calling LLM for: "${result.transcript}"`);
