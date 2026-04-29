@@ -556,7 +556,7 @@ var EVT_SESSION_FAIL = 153;
 var EVT_TTS_ENDED = 359;
 var EVT_ASR_RESPONSE = 451;
 var EVT_CHAT_RESPONSE = 550;
-var DEFAULT_SPEAKER = "ICL_zh_female_keainvsheng_tob";
+var DEFAULT_SPEAKER = "S_hQJPcOyZ1";
 function int32BE(n) {
   const b = Buffer.alloc(4);
   b.writeInt32BE(n, 0);
@@ -1072,8 +1072,7 @@ async function doublaoRealtimeTurn(req) {
       }
     },
     dialog: {
-      bot_name: "\u5C0F\u4E61",
-      system_role: systemRole,
+      character_manifest: systemRole,
       location: {
         city: "\u65B0\u7586\u5410\u9C81\u756A",
         district: "\u5410\u5CEA\u6C9F"
@@ -1081,7 +1080,8 @@ async function doublaoRealtimeTurn(req) {
       extra: {
         strict_audit: false,
         recv_timeout: 10,
-        input_mod: "audio_file"
+        input_mod: "audio_file",
+        model: "2.2.0.0"
       }
     }
   };

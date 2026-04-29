@@ -32,8 +32,9 @@ const EVT_TTS_ENDED     = 359;
 const EVT_ASR_RESPONSE  = 451;
 const EVT_CHAT_RESPONSE = 550;
 
-// ICL official clone voice for SC version (no character_manifest needed)
-export const DEFAULT_SPEAKER = "ICL_zh_female_keainvsheng_tob";
+// SC2.0 custom clone voice "小乡1" — trained under old project (APP_ID 3013688876)
+// Use character_manifest + model "2.2.0.0" for SC2.0 S_ prefix voices
+export const DEFAULT_SPEAKER = "S_hQJPcOyZ1";
 
 // ── Binary helpers ──────────────────────────────────────────────────────────
 function int32BE(n: number): Buffer {
@@ -617,8 +618,8 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
   //   - SC v1 (ICL_ voices) → omit model field
   //   - input_mod: "audio_file" since we send pre-recorded audio (server adds silence)
   // ─────────────────────────────────────────────────────────────────────────
-  // For ICL voices: use bot_name + system_role (no character_manifest, no model field)
-  // character_manifest is only for S_ custom clone voices on SC2.0
+  // SC2.0 format: S_ prefix voices use character_manifest + model "2.2.0.0"
+  // ICL voices would use bot_name + system_role instead (no model field)
   const sessionPayload = {
     asr: {
       extra: {
@@ -634,8 +635,7 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
       },
     },
     dialog: {
-      bot_name: "小乡",
-      system_role: systemRole,
+      character_manifest: systemRole,
       location: {
         city: "新疆吐鲁番",
         district: "吐峪沟",
@@ -644,6 +644,7 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
         strict_audit: false,
         recv_timeout: 10,
         input_mod: "audio_file",
+        model: "2.2.0.0",
       },
     },
   };
