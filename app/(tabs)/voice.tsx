@@ -2154,6 +2154,11 @@ export default function VoiceScreen() {
     tab === "postoffice" ? "postoffice" : "diary"
   );
 
+  useEffect(() => {
+    if (tab === "diary") setMainTab("diary");
+    else if (tab === "postoffice") setMainTab("postoffice");
+  }, [tab]);
+
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.topTabBar}>

@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import https from "node:https";
 import OpenAI, { toFile } from "openai";
-import { storage, type InsertRecording, initSoundArchivesTable, getSoundArchiveStats, getSoundArchives, createSoundArchive, getSoundArchiveAudio, incrementArchivePlay, initFavoritesAndListensTable, toggleSoundArchiveFavorite, getUserFavoriteArchiveIds, trackDiscoverListen, getUserProfileStats } from "./storage";
+import { storage, type InsertRecording, initSoundArchivesTable, getSoundArchiveStats, getSoundArchives, createSoundArchive, getSoundArchiveAudio, incrementArchivePlay, initFavoritesAndListensTable, toggleSoundArchiveFavorite, getUserFavoriteArchiveIds, getUserFavoriteArchives, trackDiscoverListen, getUserProfileStats } from "./storage";
 import { doublaoRealtimeTurn, closeRealtimeConn } from "./doubao-realtime";
 const uuidv4 = () => randomUUID();
 
@@ -956,6 +956,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("[sound-archives/favorites]", err);
       return res.status(500).json({ error: "获取收藏失败" });
+    }
+  });
+
+  app.get("/api/sound-archives/favorites-full/:userId", async (req, res) => {
+    try {
+      const archives = await getUserFavoriteArchives(req.params.userId);
+      return res.json(archives);
+    } catch (err) {
+      console.error("[sound-archives/favorites-full]", err);
+      return res.status(500).json({ error: "获取收藏详情失败" });
     }
   });
 

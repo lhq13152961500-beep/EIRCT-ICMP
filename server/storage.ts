@@ -684,6 +684,32 @@ export async function getUserFavoriteArchiveIds(userId: string): Promise<string[
   return result.rows.map((r: any) => r.archive_id as string);
 }
 
+export async function getUserFavoriteArchives(userId: string): Promise<SoundArchive[]> {
+  const result = await pgPool.query(
+    `SELECT sa.id, sa.venue, sa.category, sa.title, sa.author, sa.author_id,
+            sa.duration_seconds, sa.play_count, sa.is_verified, sa.created_at,
+            CASE WHEN sa.audio_data IS NOT NULL THEN TRUE ELSE FALSE END AS has_audio
+     FROM sound_archives sa
+     INNER JOIN sound_archive_favorites saf ON saf.archive_id = sa.id
+     WHERE saf.user_id = $1
+     ORDER BY saf.created_at DESC`,
+    [userId]
+  );
+  return result.rows.map((row: any) => ({
+    id: row.id,
+    venue: row.venue,
+    category: row.category,
+    title: row.title,
+    author: row.author,
+    authorId: row.author_id,
+    durationSeconds: row.duration_seconds,
+    playCount: row.play_count,
+    isVerified: row.is_verified,
+    createdAt: (row.created_at as Date).toISOString(),
+    audioUri: row.has_audio ? `/api/sound-archives/${row.id}/audio` : undefined,
+  }));
+}
+
 export async function trackDiscoverListen(userId: string, recordingId: string): Promise<void> {
   await pgPool.query(
     "INSERT INTO discover_listens (user_id, recording_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",

@@ -20,6 +20,7 @@ __export(storage_exports, {
   getSoundArchiveStats: () => getSoundArchiveStats,
   getSoundArchives: () => getSoundArchives,
   getUserFavoriteArchiveIds: () => getUserFavoriteArchiveIds,
+  getUserFavoriteArchives: () => getUserFavoriteArchives,
   getUserProfileStats: () => getUserProfileStats,
   incrementArchivePlay: () => incrementArchivePlay,
   initFavoritesAndListensTable: () => initFavoritesAndListensTable,
@@ -224,6 +225,31 @@ async function getUserFavoriteArchiveIds(userId) {
     [userId]
   );
   return result.rows.map((r) => r.archive_id);
+}
+async function getUserFavoriteArchives(userId) {
+  const result = await pgPool.query(
+    `SELECT sa.id, sa.venue, sa.category, sa.title, sa.author, sa.author_id,
+            sa.duration_seconds, sa.play_count, sa.is_verified, sa.created_at,
+            CASE WHEN sa.audio_data IS NOT NULL THEN TRUE ELSE FALSE END AS has_audio
+     FROM sound_archives sa
+     INNER JOIN sound_archive_favorites saf ON saf.archive_id = sa.id
+     WHERE saf.user_id = $1
+     ORDER BY saf.created_at DESC`,
+    [userId]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    venue: row.venue,
+    category: row.category,
+    title: row.title,
+    author: row.author,
+    authorId: row.author_id,
+    durationSeconds: row.duration_seconds,
+    playCount: row.play_count,
+    isVerified: row.is_verified,
+    createdAt: row.created_at.toISOString(),
+    audioUri: row.has_audio ? `/api/sound-archives/${row.id}/audio` : void 0
+  }));
 }
 async function trackDiscoverListen(userId, recordingId) {
   await pgPool.query(
@@ -2018,6 +2044,15 @@ ${extractedText}
     } catch (err) {
       console.error("[sound-archives/favorites]", err);
       return res.status(500).json({ error: "\u83B7\u53D6\u6536\u85CF\u5931\u8D25" });
+    }
+  });
+  app2.get("/api/sound-archives/favorites-full/:userId", async (req, res) => {
+    try {
+      const archives = await getUserFavoriteArchives(req.params.userId);
+      return res.json(archives);
+    } catch (err) {
+      console.error("[sound-archives/favorites-full]", err);
+      return res.status(500).json({ error: "\u83B7\u53D6\u6536\u85CF\u8BE6\u60C5\u5931\u8D25" });
     }
   });
   app2.post("/api/recordings/:id/discover-listen", async (req, res) => {

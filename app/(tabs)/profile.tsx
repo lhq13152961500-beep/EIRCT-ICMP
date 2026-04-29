@@ -264,28 +264,21 @@ export default function ProfileScreen() {
               value={isGuest ? undefined : `${profileStats.diaryCount}条`}
               color={Colors.light.primary}
               locked={isGuest}
-              onPress={guard(() => {})}
-            />
-            <MenuItem
-              icon="radio-outline" label="发现他人声音"
-              value={isGuest ? undefined : `${profileStats.discoverCount}个`}
-              color="#5C6BC0"
-              locked={isGuest}
-              onPress={guard(() => {})}
+              onPress={guard(() => router.push("/(tabs)/voice?tab=diary" as any))}
             />
             <MenuItem
               icon="heart-outline" label="收藏的声音档案"
               value={isGuest ? undefined : `${profileStats.favoriteCount}个`}
               color="#E91E63"
               locked={isGuest}
-              onPress={guard(() => {})}
+              onPress={guard(() => router.push("/my-favorites" as any))}
             />
             <MenuItem
               icon="map-outline" label="我的行程"
               value={isGuest ? undefined : `${profileStats.routeCount}个`}
               color={Colors.light.accent}
               locked={isGuest}
-              onPress={guard(() => {})}
+              onPress={guard(() => router.push("/my-routes" as any))}
             />
             <MenuItem
               icon="trophy-outline" label="方言文化成就体系"
