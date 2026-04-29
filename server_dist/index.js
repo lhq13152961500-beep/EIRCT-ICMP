@@ -1090,8 +1090,8 @@ async function doublaoRealtimeTurn(req) {
   const allPcm = Buffer.concat(result.audioChunks);
   console.log(`[S2S-Turn] Done: ${allPcm.length}B PCM transcript="${result.transcript}" aiText="${result.aiText.slice(0, 40)}"`);
   if (allPcm.length > 0) {
-    const mp32 = await convertPcmToMp3InMemory(allPcm, 24e3);
-    return { audioBase64: mp32.toString("base64"), format: "mp3", transcript: result.transcript, aiText: result.aiText };
+    const mp3 = await convertPcmToMp3InMemory(allPcm, 24e3);
+    return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: result.aiText };
   }
   let aiResponseText = result.aiText;
   if (!aiResponseText && result.transcript) {
@@ -1102,8 +1102,13 @@ async function doublaoRealtimeTurn(req) {
     return { audioBase64: "", format: "mp3", transcript: result.transcript, aiText: "" };
   }
   console.log(`[S2S-Turn] HTTP TTS for: "${aiResponseText.slice(0, 60)}"`);
-  const mp3 = await callDoubaoHttpTts(aiResponseText, appId, accessToken);
-  return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: aiResponseText };
+  try {
+    const mp3 = await callDoubaoHttpTts(aiResponseText, appId, accessToken);
+    return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: aiResponseText };
+  } catch (ttsErr) {
+    console.warn(`[S2S-Turn] HTTP TTS failed (${ttsErr.message}) \u2014 returning text-only`);
+    return { audioBase64: "", format: "mp3", transcript: result.transcript, aiText: aiResponseText };
+  }
 }
 
 // server/routes.ts

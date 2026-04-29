@@ -670,6 +670,12 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
     return { audioBase64: "", format: "mp3", transcript: result.transcript, aiText: "" };
   }
   console.log(`[S2S-Turn] HTTP TTS for: "${aiResponseText.slice(0, 60)}"`);
-  const mp3 = await callDoubaoHttpTts(aiResponseText, appId, accessToken);
-  return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: aiResponseText };
+  try {
+    const mp3 = await callDoubaoHttpTts(aiResponseText, appId, accessToken);
+    return { audioBase64: mp3.toString("base64"), format: "mp3", transcript: result.transcript, aiText: aiResponseText };
+  } catch (ttsErr: any) {
+    console.warn(`[S2S-Turn] HTTP TTS failed (${ttsErr.message}) — returning text-only`);
+    // Return text without audio so frontend can display it (instead of crashing with 500)
+    return { audioBase64: "", format: "mp3", transcript: result.transcript, aiText: aiResponseText };
+  }
 }
