@@ -183,7 +183,11 @@ export default function MapGuideScreen() {
   const bottomPad = Platform.OS === "web" ? 16 : insets.bottom;
   const { locationStatus, isLocating } = useLocation();
   const { user } = useAuth();
-  const { highlightRoute } = useLocalSearchParams<{ highlightRoute?: string }>();
+  const { highlightRoute, openRoutes, scrollToCreate } = useLocalSearchParams<{
+    highlightRoute?: string;
+    openRoutes?: string;
+    scrollToCreate?: string;
+  }>();
 
   const locationName =
     locationStatus.state === "located" ? locationStatus.locationName : null;
@@ -211,8 +215,10 @@ export default function MapGuideScreen() {
   const [highlightedRouteId, setHighlightedRouteId] = useState<string | null>(null);
   const glowAnim = useRef(new Animated.Value(0)).current;
   const processedHighlightRef = useRef<string | null>(null);
+  const processedOpenRoutesRef = useRef<string | null>(null);
 
   const sheetAnim = useRef(new Animated.Value(0)).current;
+  const sheetScrollRef = useRef<ScrollView>(null);
   const webViewRef = useRef<WebView>(null);
   const pendingCustomRouteRef = useRef<PendingRoute | null>(null);
 
@@ -358,6 +364,25 @@ export default function MapGuideScreen() {
       useNativeDriver: false,
     }).start(() => setSheetOpen(false));
   }, [sheetAnim]);
+
+  useEffect(() => {
+    const key = `${openRoutes}-${scrollToCreate}`;
+    if (!openRoutes || processedOpenRoutesRef.current === key) return;
+    processedOpenRoutesRef.current = key;
+    const t1 = setTimeout(() => {
+      haptic("medium");
+      setSelectedPoi(null);
+      setSheetOpen(true);
+      Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 52, friction: 9 }).start();
+    }, 200);
+    if (scrollToCreate === "1") {
+      const t2 = setTimeout(() => {
+        sheetScrollRef.current?.scrollToEnd({ animated: true });
+      }, 800);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
+    }
+    return () => clearTimeout(t1);
+  }, [openRoutes, scrollToCreate, sheetAnim]);
 
   useEffect(() => {
     if (!highlightRoute || processedHighlightRef.current === highlightRoute) return;
@@ -680,6 +705,7 @@ export default function MapGuideScreen() {
             </LinearGradient>
 
             <ScrollView
+              ref={sheetScrollRef}
               style={styles.sheetScroll}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: bottomPad + 100, paddingTop: 12 }}

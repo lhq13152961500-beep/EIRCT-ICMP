@@ -28,30 +28,34 @@ interface RouteItem {
   title: string;
   buildings: number;
   distance: string;
+  duration: string;
   color: string;
 }
 
 const ROUTES: RouteItem[] = [
   {
     id: "1",
-    title: "快速游览推荐",
-    buildings: 12,
-    distance: "2.3",
-    color: "#F5974E",
+    title: "峡谷精华游览路线",
+    buildings: 8,
+    distance: "1.5",
+    duration: "约2小时",
+    color: "#E88A2E",
   },
   {
     id: "2",
-    title: "深度游览推荐路线",
-    buildings: 17,
-    distance: "3.5",
+    title: "深度文化沉浸路线",
+    buildings: 12,
+    distance: "2.8",
+    duration: "约4小时",
     color: "#3DAA6F",
   },
   {
     id: "3",
-    title: "温馨赏花路线",
+    title: "秋收葡萄干体验路线",
     buildings: 6,
-    distance: "10.2",
-    color: "#9B8EC4",
+    distance: "1.2",
+    duration: "约2.5小时",
+    color: "#6B7FD4",
   },
 ];
 
@@ -246,7 +250,7 @@ function RouteCard({ route }: { route: RouteItem }) {
       <View style={styles.routeInfo}>
         <Text style={styles.routeTitle}>{route.title}</Text>
         <Text style={styles.routeMeta}>
-          {route.buildings}座建筑 · 全程{route.distance}公里
+          {route.buildings}个景点 · {route.distance}公里 · {route.duration}
         </Text>
       </View>
       <View style={[styles.routeArrow, { backgroundColor: route.color + "18" }]}>
@@ -328,6 +332,7 @@ export default function GuideScreen() {
                 ]}
                 onPress={() => {
                   if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  router.push({ pathname: "/map-guide", params: { openRoutes: "1", scrollToCreate: "1" } } as any);
                 }}
               >
                 <Text style={styles.createBtnText}>创建我的行程</Text>
