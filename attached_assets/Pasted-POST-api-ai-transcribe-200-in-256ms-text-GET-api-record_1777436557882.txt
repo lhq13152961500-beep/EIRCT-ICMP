@@ -1,0 +1,68 @@
+POST /api/ai/transcribe 200 in 256ms :: {"text":"你好呀,我想去吐峪沟。"}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
+GET /api/geocode/reverse 200 in 694ms :: {"name":"河马泉街道 · 水磨沟区","raw":{"address…
+[Doubao] model: doubao-seed-2-0-lite-260215 usage: {
+  completion_tokens: 109,
+  prompt_tokens: 685,
+  total_tokens: 794,
+  prompt_tokens_details: { cached_tokens: 0 },
+  completion_tokens_details: { reasoning_tokens: 0 }
+}
+POST /api/ai/chat 200 in 7465ms :: {"reply":"你好呀亚克西～看你现在还有点疲惫，先慢慢休息没关系😌\n你现在离吐…
+[DoubaoTTS] cluster=volcano_mega voice=BV700_V2_streaming code=3001
+[DoubaoTTS] cluster=volcano_mega code=3001 — trying next
+[DoubaoTTS] cluster=volcano_tts voice=BV700_streaming code=3001
+[DoubaoTTS] cluster=volcano_tts code=3001 — trying next
+POST /api/doubao/tts 500 in 1133ms :: {"error":"tts_failed_all_clusters"}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
+Reverse geocode error: TypeError: fetch failed
+    at node:internal/deps/undici/undici:14902:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/runner/workspace/server_dist/index.js:1445:23 {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1134:18)
+      at internalConnectMultiple (node:net:1210:5)
+      at internalConnectMultiple (node:net:1210:5)
+      at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+      at listOnTimeout (node:internal/timers:590:11)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error], [Error] ]
+  }
+}
+GET /api/geocode/reverse 500 in 253ms :: {"error":"Reverse geocode failed"}
+POST /api/doubao/s2s/close 200 in 1ms :: {"ok":true}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
+Reverse geocode error: TypeError: fetch failed
+    at node:internal/deps/undici/undici:14902:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/runner/workspace/server_dist/index.js:1445:23 {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1134:18)
+      at internalConnectMultiple (node:net:1210:5)
+      at internalConnectMultiple (node:net:1210:5)
+      at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+      at listOnTimeout (node:internal/timers:590:11)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error], [Error] ]
+  }
+}
+GET /api/geocode/reverse 500 in 413ms :: {"error":"Reverse geocode failed"}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…
+Reverse geocode error: TypeError: fetch failed
+    at node:internal/deps/undici/undici:14902:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/runner/workspace/server_dist/index.js:1445:23 {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1134:18)
+      at internalConnectMultiple (node:net:1210:5)
+      at internalConnectMultiple (node:net:1210:5)
+      at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+      at listOnTimeout (node:internal/timers:590:11)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error], [Error] ]
+  }
+}
+GET /api/geocode/reverse 500 in 255ms :: {"error":"Reverse geocode failed"}
