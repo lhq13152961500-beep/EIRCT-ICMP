@@ -621,6 +621,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── File content analysis (PDF / Word / Excel) ────────────────────────────
+  app.post("/api/ai/analyze-file", async (req, res) => {
+    try {
+      const { fileBase64, fileName, mimeType, userQuestion } = req.body as {
+        fileBase64: string;
+        fileName: string;
+        mimeType: string;
+        userQuestion?: string;
+      };
+      if (!fileBase64 || !fileName) {
+        return res.status(400).json({ error: "fileBase64 and fileName required" });
+      }
+
+      const apiKey = process.env.ARK_API_KEY;
+      if (!apiKey) return res.status(503).json({ error: "ARK_API_KEY not configured" });
+
+      const buf = Buffer.from(fileBase64, "base64");
+      let extractedText = "";
+      const ext = fileName.toLowerCase().split(".").pop() || "";
+
+      if (ext === "pdf" || mimeType === "application/pdf") {
+        const pdfParse = (await import("pdf-parse")).default;
+        const data = await pdfParse(buf);
+        extractedText = data.text?.slice(0, 8000) || "";
+      } else if (ext === "docx" || mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        const mammoth = await import("mammoth");
+        const result = await mammoth.extractRawText({ buffer: buf });
+        extractedText = result.value?.slice(0, 8000) || "";
+      } else if (ext === "xlsx" || ext === "xls" || mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+        const XLSX = await import("xlsx");
+        const wb = XLSX.read(buf, { type: "buffer" });
+        const lines: string[] = [];
+        for (const sheetName of wb.SheetNames) {
+          const sheet = wb.Sheets[sheetName];
+          lines.push(`【${sheetName}】`);
+          lines.push(XLSX.utils.sheet_to_csv(sheet));
+        }
+        extractedText = lines.join("\n").slice(0, 8000);
+      } else {
+        return res.status(400).json({ error: `不支持的文件格式: ${ext}` });
+      }
+
+      if (!extractedText.trim()) {
+        return res.json({ reply: "文件内容为空或无法提取文字，请确认文件格式正确。" });
+      }
+
+      const question = userQuestion?.trim() || "请帮我分析和总结这个文件的主要内容，用中文回答。";
+      const doubaoClient = new OpenAI({
+        baseURL: "https://ark.cn-beijing.volces.com/api/v3",
+        apiKey,
+      });
+      const completion = await doubaoClient.chat.completions.create({
+        model: "doubao-seed-2-0-lite-260215",
+        messages: [
+          {
+            role: "system",
+            content: "你是「小乡」，乡音伴旅APP的AI伴游助手。请根据用户提供的文件内容，用友好自然的中文回答用户的问题。回答要准确、简洁，控制在500字以内。",
+          },
+          {
+            role: "user",
+            content: `【文件名】${fileName}\n\n【文件内容】\n${extractedText}\n\n【用户问题】${question}`,
+          },
+        ],
+        max_tokens: 600,
+        temperature: 0.7,
+        ...({ thinking: { type: "disabled" } } as any),
+      });
+      const reply = completion.choices[0]?.message?.content || "无法分析该文件，请重试。";
+      return res.json({ reply, fileName, extractedLength: extractedText.length });
+    } catch (err: any) {
+      console.error("[analyze-file] error:", err?.message);
+      return res.status(500).json({ error: err?.message || "file_analysis_failed" });
+    }
+  });
+
   app.post("/api/ai/chat", async (req, res) => {
     try {
       const { messages, emotion, userLocation, activityData } = req.body as {

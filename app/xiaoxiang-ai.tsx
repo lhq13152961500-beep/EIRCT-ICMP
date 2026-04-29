@@ -20,6 +20,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import Markdown from "react-native-markdown-display";
 import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
+import * as VideoThumbnails from "expo-video-thumbnails";
 import * as Haptics from "expo-haptics";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { apiRequest } from "@/lib/query-client";
@@ -856,7 +858,81 @@ export default function XiaoxiangAiScreen() {
 
   const handleFile = useCallback(async () => {
     setShowMediaPanel(false);
-    sendMessage("[文件] 请帮我分析这个内容");
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          "application/pdf",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "application/vnd.ms-excel",
+          "application/msword",
+        ],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      const fileName = asset.name || "未知文件";
+      const mimeType = asset.mimeType || "application/octet-stream";
+
+      const userMsg: Message = {
+        id: Date.now().toString(),
+        role: "user",
+        content: `📄 ${fileName}`,
+        time: nowTime(),
+      };
+      setMessages((prev) => {
+        const next = [...prev, userMsg];
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+        return next;
+      });
+      setLoading(true);
+
+      const fileBase64 = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const resp = await apiRequest("POST", "/api/ai/analyze-file", {
+        fileBase64,
+        fileName,
+        mimeType,
+      });
+      const data = await (resp as any).json();
+      const reply: string = data.reply || data.error || "文件分析失败，请重试。";
+      const aiMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: reply,
+        time: nowTime(),
+      };
+      setMessages((prev) => {
+        const next = [...prev, aiMsg];
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+        return next;
+      });
+    } catch (e: any) {
+      Alert.alert("文件上传失败", e?.message || "请重试");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleVideo = useCallback(async () => {
+    setShowMediaPanel(false);
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { Alert.alert("需要相册权限"); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: "videos",
+      allowsEditing: false,
+      quality: 1,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    try {
+      const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(asset.uri, { time: 1000 });
+      const b64 = await FileSystem.readAsStringAsync(thumbUri, { encoding: FileSystem.EncodingType.Base64 });
+      sendMessage("请帮我分析这段视频的画面内容", false, b64, "image/jpeg");
+    } catch {
+      sendMessage("帮我描述一下这段视频里可能有什么内容", false);
+    }
   }, [sendMessage]);
 
   const toggleCompanionMode = useCallback(async () => {
@@ -1267,19 +1343,19 @@ export default function XiaoxiangAiScreen() {
             <View style={[styles.mediaPanelIcon, { backgroundColor: "#DDE8FF" }]}>
               <Ionicons name="images-outline" size={22} color="#4271DD" />
             </View>
-            <Text style={styles.mediaPanelLabel}>相册</Text>
+            <Text style={styles.mediaPanelLabel}>图片</Text>
+          </Pressable>
+          <Pressable style={styles.mediaPanelItem} onPress={handleVideo}>
+            <View style={[styles.mediaPanelIcon, { backgroundColor: "#FFF0CC" }]}>
+              <Ionicons name="videocam-outline" size={22} color="#D97706" />
+            </View>
+            <Text style={styles.mediaPanelLabel}>视频</Text>
           </Pressable>
           <Pressable style={styles.mediaPanelItem} onPress={handleFile}>
             <View style={[styles.mediaPanelIcon, { backgroundColor: "#EDE8FF" }]}>
-              <Ionicons name="document-outline" size={22} color="#7C3AED" />
+              <Ionicons name="document-text-outline" size={22} color="#7C3AED" />
             </View>
             <Text style={styles.mediaPanelLabel}>文件</Text>
-          </Pressable>
-          <Pressable style={styles.mediaPanelItem} onPress={() => { setShowMediaPanel(false); sendMessage("[位置] 我在这里"); }}>
-            <View style={[styles.mediaPanelIcon, { backgroundColor: "#D6F0E3" }]}>
-              <Ionicons name="location-outline" size={22} color="#2E9E60" />
-            </View>
-            <Text style={styles.mediaPanelLabel}>位置</Text>
           </Pressable>
         </View>
       )}

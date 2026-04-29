@@ -1652,6 +1652,74 @@ async function registerRoutes(app2) {
       return res.status(500).json({ error: "transcription_failed", text: "" });
     }
   });
+  app2.post("/api/ai/analyze-file", async (req, res) => {
+    try {
+      const { fileBase64, fileName, mimeType, userQuestion } = req.body;
+      if (!fileBase64 || !fileName) {
+        return res.status(400).json({ error: "fileBase64 and fileName required" });
+      }
+      const apiKey = process.env.ARK_API_KEY;
+      if (!apiKey) return res.status(503).json({ error: "ARK_API_KEY not configured" });
+      const buf = Buffer.from(fileBase64, "base64");
+      let extractedText = "";
+      const ext = fileName.toLowerCase().split(".").pop() || "";
+      if (ext === "pdf" || mimeType === "application/pdf") {
+        const pdfParse = (await import("pdf-parse")).default;
+        const data = await pdfParse(buf);
+        extractedText = data.text?.slice(0, 8e3) || "";
+      } else if (ext === "docx" || mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        const mammoth = await import("mammoth");
+        const result = await mammoth.extractRawText({ buffer: buf });
+        extractedText = result.value?.slice(0, 8e3) || "";
+      } else if (ext === "xlsx" || ext === "xls" || mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+        const XLSX = await import("xlsx");
+        const wb = XLSX.read(buf, { type: "buffer" });
+        const lines = [];
+        for (const sheetName of wb.SheetNames) {
+          const sheet = wb.Sheets[sheetName];
+          lines.push(`\u3010${sheetName}\u3011`);
+          lines.push(XLSX.utils.sheet_to_csv(sheet));
+        }
+        extractedText = lines.join("\n").slice(0, 8e3);
+      } else {
+        return res.status(400).json({ error: `\u4E0D\u652F\u6301\u7684\u6587\u4EF6\u683C\u5F0F: ${ext}` });
+      }
+      if (!extractedText.trim()) {
+        return res.json({ reply: "\u6587\u4EF6\u5185\u5BB9\u4E3A\u7A7A\u6216\u65E0\u6CD5\u63D0\u53D6\u6587\u5B57\uFF0C\u8BF7\u786E\u8BA4\u6587\u4EF6\u683C\u5F0F\u6B63\u786E\u3002" });
+      }
+      const question = userQuestion?.trim() || "\u8BF7\u5E2E\u6211\u5206\u6790\u548C\u603B\u7ED3\u8FD9\u4E2A\u6587\u4EF6\u7684\u4E3B\u8981\u5185\u5BB9\uFF0C\u7528\u4E2D\u6587\u56DE\u7B54\u3002";
+      const doubaoClient = new OpenAI({
+        baseURL: "https://ark.cn-beijing.volces.com/api/v3",
+        apiKey
+      });
+      const completion = await doubaoClient.chat.completions.create({
+        model: "doubao-seed-2-0-lite-260215",
+        messages: [
+          {
+            role: "system",
+            content: "\u4F60\u662F\u300C\u5C0F\u4E61\u300D\uFF0C\u4E61\u97F3\u4F34\u65C5APP\u7684AI\u4F34\u6E38\u52A9\u624B\u3002\u8BF7\u6839\u636E\u7528\u6237\u63D0\u4F9B\u7684\u6587\u4EF6\u5185\u5BB9\uFF0C\u7528\u53CB\u597D\u81EA\u7136\u7684\u4E2D\u6587\u56DE\u7B54\u7528\u6237\u7684\u95EE\u9898\u3002\u56DE\u7B54\u8981\u51C6\u786E\u3001\u7B80\u6D01\uFF0C\u63A7\u5236\u5728500\u5B57\u4EE5\u5185\u3002"
+          },
+          {
+            role: "user",
+            content: `\u3010\u6587\u4EF6\u540D\u3011${fileName}
+
+\u3010\u6587\u4EF6\u5185\u5BB9\u3011
+${extractedText}
+
+\u3010\u7528\u6237\u95EE\u9898\u3011${question}`
+          }
+        ],
+        max_tokens: 600,
+        temperature: 0.7,
+        ...{ thinking: { type: "disabled" } }
+      });
+      const reply = completion.choices[0]?.message?.content || "\u65E0\u6CD5\u5206\u6790\u8BE5\u6587\u4EF6\uFF0C\u8BF7\u91CD\u8BD5\u3002";
+      return res.json({ reply, fileName, extractedLength: extractedText.length });
+    } catch (err) {
+      console.error("[analyze-file] error:", err?.message);
+      return res.status(500).json({ error: err?.message || "file_analysis_failed" });
+    }
+  });
   app2.post("/api/ai/chat", async (req, res) => {
     try {
       const { messages, emotion, userLocation, activityData } = req.body;
