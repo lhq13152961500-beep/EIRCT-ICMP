@@ -32,8 +32,7 @@ const EVT_TTS_ENDED     = 359;
 const EVT_ASR_RESPONSE  = 451;
 const EVT_CHAT_RESPONSE = 550;
 
-// User's cloned voice for SC2.0 (声音复刻-豆包端到端实时语音大模型)
-// Account confirmed to use SC2.0 (S_ prefix voices, ICL_ gives InvalidSpeaker)
+// ICL official clone voice — ICL prefix works without character_manifest
 export const DEFAULT_SPEAKER = "ICL_zh_female_keainvsheng_tob";
 
 // ── Binary helpers ──────────────────────────────────────────────────────────
@@ -618,6 +617,8 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
   //   - SC v1 (ICL_ voices) → omit model field
   //   - input_mod: "audio_file" since we send pre-recorded audio (server adds silence)
   // ─────────────────────────────────────────────────────────────────────────
+  // For ICL voices: use bot_name + system_role (no character_manifest, no model field)
+  // character_manifest is only for S_ custom clone voices on SC2.0
   const sessionPayload = {
     asr: {
       extra: {
@@ -628,12 +629,13 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
       speaker: speakerToUse,
       audio_config: {
         channel: 1,
-        format: "pcm_s16le",  // 16-bit signed int — matches ffmpeg s16le decoder
+        format: "pcm_s16le",
         sample_rate: 24000,
       },
     },
     dialog: {
-      character_manifest: systemRole, // Plain string for SC版本
+      bot_name: "小乡",
+      system_role: systemRole,
       location: {
         city: "新疆吐鲁番",
         district: "吐峪沟",
@@ -641,8 +643,7 @@ export async function doublaoRealtimeTurn(req: DoubaoS2SRequest): Promise<Doubao
       extra: {
         strict_audit: false,
         recv_timeout: 10,
-        input_mod: "audio_file", // pre-recorded audio, server adds silence for VAD
-        model: "2.2.0.0",        // SC2.0版本 — supports S_ prefix clone voices
+        input_mod: "audio_file",
       },
     },
   };

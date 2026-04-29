@@ -1068,13 +1068,12 @@ async function doublaoRealtimeTurn(req) {
       audio_config: {
         channel: 1,
         format: "pcm_s16le",
-        // 16-bit signed int — matches ffmpeg s16le decoder
         sample_rate: 24e3
       }
     },
     dialog: {
-      character_manifest: systemRole,
-      // Plain string for SC版本
+      bot_name: "\u5C0F\u4E61",
+      system_role: systemRole,
       location: {
         city: "\u65B0\u7586\u5410\u9C81\u756A",
         district: "\u5410\u5CEA\u6C9F"
@@ -1082,10 +1081,7 @@ async function doublaoRealtimeTurn(req) {
       extra: {
         strict_audit: false,
         recv_timeout: 10,
-        input_mod: "audio_file",
-        // pre-recorded audio, server adds silence for VAD
-        model: "2.2.0.0"
-        // SC2.0版本 — supports S_ prefix clone voices
+        input_mod: "audio_file"
       }
     }
   };
