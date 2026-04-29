@@ -32,9 +32,8 @@ const EVT_TTS_ENDED     = 359;
 const EVT_ASR_RESPONSE  = 451;
 const EVT_CHAT_RESPONSE = 550;
 
-// Standard built-in female voice — works on all accounts without extra permissions
-// Switch to "S_pGu3AvxZ1" once voice training data has been uploaded to that speaker
-export const DEFAULT_SPEAKER = "zh_female_shuangkuaisisi_moon_bigtts";
+// ICL official clone voice for SC version (no character_manifest needed)
+export const DEFAULT_SPEAKER = "ICL_zh_female_keainvsheng_tob";
 
 // ── Binary helpers ──────────────────────────────────────────────────────────
 function int32BE(n: number): Buffer {

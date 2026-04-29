@@ -556,7 +556,7 @@ var EVT_SESSION_FAIL = 153;
 var EVT_TTS_ENDED = 359;
 var EVT_ASR_RESPONSE = 451;
 var EVT_CHAT_RESPONSE = 550;
-var DEFAULT_SPEAKER = "zh_female_shuangkuaisisi_moon_bigtts";
+var DEFAULT_SPEAKER = "ICL_zh_female_keainvsheng_tob";
 function int32BE(n) {
   const b = Buffer.alloc(4);
   b.writeInt32BE(n, 0);
