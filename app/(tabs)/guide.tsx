@@ -209,13 +209,16 @@ function QuickButton({
   icon,
   bgColor,
   label,
+  onPress,
 }: {
   icon: React.ReactNode;
   bgColor: string;
   label: string;
+  onPress?: () => void;
 }) {
   const handlePress = () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress?.();
   };
   return (
     <Pressable style={styles.quickBtn} onPress={handlePress}>
@@ -230,6 +233,7 @@ function QuickButton({
 function RouteCard({ route }: { route: RouteItem }) {
   const handlePress = () => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push({ pathname: "/map-guide", params: { highlightRoute: route.id } } as any);
   };
   return (
     <Pressable
@@ -290,16 +294,19 @@ export default function GuideScreen() {
               icon={<Ionicons name="people" size={22} color={Colors.light.primary} />}
               bgColor={Colors.light.greenLight}
               label="村民伴游"
+              onPress={() => router.push("/villager-companion" as any)}
             />
             <QuickButton
               icon={<Ionicons name="gift" size={22} color={Colors.light.accent} />}
               bgColor={Colors.light.orangeLight}
               label="特产礼品"
+              onPress={() => router.push("/local-shop" as any)}
             />
             <QuickButton
               icon={<Ionicons name="people-circle" size={22} color={Colors.light.lavender} />}
               bgColor={Colors.light.purpleLight}
               label="乡音趣采"
+              onPress={() => router.push("/dialect-game" as any)}
             />
           </View>
 

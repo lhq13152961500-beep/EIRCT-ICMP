@@ -16,7 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { roamSession } from "@/lib/roam-session";
 import { WebView } from "react-native-webview";
@@ -183,6 +183,7 @@ export default function MapGuideScreen() {
   const bottomPad = Platform.OS === "web" ? 16 : insets.bottom;
   const { locationStatus, isLocating } = useLocation();
   const { user } = useAuth();
+  const { highlightRoute } = useLocalSearchParams<{ highlightRoute?: string }>();
 
   const locationName =
     locationStatus.state === "located" ? locationStatus.locationName : null;
@@ -206,6 +207,10 @@ export default function MapGuideScreen() {
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState(false);
   const [customRoutes, setCustomRoutes] = useState<CustomRouteData[]>([]);
+
+  const [highlightedRouteId, setHighlightedRouteId] = useState<string | null>(null);
+  const glowAnim = useRef(new Animated.Value(0)).current;
+  const processedHighlightRef = useRef<string | null>(null);
 
   const sheetAnim = useRef(new Animated.Value(0)).current;
   const webViewRef = useRef<WebView>(null);
@@ -353,6 +358,28 @@ export default function MapGuideScreen() {
       useNativeDriver: false,
     }).start(() => setSheetOpen(false));
   }, [sheetAnim]);
+
+  useEffect(() => {
+    if (!highlightRoute || processedHighlightRef.current === highlightRoute) return;
+    processedHighlightRef.current = highlightRoute;
+    const t1 = setTimeout(() => {
+      haptic("medium");
+      setSelectedPoi(null);
+      setSheetOpen(true);
+      Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: false, tension: 52, friction: 9 }).start();
+    }, 200);
+    const t2 = setTimeout(() => {
+      setHighlightedRouteId(highlightRoute);
+      glowAnim.setValue(0);
+      Animated.sequence([
+        Animated.timing(glowAnim, { toValue: 1, duration: 320, useNativeDriver: false }),
+        Animated.timing(glowAnim, { toValue: 0.2, duration: 200, useNativeDriver: false }),
+        Animated.timing(glowAnim, { toValue: 1, duration: 320, useNativeDriver: false }),
+        Animated.timing(glowAnim, { toValue: 0, duration: 500, useNativeDriver: false }),
+      ]).start(() => setHighlightedRouteId(null));
+    }, 900);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [highlightRoute, sheetAnim, glowAnim]);
 
   const sheetTranslateY = sheetAnim.interpolate({
     inputRange: [0, 1],
@@ -659,53 +686,67 @@ export default function MapGuideScreen() {
             >
               {/* System routes */}
               {ROUTES.map((route) => (
-                <Pressable
-                  key={route.id}
-                  style={({ pressed }) => [styles.routeCard, pressed && styles.routeCardPressed]}
-                  onPress={() => { haptic("medium"); closeSheet(); }}
-                >
-                  <View style={[styles.routeCardTop, { backgroundColor: route.accent }]}>
-                    <View style={styles.routeCardTopLeft}>
-                      <Text style={styles.routeCardIcon}>{route.icon}</Text>
-                      <View style={styles.routeCardTitleWrap}>
-                        <Text style={styles.routeCardTitle}>{route.title}</Text>
-                        <Text style={styles.routeCardDesc}>{route.desc}</Text>
-                      </View>
-                    </View>
-                  </View>
-                  <View style={styles.routeCardBottom}>
-                    <View style={styles.routeCardStats}>
-                      <View style={styles.routeStat}>
-                        <Ionicons name="business-outline" size={13} color={Colors.light.textSecondary} />
-                        <Text style={styles.routeStatText}>{route.buildings}个景点</Text>
-                      </View>
-                      <View style={styles.routeStatDivider} />
-                      <View style={styles.routeStat}>
-                        <Ionicons name="footsteps-outline" size={13} color={Colors.light.textSecondary} />
-                        <Text style={styles.routeStatText}>{route.distance}公里</Text>
-                      </View>
-                      <View style={styles.routeStatDivider} />
-                      <View style={styles.routeStat}>
-                        <Ionicons name="time-outline" size={13} color={Colors.light.textSecondary} />
-                        <Text style={styles.routeStatText}>{route.duration}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.routeCardTagRow}>
-                      {route.tags.map((t) => (
-                        <View key={t} style={[styles.routeTag, { backgroundColor: route.color + "18" }]}>
-                          <Text style={[styles.routeTagText, { color: route.color }]}>{t}</Text>
+                <View key={route.id} style={styles.routeCardOuter}>
+                  <Pressable
+                    style={({ pressed }) => [styles.routeCard, pressed && styles.routeCardPressed]}
+                    onPress={() => { haptic("medium"); closeSheet(); }}
+                  >
+                    <View style={[styles.routeCardTop, { backgroundColor: route.accent }]}>
+                      <View style={styles.routeCardTopLeft}>
+                        <Text style={styles.routeCardIcon}>{route.icon}</Text>
+                        <View style={styles.routeCardTitleWrap}>
+                          <Text style={styles.routeCardTitle}>{route.title}</Text>
+                          <Text style={styles.routeCardDesc}>{route.desc}</Text>
                         </View>
-                      ))}
+                      </View>
                     </View>
-                    <Pressable
-                      style={[styles.startBtn, { backgroundColor: route.color }]}
-                      onPress={() => startRoute(route)}
-                    >
-                      <Ionicons name="play" size={14} color="#fff" />
-                      <Text style={styles.startBtnText}>开始游览</Text>
-                    </Pressable>
-                  </View>
-                </Pressable>
+                    <View style={styles.routeCardBottom}>
+                      <View style={styles.routeCardStats}>
+                        <View style={styles.routeStat}>
+                          <Ionicons name="business-outline" size={13} color={Colors.light.textSecondary} />
+                          <Text style={styles.routeStatText}>{route.buildings}个景点</Text>
+                        </View>
+                        <View style={styles.routeStatDivider} />
+                        <View style={styles.routeStat}>
+                          <Ionicons name="footsteps-outline" size={13} color={Colors.light.textSecondary} />
+                          <Text style={styles.routeStatText}>{route.distance}公里</Text>
+                        </View>
+                        <View style={styles.routeStatDivider} />
+                        <View style={styles.routeStat}>
+                          <Ionicons name="time-outline" size={13} color={Colors.light.textSecondary} />
+                          <Text style={styles.routeStatText}>{route.duration}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.routeCardTagRow}>
+                        {route.tags.map((t) => (
+                          <View key={t} style={[styles.routeTag, { backgroundColor: route.color + "18" }]}>
+                            <Text style={[styles.routeTagText, { color: route.color }]}>{t}</Text>
+                          </View>
+                        ))}
+                      </View>
+                      <Pressable
+                        style={[styles.startBtn, { backgroundColor: route.color }]}
+                        onPress={() => startRoute(route)}
+                      >
+                        <Ionicons name="play" size={14} color="#fff" />
+                        <Text style={styles.startBtnText}>开始游览</Text>
+                      </Pressable>
+                    </View>
+                  </Pressable>
+                  {route.id === highlightedRouteId && (
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[
+                        styles.routeCardGlow,
+                        {
+                          borderColor: route.color,
+                          shadowColor: route.color,
+                          opacity: glowAnim,
+                        },
+                      ]}
+                    />
+                  )}
+                </View>
               ))}
 
               {/* Custom routes */}
@@ -996,11 +1037,26 @@ const styles = StyleSheet.create({
   sheetScroll: { flex: 1 },
 
   // Route card
+  routeCardOuter: {
+    position: "relative",
+  },
   routeCard: {
     marginHorizontal: 16, marginVertical: 6,
     borderRadius: 18, backgroundColor: "#fff", overflow: "hidden",
     borderWidth: 1, borderColor: "#F0F0EC",
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3,
+  },
+  routeCardGlow: {
+    position: "absolute",
+    top: 6,
+    left: 16,
+    right: 16,
+    bottom: 6,
+    borderRadius: 18,
+    borderWidth: 2.5,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 10,
+    shadowOpacity: 1,
   },
   routeCardPressed: { opacity: 0.92, transform: [{ scale: 0.99 }] },
   routeCardTop: { padding: 16, flexDirection: "row", alignItems: "flex-start" },
