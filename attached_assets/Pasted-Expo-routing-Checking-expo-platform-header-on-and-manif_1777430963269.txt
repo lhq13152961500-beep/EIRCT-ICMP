@@ -1,0 +1,76 @@
+Expo routing: Checking expo-platform header on / and /manifest
+(node:1423) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/runner/workspace/server_dist/index.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /home/runner/workspace/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+express server serving on port 5000
+IP geocode error: TypeError: fetch failed
+    at node:internal/deps/undici/undici:14902:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/runner/workspace/server_dist/index.js:1474:23 {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1134:18)
+      at internalConnectMultiple (node:net:1210:5)
+      at internalConnectMultiple (node:net:1210:5)
+      at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+      at listOnTimeout (node:internal/timers:590:11)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error], [Error] ]
+  }
+}
+GET /api/geocode/ip 500 in 396ms :: {"error":"IP geocode failed"}
+GET /api/amap-locate 200 in 2ms
+Reverse geocode error: TypeError: fetch failed
+    at node:internal/deps/undici/undici:14902:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///home/runner/workspace/server_dist/index.js:1440:23 {
+  [cause]: AggregateError [ETIMEDOUT]: 
+      at internalConnectMultiple (node:net:1134:18)
+      at internalConnectMultiple (node:net:1210:5)
+      at internalConnectMultiple (node:net:1210:5)
+      at Timeout.internalConnectMultipleTimeout (node:net:1742:5)
+      at listOnTimeout (node:internal/timers:590:11)
+      at process.processTimers (node:internal/timers:523:7) {
+    code: 'ETIMEDOUT',
+    [errors]: [ [Error], [Error], [Error] ]
+  }
+}
+GET /api/geocode/reverse 500 in 256ms :: {"error":"Reverse geocode failed"}
+POST /api/auth/login 200 in 106ms :: {"user":{"id":"55149882-bf73-485e-b74e-352…
+GET /api/profile/55149882-bf73-485e-b74e-352c26208a4b 304 in 68ms :: {"profile"…
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 128ms :: [{"…
+POST /api/doubao/s2s/close 200 in 1ms :: {"ok":true}
+[DoubaoTTS] cluster=volcano_mega voice=BV700_V2_streaming code=3001
+[DoubaoTTS] cluster=volcano_mega code=3001 — trying next
+[DoubaoTTS] cluster=volcano_tts voice=BV700_streaming code=3001
+[DoubaoTTS] cluster=volcano_tts code=3001 — trying next
+POST /api/doubao/tts 500 in 810ms :: {"error":"tts_failed_all_clusters"}
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 16ms :: [{"i…
+[S2S-Turn] PCM: 194560B (~6.1s)
+[S2S-Turn] speaker="ICL_zh_female_keainvsheng_tob" pcm=194560B
+[S2S] WS open → sending StartConnection (evt=1)
+[S2S] ConnectionStarted ✓ (evt=50)
+[S2S] ERROR code=45000001 msg=invalid X-Api-App-Key: JhfPsaVFdSxpNjNlR1QbRkODZDuXuV9v, expected:[PlgvMymc7f3tQnJ6]
+[S2S-Turn] fatal error: invalid X-Api-App-Key: JhfPsaVFdSxpNjNlR1QbRkODZDuXuV9v, expected:[PlgvMymc7f3tQnJ6]
+[S2S-Turn] Done: 0B PCM transcript="" aiText=""
+POST /api/doubao/s2s 200 in 1403ms :: {"audioBase64":"","format":"mp3","transcr…
+[Transcribe] text="哈喽哈喽" prompt_len=85
+POST /api/ai/transcribe 200 in 248ms :: {"text":"哈喽哈喽"}
+GET /api/geocode/reverse 304 in 960ms :: {"name":"河马泉街道 · 水磨沟区","raw":{"address…
+[Doubao] model: doubao-seed-2-0-lite-260215 usage: {
+  completion_tokens: 85,
+  prompt_tokens: 680,
+  total_tokens: 765,
+  prompt_tokens_details: { cached_tokens: 0 },
+  completion_tokens_details: { reasoning_tokens: 0 }
+}
+POST /api/ai/chat 200 in 6838ms :: {"reply":"亚克西呀朋友😉！我是吐峪沟的伴游小乡，现在你距离咱们景区还有185…
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 14ms :: [{"i…
+[DoubaoTTS] cluster=volcano_mega voice=BV700_V2_streaming code=3001
+[DoubaoTTS] cluster=volcano_mega code=3001 — trying next
+[DoubaoTTS] cluster=volcano_tts voice=BV700_streaming code=3001
+[DoubaoTTS] cluster=volcano_tts code=3001 — trying next
+POST /api/doubao/tts 500 in 820ms :: {"error":"tts_failed_all_clusters"}
+GET /api/geocode/reverse 200 in 726ms :: {"name":"河马泉街道 · 水磨沟区","raw":{"address…
+GET /api/recordings/my/55149882-bf73-485e-b74e-352c26208a4b 304 in 13ms :: [{"i…

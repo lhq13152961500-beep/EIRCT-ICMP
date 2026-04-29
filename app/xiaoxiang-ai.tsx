@@ -315,9 +315,11 @@ export default function XiaoxiangAiScreen() {
         return;
       }
     } catch (e: any) {
-      console.log("[speakReply] TTS失败，跳过（禁用机械设备语音）:", e?.message);
+      console.log("[speakReply] TTS失败，保留文字展示:", e?.message);
     }
-    // Device TTS intentionally disabled in companion mode — robotic voice breaks immersion
+    // TTS failed — keep text visible long enough to read (~5s, scales with length)
+    const readMs = Math.max(4000, Math.min(text.length * 80, 10000));
+    await new Promise<void>((resolve) => setTimeout(resolve, readMs));
   }, [playDoubaoAudio]);
 
   const runCompanionLoop = useCallback(async (
