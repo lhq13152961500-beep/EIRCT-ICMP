@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -14,9 +14,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import Colors from "@/constants/colors";
 import { useLocation } from "@/contexts/LocationContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { getApiUrl } from "@/lib/query-client";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -58,6 +60,15 @@ const ROUTES: RouteItem[] = [
     color: "#6B7FD4",
   },
 ];
+
+interface CustomRouteData {
+  id: string;
+  name: string;
+  poiIds: string[];
+  color: string;
+  icon: string;
+  imageData?: string | null;
+}
 
 interface SoundItem {
   id: string;
@@ -260,9 +271,70 @@ function RouteCard({ route }: { route: RouteItem }) {
   );
 }
 
+function CustomRouteCard({ route }: { route: CustomRouteData }) {
+  const handlePress = () => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    router.push({ pathname: "/map-guide", params: { highlightRoute: route.id } } as any);
+  };
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.routeCard, pressed && styles.routeCardPressed]}
+      onPress={handlePress}
+    >
+      <View style={[styles.routeThumb, { backgroundColor: route.color + "22" }]}>
+        {route.imageData ? (
+          <Image source={{ uri: route.imageData }} style={styles.customRouteThumb} resizeMode="cover" />
+        ) : (
+          <Text style={styles.customRouteIcon}>{route.icon}</Text>
+        )}
+      </View>
+      <View style={styles.routeInfo}>
+        <View style={styles.customRouteTitleRow}>
+          <Text style={styles.routeTitle} numberOfLines={1}>{route.name}</Text>
+          <View style={[styles.customBadge, { backgroundColor: route.color + "18" }]}>
+            <Text style={[styles.customBadgeText, { color: route.color }]}>我的行程</Text>
+          </View>
+        </View>
+        <Text style={styles.routeMeta}>{route.poiIds.length}个景点</Text>
+      </View>
+      <View style={[styles.routeArrow, { backgroundColor: route.color + "18" }]}>
+        <Ionicons name="chevron-forward" size={16} color={route.color} />
+      </View>
+    </Pressable>
+  );
+}
+
 export default function GuideScreen() {
   const insets = useSafeAreaInsets();
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const { user } = useAuth();
+  const [customRoutes, setCustomRoutes] = useState<CustomRouteData[]>([]);
+
+  const fetchCustomRoutes = useCallback(async (userId: string) => {
+    try {
+      const res = await fetch(`${getApiUrl()}api/custom-routes/user/${encodeURIComponent(userId)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setCustomRoutes(data.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        poiIds: r.poiIds,
+        color: r.color,
+        icon: r.icon,
+        imageData: r.imageData ?? null,
+      })));
+    } catch (e) {
+      console.warn("[guide] fetchCustomRoutes error:", e);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.id && user.id !== "guest") {
+        fetchCustomRoutes(user.id);
+      }
+    }, [user, fetchCustomRoutes])
+  );
 
   return (
     <View style={styles.container}>
@@ -321,6 +393,9 @@ export default function GuideScreen() {
           <View style={styles.routeContainer}>
             {ROUTES.map((route) => (
               <RouteCard key={route.id} route={route} />
+            ))}
+            {customRoutes.map((route) => (
+              <CustomRouteCard key={route.id} route={route} />
             ))}
 
             <View style={styles.routeFooter}>
@@ -522,6 +597,29 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
+  },
+  customRouteThumb: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+  },
+  customRouteIcon: {
+    fontSize: 22,
+  },
+  customRouteTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  customBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  customBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
   },
   routeFooter: {
     flexDirection: "row",
