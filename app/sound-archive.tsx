@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { apiRequest } from "@/lib/query-client";
+import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Audio } from "expo-av";
 import * as Haptics from "expo-haptics";
@@ -60,7 +60,7 @@ function fmtPlays(n: number): string {
 export default function SoundArchivePage() {
   const insets   = useSafeAreaInsets();
   const topPad   = Platform.OS === "web" ? 67 : insets.top;
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
 
   const [venue, setVenue]           = useState("吐峪沟");
   const [venuePickerVisible, setVenuePickerVisible] = useState(false);
@@ -69,9 +69,23 @@ export default function SoundArchivePage() {
   const [hotOffset, setHotOffset]   = useState(0);
   const [loading, setLoading]       = useState(true);
   const [playingId, setPlayingId]   = useState<string | null>(null);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const soundRef                    = useRef<Audio.Sound | null>(null);
 
   const haptic = () => { if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); };
+
+  const fetchFavorites = useCallback(async () => {
+    if (!user || user.id === "guest") return;
+    try {
+      const res = await fetch(`${getApiUrl()}api/sound-archives/favorites/${encodeURIComponent(user.id)}`);
+      if (res.ok) {
+        const ids: string[] = await res.json();
+        setFavoriteIds(new Set(ids));
+      }
+    } catch (e) {
+      console.warn("[SoundArchive] fetchFavorites error:", e);
+    }
+  }, [user]);
 
   const fetchData = useCallback(async (v: string) => {
     setLoading(true);
@@ -92,6 +106,34 @@ export default function SoundArchivePage() {
   }, []);
 
   useEffect(() => { fetchData(venue); }, [venue, fetchData]);
+  useEffect(() => { fetchFavorites(); }, [fetchFavorites]);
+
+  const toggleFavorite = async (archiveId: string) => {
+    if (!user || user.id === "guest") return;
+    haptic();
+    setFavoriteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(archiveId)) next.delete(archiveId);
+      else next.add(archiveId);
+      return next;
+    });
+    try {
+      const res = await fetch(`${getApiUrl()}api/sound-archives/${archiveId}/favorite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      const data: { favorited: boolean } = await res.json();
+      setFavoriteIds((prev) => {
+        const next = new Set(prev);
+        if (data.favorited) next.add(archiveId);
+        else next.delete(archiveId);
+        return next;
+      });
+    } catch (e) {
+      console.warn("[SoundArchive] toggleFavorite error:", e);
+    }
+  };
 
   const hotArchives = archives.slice(hotOffset, hotOffset + 5);
 
@@ -247,41 +289,55 @@ export default function SoundArchivePage() {
             <Text style={styles.emptyText}>暂无档案，成为第一位贡献者吧</Text>
           </View>
         ) : (
-          hotArchives.map((archive, idx) => (
-            <Pressable
-              key={archive.id}
-              style={[styles.archiveCard, idx === hotArchives.length - 1 && { marginBottom: 0 }]}
-              onPress={() => { haptic(); playArchive(archive); }}
-              activeOpacity={0.85}
-            >
-              <View style={[styles.playBtn, playingId === archive.id && styles.playBtnActive]}>
-                <Ionicons
-                  name={playingId === archive.id ? "pause" : "play"}
-                  size={20}
-                  color={playingId === archive.id ? "#fff" : ORANGE}
-                />
-              </View>
-              <View style={styles.archiveInfo}>
-                <Text style={styles.archiveTitle} numberOfLines={2}>{archive.title}</Text>
-                <View style={styles.archiveAuthorRow}>
-                  <Text style={styles.archiveAuthor}>{archive.author}</Text>
-                  {archive.isVerified && (
-                    <View style={styles.verifiedBadge}>
-                      <Ionicons name="checkmark-circle" size={12} color="#3A9060" />
-                    </View>
-                  )}
+          hotArchives.map((archive, idx) => {
+            const isFav = favoriteIds.has(archive.id);
+            return (
+              <Pressable
+                key={archive.id}
+                style={[styles.archiveCard, idx === hotArchives.length - 1 && { marginBottom: 0 }]}
+                onPress={() => { haptic(); playArchive(archive); }}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.playBtn, playingId === archive.id && styles.playBtnActive]}>
+                  <Ionicons
+                    name={playingId === archive.id ? "pause" : "play"}
+                    size={20}
+                    color={playingId === archive.id ? "#fff" : ORANGE}
+                  />
                 </View>
-                <View style={styles.archiveMeta}>
-                  <View style={styles.archiveTag}>
-                    <Text style={styles.archiveTagText}>{archive.category}</Text>
+                <View style={styles.archiveInfo}>
+                  <Text style={styles.archiveTitle} numberOfLines={2}>{archive.title}</Text>
+                  <View style={styles.archiveAuthorRow}>
+                    <Text style={styles.archiveAuthor}>{archive.author}</Text>
+                    {archive.isVerified && (
+                      <View style={styles.verifiedBadge}>
+                        <Ionicons name="checkmark-circle" size={12} color="#3A9060" />
+                      </View>
+                    )}
                   </View>
-                  <Text style={styles.archiveMetaText}>
-                    {fmtDuration(archive.durationSeconds)} · {fmtPlays(archive.playCount)}次播放
-                  </Text>
+                  <View style={styles.archiveMeta}>
+                    <View style={styles.archiveTag}>
+                      <Text style={styles.archiveTagText}>{archive.category}</Text>
+                    </View>
+                    <Text style={styles.archiveMetaText}>
+                      {fmtDuration(archive.durationSeconds)} · {fmtPlays(archive.playCount)}次播放
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            </Pressable>
-          ))
+                <Pressable
+                  style={styles.favBtn}
+                  onPress={(e) => { e.stopPropagation?.(); toggleFavorite(archive.id); }}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={isFav ? "star" : "star-outline"}
+                    size={20}
+                    color={isFav ? "#FFB800" : TEXT3}
+                  />
+                </Pressable>
+              </Pressable>
+            );
+          })
         )}
 
         {/* ── 加入认证 CTA ── */}
@@ -381,6 +437,7 @@ const styles = StyleSheet.create({
   archiveTag:    { backgroundColor: ORANGE_L, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   archiveTagText: { fontSize: 11, color: ORANGE, fontWeight: "600" },
   archiveMetaText: { fontSize: 11, color: TEXT3 },
+  favBtn: { padding: 4, marginLeft: 4 },
   noAudioBadge:  { padding: 4 },
 
   ctaCard:      { borderRadius: 22, padding: 22, marginTop: 24, flexDirection: "column", overflow: "hidden" },

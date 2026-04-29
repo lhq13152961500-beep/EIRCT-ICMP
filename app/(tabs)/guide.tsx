@@ -181,9 +181,6 @@ function HeroHeader({ insets }: { insets: ReturnType<typeof useSafeAreaInsets> }
             {locationName ?? "定位中…"}
           </Text>
         </View>
-        <Pressable style={styles.searchButton}>
-          <Ionicons name="search" size={18} color={Colors.light.text} />
-        </Pressable>
       </View>
     </View>
   );

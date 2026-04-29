@@ -633,4 +633,82 @@ export async function deleteCustomRoute(id: string, userId: string): Promise<boo
   return (result.rowCount ?? 0) > 0;
 }
 
+// ── Sound Archive Favorites & Discover Listens ────────────────────────────────
+
+export async function initFavoritesAndListensTable(): Promise<void> {
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS sound_archive_favorites (
+      user_id    TEXT        NOT NULL,
+      archive_id UUID        NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, archive_id)
+    )
+  `);
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS discover_listens (
+      user_id      TEXT        NOT NULL,
+      recording_id UUID        NOT NULL,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, recording_id)
+    )
+  `);
+}
+
+export async function toggleSoundArchiveFavorite(
+  userId: string,
+  archiveId: string
+): Promise<{ favorited: boolean }> {
+  const existing = await pgPool.query(
+    "SELECT 1 FROM sound_archive_favorites WHERE user_id = $1 AND archive_id = $2",
+    [userId, archiveId]
+  );
+  if (existing.rows.length > 0) {
+    await pgPool.query(
+      "DELETE FROM sound_archive_favorites WHERE user_id = $1 AND archive_id = $2",
+      [userId, archiveId]
+    );
+    return { favorited: false };
+  }
+  await pgPool.query(
+    "INSERT INTO sound_archive_favorites (user_id, archive_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    [userId, archiveId]
+  );
+  return { favorited: true };
+}
+
+export async function getUserFavoriteArchiveIds(userId: string): Promise<string[]> {
+  const result = await pgPool.query(
+    "SELECT archive_id FROM sound_archive_favorites WHERE user_id = $1",
+    [userId]
+  );
+  return result.rows.map((r: any) => r.archive_id as string);
+}
+
+export async function trackDiscoverListen(userId: string, recordingId: string): Promise<void> {
+  await pgPool.query(
+    "INSERT INTO discover_listens (user_id, recording_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    [userId, recordingId]
+  );
+}
+
+export async function getUserProfileStats(userId: string): Promise<{
+  diaryCount: number;
+  discoverCount: number;
+  favoriteCount: number;
+  routeCount: number;
+}> {
+  const [diaryRes, discoverRes, favRes, routeRes] = await Promise.all([
+    pgPool.query("SELECT COUNT(*)::int AS cnt FROM recordings WHERE user_id = $1", [userId]),
+    pgPool.query("SELECT COUNT(*)::int AS cnt FROM discover_listens WHERE user_id = $1", [userId]),
+    pgPool.query("SELECT COUNT(*)::int AS cnt FROM sound_archive_favorites WHERE user_id = $1", [userId]),
+    pgPool.query("SELECT COUNT(*)::int AS cnt FROM custom_routes WHERE user_id = $1", [userId]),
+  ]);
+  return {
+    diaryCount:    diaryRes.rows[0].cnt,
+    discoverCount: discoverRes.rows[0].cnt,
+    favoriteCount: favRes.rows[0].cnt,
+    routeCount:    routeRes.rows[0].cnt,
+  };
+}
+
 export const storage = new HybridStorage();

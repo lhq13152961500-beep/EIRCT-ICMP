@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,12 +10,14 @@ import {
   Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/contexts/AuthContext";
+import { getApiUrl } from "@/lib/query-client";
 
 const TAB_BAR_HEIGHT = 80;
 
@@ -150,6 +152,23 @@ export default function ProfileScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
+  const [profileStats, setProfileStats] = useState({ diaryCount: 0, discoverCount: 0, favoriteCount: 0, routeCount: 0 });
+
+  const fetchStats = useCallback(async () => {
+    if (!user || user.id === "guest") return;
+    try {
+      const res = await fetch(`${getApiUrl()}api/profile-stats/${encodeURIComponent(user.id)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setProfileStats(data);
+      }
+    } catch (e) {
+      console.warn("[profile] fetchStats error:", e);
+    }
+  }, [user]);
+
+  useFocusEffect(useCallback(() => { fetchStats(); }, [fetchStats]));
+
   // Redirect guest to register when touching a locked feature
   const requireLogin = () => {
     haptic();
@@ -219,10 +238,10 @@ export default function ProfileScreen() {
           {/* 数据统计栏 */}
           <View style={styles.statsBar}>
             {[
-              { value: isGuest ? "--" : "5",  label: "声音日记" },
-              { value: isGuest ? "--" : "32", label: "发现声音" },
-              { value: isGuest ? "--" : "18", label: "收藏" },
-              { value: isGuest ? "--" : "3",  label: "行程" },
+              { value: isGuest ? "--" : String(profileStats.diaryCount),    label: "声音日记" },
+              { value: isGuest ? "--" : String(profileStats.discoverCount), label: "发现声音" },
+              { value: isGuest ? "--" : String(profileStats.favoriteCount), label: "收藏" },
+              { value: isGuest ? "--" : String(profileStats.routeCount),    label: "行程" },
             ].map((s, i, arr) => (
               <Pressable
                 key={s.label}
@@ -242,28 +261,28 @@ export default function ProfileScreen() {
           <SectionCard title="我的旅游">
             <MenuItem
               icon="mic-outline" label="声音日记"
-              value={isGuest ? undefined : "5条"}
+              value={isGuest ? undefined : `${profileStats.diaryCount}条`}
               color={Colors.light.primary}
               locked={isGuest}
               onPress={guard(() => {})}
             />
             <MenuItem
               icon="radio-outline" label="发现他人声音"
-              value={isGuest ? undefined : "收听 32 次"}
+              value={isGuest ? undefined : `${profileStats.discoverCount}个`}
               color="#5C6BC0"
               locked={isGuest}
               onPress={guard(() => {})}
             />
             <MenuItem
               icon="heart-outline" label="收藏的声音档案"
-              value={isGuest ? undefined : "18个"}
+              value={isGuest ? undefined : `${profileStats.favoriteCount}个`}
               color="#E91E63"
               locked={isGuest}
               onPress={guard(() => {})}
             />
             <MenuItem
               icon="map-outline" label="我的行程"
-              value={isGuest ? undefined : "3个"}
+              value={isGuest ? undefined : `${profileStats.routeCount}个`}
               color={Colors.light.accent}
               locked={isGuest}
               onPress={guard(() => {})}

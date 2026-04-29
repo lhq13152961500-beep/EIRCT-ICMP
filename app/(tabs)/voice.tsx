@@ -1275,6 +1275,7 @@ type SubReply       = { id: string; username: string; time: string; text: string
 
 interface NearbyRec {
   id: string;
+  userId?: string | null;
   title: string;
   locationName: string;
   lat: number;
@@ -1362,6 +1363,8 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
   const dt = new Date(rec.publishedAt);
   const datetime = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")} ${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
 
+  const listenTrackedRef = React.useRef(false);
+
   const toggleAudio = async () => {
     haptic(Haptics.ImpactFeedbackStyle.Medium);
     if (isPlaying) {
@@ -1383,6 +1386,14 @@ function NearbyPostcard({ rec }: { rec: NearbyRec }) {
       audioUrl = srcAudio.startsWith("http") ? srcAudio : new URL(srcAudio, base).toString();
     } else {
       audioUrl = getDemoAudio(rec.id);
+    }
+    if (!listenTrackedRef.current && user && user.id !== "guest" && rec.userId !== user.id) {
+      listenTrackedRef.current = true;
+      fetch(`${getApiUrl()}api/recordings/${rec.id}/discover-listen`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id }),
+      }).catch(() => {});
     }
     try {
       const { sound } = await Audio.Sound.createAsync({ uri: audioUrl }, { shouldPlay: true });

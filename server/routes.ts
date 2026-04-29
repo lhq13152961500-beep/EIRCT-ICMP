@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import https from "node:https";
 import OpenAI, { toFile } from "openai";
-import { storage, type InsertRecording, initSoundArchivesTable, getSoundArchiveStats, getSoundArchives, createSoundArchive, getSoundArchiveAudio, incrementArchivePlay } from "./storage";
+import { storage, type InsertRecording, initSoundArchivesTable, getSoundArchiveStats, getSoundArchives, createSoundArchive, getSoundArchiveAudio, incrementArchivePlay, initFavoritesAndListensTable, toggleSoundArchiveFavorite, getUserFavoriteArchiveIds, trackDiscoverListen, getUserProfileStats } from "./storage";
 import { doublaoRealtimeTurn, closeRealtimeConn } from "./doubao-realtime";
 const uuidv4 = () => randomUUID();
 
@@ -869,6 +869,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Sound Archives ────────────────────────────────────
   await initSoundArchivesTable();
+  await initFavoritesAndListensTable();
 
   app.get("/api/sound-archives/stats", async (req, res) => {
     try {
@@ -932,6 +933,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("[sound-archives/audio]", err);
       return res.status(500).json({ error: "获取音频失败" });
+    }
+  });
+
+  // ── Sound Archive Favorites ────────────────────────────
+  app.post("/api/sound-archives/:id/favorite", async (req, res) => {
+    try {
+      const { userId } = req.body as { userId?: string };
+      if (!userId) return res.status(400).json({ error: "userId required" });
+      const result = await toggleSoundArchiveFavorite(userId, req.params.id);
+      return res.json(result);
+    } catch (err) {
+      console.error("[sound-archives/favorite]", err);
+      return res.status(500).json({ error: "操作失败" });
+    }
+  });
+
+  app.get("/api/sound-archives/favorites/:userId", async (req, res) => {
+    try {
+      const ids = await getUserFavoriteArchiveIds(req.params.userId);
+      return res.json(ids);
+    } catch (err) {
+      console.error("[sound-archives/favorites]", err);
+      return res.status(500).json({ error: "获取收藏失败" });
+    }
+  });
+
+  // ── Discover Listen Tracking ───────────────────────────
+  app.post("/api/recordings/:id/discover-listen", async (req, res) => {
+    try {
+      const { userId } = req.body as { userId?: string };
+      if (!userId || userId === "guest") return res.json({ ok: true });
+      await trackDiscoverListen(userId, req.params.id);
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[discover-listen]", err);
+      return res.status(500).json({ error: "记录失败" });
+    }
+  });
+
+  // ── Profile Stats ──────────────────────────────────────
+  app.get("/api/profile-stats/:userId", async (req, res) => {
+    try {
+      const stats = await getUserProfileStats(req.params.userId);
+      return res.json(stats);
+    } catch (err) {
+      console.error("[profile-stats]", err);
+      return res.status(500).json({ error: "获取统计失败" });
     }
   });
 

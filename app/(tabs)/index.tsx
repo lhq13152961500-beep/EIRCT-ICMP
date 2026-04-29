@@ -209,9 +209,6 @@ export default function HomeScreen() {
         </View>
         <View style={styles.headerRight}>
           <Pressable style={styles.iconBtn} onPress={haptic}>
-            <Ionicons name="search-outline" size={22} color={Colors.light.text} />
-          </Pressable>
-          <Pressable style={styles.iconBtn} onPress={haptic}>
             <Ionicons name="notifications-outline" size={22} color={Colors.light.text} />
             <View style={styles.notifDot} />
           </Pressable>

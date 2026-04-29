@@ -19,9 +19,14 @@ __export(storage_exports, {
   getSoundArchiveAudio: () => getSoundArchiveAudio,
   getSoundArchiveStats: () => getSoundArchiveStats,
   getSoundArchives: () => getSoundArchives,
+  getUserFavoriteArchiveIds: () => getUserFavoriteArchiveIds,
+  getUserProfileStats: () => getUserProfileStats,
   incrementArchivePlay: () => incrementArchivePlay,
+  initFavoritesAndListensTable: () => initFavoritesAndListensTable,
   initSoundArchivesTable: () => initSoundArchivesTable,
-  storage: () => storage
+  storage: () => storage,
+  toggleSoundArchiveFavorite: () => toggleSoundArchiveFavorite,
+  trackDiscoverListen: () => trackDiscoverListen
 });
 import { randomUUID } from "crypto";
 import { Pool } from "pg";
@@ -176,6 +181,69 @@ async function deleteCustomRoute(id, userId) {
     [id, userId]
   );
   return (result.rowCount ?? 0) > 0;
+}
+async function initFavoritesAndListensTable() {
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS sound_archive_favorites (
+      user_id    TEXT        NOT NULL,
+      archive_id UUID        NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, archive_id)
+    )
+  `);
+  await pgPool.query(`
+    CREATE TABLE IF NOT EXISTS discover_listens (
+      user_id      TEXT        NOT NULL,
+      recording_id UUID        NOT NULL,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, recording_id)
+    )
+  `);
+}
+async function toggleSoundArchiveFavorite(userId, archiveId) {
+  const existing = await pgPool.query(
+    "SELECT 1 FROM sound_archive_favorites WHERE user_id = $1 AND archive_id = $2",
+    [userId, archiveId]
+  );
+  if (existing.rows.length > 0) {
+    await pgPool.query(
+      "DELETE FROM sound_archive_favorites WHERE user_id = $1 AND archive_id = $2",
+      [userId, archiveId]
+    );
+    return { favorited: false };
+  }
+  await pgPool.query(
+    "INSERT INTO sound_archive_favorites (user_id, archive_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    [userId, archiveId]
+  );
+  return { favorited: true };
+}
+async function getUserFavoriteArchiveIds(userId) {
+  const result = await pgPool.query(
+    "SELECT archive_id FROM sound_archive_favorites WHERE user_id = $1",
+    [userId]
+  );
+  return result.rows.map((r) => r.archive_id);
+}
+async function trackDiscoverListen(userId, recordingId) {
+  await pgPool.query(
+    "INSERT INTO discover_listens (user_id, recording_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    [userId, recordingId]
+  );
+}
+async function getUserProfileStats(userId) {
+  const [diaryRes, discoverRes, favRes, routeRes] = await Promise.all([
+    pgPool.query("SELECT COUNT(*)::int AS cnt FROM recordings WHERE user_id = $1", [userId]),
+    pgPool.query("SELECT COUNT(*)::int AS cnt FROM discover_listens WHERE user_id = $1", [userId]),
+    pgPool.query("SELECT COUNT(*)::int AS cnt FROM sound_archive_favorites WHERE user_id = $1", [userId]),
+    pgPool.query("SELECT COUNT(*)::int AS cnt FROM custom_routes WHERE user_id = $1", [userId])
+  ]);
+  return {
+    diaryCount: diaryRes.rows[0].cnt,
+    discoverCount: discoverRes.rows[0].cnt,
+    favoriteCount: favRes.rows[0].cnt,
+    routeCount: routeRes.rows[0].cnt
+  };
 }
 var pgPool, HybridStorage, storage;
 var init_storage = __esm({
@@ -1873,6 +1941,7 @@ ${extractedText}
     }
   });
   await initSoundArchivesTable();
+  await initFavoritesAndListensTable();
   app2.get("/api/sound-archives/stats", async (req, res) => {
     try {
       const venue = req.query.venue || "\u5410\u5CEA\u6C9F";
@@ -1929,6 +1998,46 @@ ${extractedText}
     } catch (err) {
       console.error("[sound-archives/audio]", err);
       return res.status(500).json({ error: "\u83B7\u53D6\u97F3\u9891\u5931\u8D25" });
+    }
+  });
+  app2.post("/api/sound-archives/:id/favorite", async (req, res) => {
+    try {
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ error: "userId required" });
+      const result = await toggleSoundArchiveFavorite(userId, req.params.id);
+      return res.json(result);
+    } catch (err) {
+      console.error("[sound-archives/favorite]", err);
+      return res.status(500).json({ error: "\u64CD\u4F5C\u5931\u8D25" });
+    }
+  });
+  app2.get("/api/sound-archives/favorites/:userId", async (req, res) => {
+    try {
+      const ids = await getUserFavoriteArchiveIds(req.params.userId);
+      return res.json(ids);
+    } catch (err) {
+      console.error("[sound-archives/favorites]", err);
+      return res.status(500).json({ error: "\u83B7\u53D6\u6536\u85CF\u5931\u8D25" });
+    }
+  });
+  app2.post("/api/recordings/:id/discover-listen", async (req, res) => {
+    try {
+      const { userId } = req.body;
+      if (!userId || userId === "guest") return res.json({ ok: true });
+      await trackDiscoverListen(userId, req.params.id);
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[discover-listen]", err);
+      return res.status(500).json({ error: "\u8BB0\u5F55\u5931\u8D25" });
+    }
+  });
+  app2.get("/api/profile-stats/:userId", async (req, res) => {
+    try {
+      const stats = await getUserProfileStats(req.params.userId);
+      return res.json(stats);
+    } catch (err) {
+      console.error("[profile-stats]", err);
+      return res.status(500).json({ error: "\u83B7\u53D6\u7EDF\u8BA1\u5931\u8D25" });
     }
   });
   app2.get("/api/custom-routes/user/:userId", async (req, res) => {
