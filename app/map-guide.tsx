@@ -385,8 +385,8 @@ export default function MapGuideScreen() {
   }, [openRoutes, scrollToCreate, sheetAnim]);
 
   useEffect(() => {
-    if (!highlightRoute || processedHighlightRef.current === highlightRoute) return;
-    processedHighlightRef.current = highlightRoute;
+    if (!highlightRoute) return;
+    processedHighlightRef.current = null;
     const t1 = setTimeout(() => {
       haptic("medium");
       setSelectedPoi(null);
@@ -777,70 +777,85 @@ export default function MapGuideScreen() {
 
               {/* Custom routes */}
               {customRoutes.map((route) => (
-                <View key={route.id} style={styles.routeCard}>
-                  <View style={[styles.routeCardTop, styles.customRouteCardTop]}>
-                    {route.imageData ? (
-                      <Image
-                        source={{ uri: route.imageData }}
-                        style={styles.customRouteImage}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <Text style={styles.routeCardIcon}>{route.icon}</Text>
-                    )}
-                    <View style={styles.routeCardTitleWrap}>
-                      <View style={styles.customRouteTitleRow}>
-                        <Text style={styles.routeCardTitle} numberOfLines={1}>{route.name}</Text>
-                        <View style={styles.customBadge}>
-                          <Text style={styles.customBadgeText}>我的行程</Text>
+                <View key={route.id} style={styles.routeCardOuter}>
+                  <View style={styles.routeCard}>
+                    <View style={[styles.routeCardTop, styles.customRouteCardTop]}>
+                      {route.imageData ? (
+                        <Image
+                          source={{ uri: route.imageData }}
+                          style={styles.customRouteImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <Text style={styles.routeCardIcon}>{route.icon}</Text>
+                      )}
+                      <View style={styles.routeCardTitleWrap}>
+                        <View style={styles.customRouteTitleRow}>
+                          <Text style={styles.routeCardTitle} numberOfLines={1}>{route.name}</Text>
+                          <View style={styles.customBadge}>
+                            <Text style={styles.customBadgeText}>我的行程</Text>
+                          </View>
                         </View>
+                        <Text style={styles.routeCardDesc}>{route.poiIds.length} 个景点</Text>
                       </View>
-                      <Text style={styles.routeCardDesc}>{route.poiIds.length} 个景点</Text>
+                      <Pressable
+                        style={styles.deleteRouteBtn}
+                        onPress={() => { haptic(); handleDeleteCustomRoute(route.id); }}
+                      >
+                        <Ionicons name="trash-outline" size={16} color="#E8514A" />
+                      </Pressable>
                     </View>
-                    <Pressable
-                      style={styles.deleteRouteBtn}
-                      onPress={() => { haptic(); handleDeleteCustomRoute(route.id); }}
-                    >
-                      <Ionicons name="trash-outline" size={16} color="#E8514A" />
-                    </Pressable>
-                  </View>
-                  <View style={styles.routeCardBottom}>
-                    <View style={styles.routeCardStats}>
-                      {(() => {
-                        const { totalKm, durationStr } = calcRouteStats(route.poiIds);
-                        return (
-                          <>
-                            <View style={styles.routeStat}>
-                              <Ionicons name="business-outline" size={13} color={Colors.light.textSecondary} />
-                              <Text style={styles.routeStatText}>{route.poiIds.length}个景点</Text>
-                            </View>
-                            <View style={styles.routeStatDivider} />
-                            <View style={styles.routeStat}>
-                              <Ionicons name="footsteps-outline" size={13} color={Colors.light.textSecondary} />
-                              <Text style={styles.routeStatText}>{totalKm}公里</Text>
-                            </View>
-                            <View style={styles.routeStatDivider} />
-                            <View style={styles.routeStat}>
-                              <Ionicons name="time-outline" size={13} color={Colors.light.textSecondary} />
-                              <Text style={styles.routeStatText}>{durationStr}</Text>
-                            </View>
-                          </>
-                        );
-                      })()}
+                    <View style={styles.routeCardBottom}>
+                      <View style={styles.routeCardStats}>
+                        {(() => {
+                          const { totalKm, durationStr } = calcRouteStats(route.poiIds);
+                          return (
+                            <>
+                              <View style={styles.routeStat}>
+                                <Ionicons name="business-outline" size={13} color={Colors.light.textSecondary} />
+                                <Text style={styles.routeStatText}>{route.poiIds.length}个景点</Text>
+                              </View>
+                              <View style={styles.routeStatDivider} />
+                              <View style={styles.routeStat}>
+                                <Ionicons name="footsteps-outline" size={13} color={Colors.light.textSecondary} />
+                                <Text style={styles.routeStatText}>{totalKm}公里</Text>
+                              </View>
+                              <View style={styles.routeStatDivider} />
+                              <View style={styles.routeStat}>
+                                <Ionicons name="time-outline" size={13} color={Colors.light.textSecondary} />
+                                <Text style={styles.routeStatText}>{durationStr}</Text>
+                              </View>
+                            </>
+                          );
+                        })()}
+                      </View>
+                      <Pressable
+                        style={[styles.startBtn, { backgroundColor: route.color }]}
+                        onPress={() => {
+                          haptic("medium");
+                          setActiveRouteId(route.id);
+                          injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(route.poiIds)}, ${JSON.stringify(route.color)});`);
+                          closeSheet();
+                        }}
+                      >
+                        <Ionicons name="play" size={14} color="#fff" />
+                        <Text style={styles.startBtnText}>开始游览</Text>
+                      </Pressable>
                     </View>
-                    <Pressable
-                      style={[styles.startBtn, { backgroundColor: route.color }]}
-                      onPress={() => {
-                        haptic("medium");
-                        setActiveRouteId(route.id);
-                        injectJs(`window.drawRoute && window.drawRoute(${JSON.stringify(route.poiIds)}, ${JSON.stringify(route.color)});`);
-                        closeSheet();
-                      }}
-                    >
-                      <Ionicons name="play" size={14} color="#fff" />
-                      <Text style={styles.startBtnText}>开始游览</Text>
-                    </Pressable>
                   </View>
+                  {route.id === highlightedRouteId && (
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[
+                        styles.routeCardGlow,
+                        {
+                          borderColor: route.color,
+                          shadowColor: route.color,
+                          opacity: glowAnim,
+                        },
+                      ]}
+                    />
+                  )}
                 </View>
               ))}
 
