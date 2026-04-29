@@ -831,7 +831,7 @@ var PersistentRealtimeConn = class {
       const globalTimer = setTimeout(() => {
         console.warn(`[S2S-Turn] Global timeout \u2014 chunks=${audioChunks.length} transcript="${transcript}" aiText="${aiText.slice(0, 40)}"`);
         settle({ audioChunks, transcript, aiText });
-      }, 8e3);
+      }, 3e4);
       const startTextWaitTimer = () => {
         if (textWaitTimer) return;
         textWaitTimer = setTimeout(() => {

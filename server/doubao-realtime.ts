@@ -329,11 +329,11 @@ class PersistentRealtimeConn {
         resolve(result);
       };
 
-      // 8s global safety timeout
+      // 30s global safety timeout — long replies (route guides, stories) need more time
       const globalTimer = setTimeout(() => {
         console.warn(`[S2S-Turn] Global timeout — chunks=${audioChunks.length} transcript="${transcript}" aiText="${aiText.slice(0, 40)}"`);
         settle({ audioChunks, transcript, aiText });
-      }, 8000);
+      }, 30000);
 
       const startTextWaitTimer = () => {
         if (textWaitTimer) return;

@@ -299,7 +299,7 @@ export default function XiaoxiangAiScreen() {
         if (!status.isLoaded) { resolve(); return; }
         if (status.didJustFinish) { sound.unloadAsync().catch(() => {}); resolve(); }
       });
-      setTimeout(resolve, 30000); // safety timeout 30s
+      setTimeout(resolve, 60000); // safety timeout 60s — long route/story replies can exceed 30s
     });
     FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => {});
   }, []);
@@ -493,6 +493,8 @@ export default function XiaoxiangAiScreen() {
               }
               await playDoubaoAudio(s2sData.audioBase64);
               setCompanionResponse("");
+              // Brief pause after playback so speaker echo fades before mic opens
+              await new Promise<void>((r) => setTimeout(r, 300));
               setCompanionStatus("listening");
               continue;
             }
